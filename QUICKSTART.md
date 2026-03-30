@@ -387,6 +387,112 @@ You: forge-init: 기존 Cocos Creator 프로젝트, TypeScript
 
 ---
 
+## 새 환경에서 처음부터 셋업하기 (새 PC, 새 계정)
+
+새 컴퓨터나 완전히 새로운 환경에서 GolemGarden을 설치하고
+기존 프로젝트에 도입하는 전체 프로세스입니다.
+
+### 전체 흐름
+
+```
+[1회만] 환경 셋업                    [프로젝트마다] 도입
+─────────────────                   ──────────────────
+Claude Code 설치                     cd 기존프로젝트
+    ↓                                   ↓
+OMC 설치                             claude 실행
+    ↓                                   ↓
+GolemGarden clone + install.sh       "forge-init" ← 끝
+```
+
+### Step 1: Claude Code 설치
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude --version   # 설치 확인
+```
+
+Claude Max ($100/월) 구독이 필요합니다.
+
+### Step 2: OMC 설치
+
+Claude Code를 열고 대화창에서:
+```
+setup omc
+```
+
+### Step 3: GolemGarden 설치
+
+```bash
+# GolemGarden 리포 클론
+git clone https://github.com/xuefeng1011/golem-garden.git
+cd golem-garden
+
+# 설치 (SOULs + 스킬을 ~/.claude/에 복사)
+bash install.sh
+
+# bash alias 추가 (선택, 터미널에서 forge 명령어 직접 쓸 때)
+echo 'alias forge="bash /path/to/golem-garden/forge.sh"' >> ~/.bashrc
+source ~/.bashrc
+
+# 설치 확인
+forge status
+```
+
+**여기까지 1회만 하면 됩니다.** 이후 프로젝트마다 아래만 반복.
+
+### Step 4: 기존 프로젝트에 도입
+
+```bash
+cd /path/to/my-existing-project
+claude          # Claude Code 실행
+```
+
+Claude Code 대화창에서:
+```
+forge-init
+```
+
+**이 한 마디로 끝입니다.** 프로젝트를 자동 스캔하고 팀을 구성합니다.
+
+```
+AI: "프로젝트를 분석했습니다:
+     - Spring Boot 2.7 + Vue 3 + MariaDB
+     - Docker 배포, GitHub Actions CI/CD
+     이 구성으로 팀을 만들까요?"
+
+You: ㅇㅇ
+
+AI: "팀 구성 완료!
+     Nex(Director), Ryn(Backend), Kai(Frontend), Zen(QA), Bolt(DevOps)"
+
+You: forge build: 상품 검색 API 추가
+```
+
+### 이전 환경에서 키운 SOUL 가져오기 (선택)
+
+이전 PC에서 SOUL을 백업해뒀다면 이력과 랭크를 복원할 수 있습니다.
+
+```bash
+# 이전 환경에서 미리 백업
+forge export-pack my-team ./backup
+# → soul-pack-my-team/ 폴더 생성 (USB, 클라우드 등으로 이동)
+
+# 새 환경에서 복원
+forge import-pack /path/to/soul-pack-my-team
+# → Senior Ryn, Junior Kai 등 랭크+이력 그대로 복원
+```
+
+백업을 안 했어도 괜찮습니다. Novice부터 다시 시작할 뿐입니다.
+
+### 한줄 요약
+
+```
+새 환경: Claude Code → OMC → GolemGarden clone + install.sh (1회)
+프로젝트: cd 프로젝트 → claude → "forge-init" → "forge build: ..." (매번)
+```
+
+---
+
 ## 3. 첫 번째 해볼 것: 5분 체험
 
 ### Step 1: 현재 팀 확인
