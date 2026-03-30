@@ -131,6 +131,155 @@ Ryn        backend-developer      novice     sonnet   spring-boot, mariadb, rest
 
 ---
 
+## 새 프로젝트에서 GolemGarden 사용하기 (전체 프로세스)
+
+### 전체 흐름도
+
+```
+[1단계] 프로젝트 생성     →  [2단계] 팀 구성        →  [3단계] 개발
+새 프로젝트 폴더 만들기       forge-init 으로           forge build 로
+Claude Code 열기              SOUL 팀 자동 구성          작업 지시하면 끝
+
+   ↓                           ↓                        ↓
+[4단계] 리뷰              →  [5단계] 성장            →  [6단계] 반복
+자동 크로스 리뷰              SOUL 경험 누적              팀이 점점 성장
+Novice는 리뷰 필수            랭크 자동 승급              Senior가 되면 자율 실행
+```
+
+### 1단계: 새 프로젝트 시작
+
+프로젝트 폴더를 만들고 Claude Code를 엽니다.
+
+```bash
+mkdir my-new-project
+cd my-new-project
+git init
+claude          # Claude Code 실행
+```
+
+### 2단계: 팀 구성 (Claude Code 대화창에서)
+
+```
+You: forge-init: 풀스택 웹앱, Spring Boot + React + MariaDB
+```
+
+이 한 마디로 다음이 자동 실행됩니다:
+- 프로젝트 유형 분석 → 풀스택 팩 매칭
+- Nex(Director), Ryn(Backend), Kai(Frontend), Zen(QA), Bolt(DevOps) 배치
+- 각 SOUL에 기술스택 컨텍스트 주입 (Spring Boot, React 등)
+- forge-board.md 생성 (팀 구성표)
+
+**다른 프로젝트 유형 예시:**
+```
+You: forge-init: 모바일 게임, Cocos Creator + TypeScript
+You: forge-init: 주식 분석 봇, Python + pandas
+You: forge-init: REST API 서버, Node.js + Express + PostgreSQL
+```
+
+### 3단계: 개발 (한 마디로 작업 지시)
+
+```
+You: forge build: 사용자 인증 API + 로그인 화면
+```
+
+자동으로 일어나는 일:
+1. Nex(Director)가 태스크 분석
+2. "Backend API → Ryn, Frontend UI → Kai" 분배
+3. Ryn의 SOUL 컨텍스트(Spring Boot, Clean Architecture 등)를 주입하여 실행
+4. Kai의 SOUL 컨텍스트(React, TypeScript 등)를 주입하여 실행
+5. **병렬 실행** — 둘 다 동시에 코드 생성
+
+**다양한 작업 지시 방법:**
+```
+# 대규모 작업 (병렬 실행)
+You: forge build: 결제 시스템 + 주문 관리 + 알림
+
+# 간단한 작업 (단독 실행)
+You: forge quick: README 업데이트
+
+# 특정 SOUL에게 직접
+You: forge assign ryn: JWT 토큰 갱신 로직 수정
+
+# 리드 지정
+You: forge build: 마이페이지 기능, kai 리드
+```
+
+### 4단계: 리뷰 (자동)
+
+3단계 완료 후 Novice/Junior SOUL이면 **자동으로 리뷰가 트리거**됩니다.
+
+```
+(자동 실행됨 — 사용자가 별도로 칠 필요 없음)
+→ Zen(QA)이 Ryn의 코드 리뷰
+→ 결과: Pass / Fail
+→ growth-log에 자동 기록
+```
+
+수동으로 리뷰를 요청할 수도 있습니다:
+```
+You: forge review ryn
+You: forge review kai zen          # Kai의 코드를 Zen이 리뷰
+```
+
+### 5단계: 성장 확인
+
+```
+You: forge status
+```
+
+출력:
+```
+Name       Role                Rank       Tasks   Rate    Streak
+Ryn        backend-developer   novice     5건    100%    5연속
+Kai        frontend-developer  novice     3건    100%    3연속
+Zen        qa-tester           novice     4건    100%    4연속
+```
+
+10건 완료 시 자동 승급:
+```
+[rank] Ryn: 승급 가능! novice → junior (태스크 10건 완료)
+```
+
+### 6단계: 계속 반복
+
+```
+You: forge build: 상품 목록 API + 상품 카드 컴포넌트
+You: forge build: 장바구니 기능
+You: forge build: 결제 연동
+...
+```
+
+SOUL은 매번 성장합니다:
+- 태스크 이력 누적 → 성공률, 무결함 연속 기록
+- 랭크 승급 → 권한 확대 (Senior가 되면 자율 실행, 리뷰 면제)
+- 프로젝트를 옮겨도 이력이 따라감
+
+### 한눈에 보는 일상 워크플로우
+
+```
+아침: Claude Code 열고
+
+You: forge status                              ← 팀 상태 확인
+You: forge build: 오늘 할 기능들                  ← 작업 지시
+(코드 자동 생성 + 리뷰 자동 실행)
+You: forge build: 버그 수정 3건                   ← 추가 작업
+You: forge status                              ← 성장 확인
+
+끝. 이게 전부입니다.
+```
+
+### 프로젝트 간 SOUL 이동
+
+다른 프로젝트에서 키운 SOUL을 가져올 수도 있습니다:
+```
+You: forge import /path/to/old-project ryn     ← Senior Ryn 가져오기
+```
+
+Senior Ryn은 이전 프로젝트의 50건+ 이력과 함께 들어와서,
+새 프로젝트에서도 아키텍처 제안, 자율 실행이 가능합니다.
+
+---
+
 ## 3. 첫 번째 해볼 것: 5분 체험
 
 ### Step 1: 현재 팀 확인
