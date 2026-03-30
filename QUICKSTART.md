@@ -280,6 +280,113 @@ Senior Ryn은 이전 프로젝트의 50건+ 이력과 함께 들어와서,
 
 ---
 
+## 기존 프로젝트에 GolemGarden 도입하기
+
+이미 코드가 있는 프로젝트에 GolemGarden을 얹는 방법입니다.
+기존 코드를 건드리지 않습니다. SOUL 설정 파일만 추가됩니다.
+
+### 전제 조건
+
+- GolemGarden이 이미 설치되어 있어야 합니다 (`bash install.sh` 완료)
+- 기존 프로젝트 폴더에서 Claude Code가 실행 중이어야 합니다
+
+### Step 1: 기존 프로젝트 폴더에서 Claude Code 열기
+
+```bash
+cd /path/to/my-existing-project
+claude
+```
+
+### Step 2: forge-init으로 팀 구성
+
+Claude Code 대화창에서:
+```
+You: forge-init: 기존 Spring Boot + Vue.js 프로젝트, MariaDB, Docker 배포 중
+```
+
+GolemGarden이 자동으로:
+1. 프로젝트 유형 분석 → 풀스택으로 판단
+2. SOUL 팀 구성 (Nex, Ryn, Kai, Zen, Bolt)
+3. **기존 기술스택에 맞게** SOUL 컨텍스트 커스터마이징
+   - Ryn: Spring Boot + MariaDB 컨텍스트
+   - Kai: Vue.js 컨텍스트 (React 대신)
+   - Bolt: Docker 컨텍스트
+4. 프로젝트 루트에 `forge-board.md` 생성
+
+**핵심: 기존 코드는 전혀 변경하지 않습니다.**
+추가되는 파일은 `forge-board.md` 하나뿐입니다. (`.gitignore`에 넣어도 됨)
+
+### Step 3: 기존 코드를 SOUL에게 알려주기 (선택)
+
+더 정확한 컨텍스트를 위해 프로젝트 구조를 알려줄 수 있습니다:
+```
+You: forge-init 추가 컨텍스트:
+     - 패키지 구조: com.myapp (controller/service/repository)
+     - 코드 컨벤션: 한국어 주석, camelCase
+     - 테스트: JUnit 5 + Mockito
+     - CI/CD: GitHub Actions
+```
+
+이 정보가 각 SOUL의 `프로젝트 컨텍스트` 섹션에 반영됩니다.
+
+### Step 4: 바로 작업 시작
+
+```
+You: forge build: 상품 검색 API 추가 + 검색 화면
+```
+
+기존 코드를 읽고, SOUL 컨텍스트(기술스택, 컨벤션)에 맞춰서 코드를 생성합니다.
+
+### 기존 프로젝트 유형별 예시
+
+#### Spring Boot + Vue.js 프로젝트
+```
+You: forge-init: 기존 프로젝트, Spring Boot 2.7 + Vue 3 + MySQL
+     패키지: com.example.shop
+     컨벤션: REST API, JPA, Gradle
+```
+
+#### Node.js + React 프로젝트
+```
+You: forge-init: 기존 프로젝트, Express + React + MongoDB
+     구조: /server (API) + /client (React)
+     컨벤션: ESLint airbnb, Jest
+```
+
+#### Python Django 프로젝트
+```
+You: forge-init: 기존 프로젝트, Django 4.2 + PostgreSQL + Redis
+     구조: apps/ 하위에 각 앱
+     컨벤션: black formatter, pytest
+```
+
+#### 게임 프로젝트
+```
+You: forge-init: 기존 Cocos Creator 프로젝트, TypeScript
+     구조: assets/scripts/ 하위
+```
+
+### 기존 프로젝트 도입 시 주의사항
+
+| 항목 | 설명 |
+|------|------|
+| **기존 코드 변경** | GolemGarden은 기존 코드를 건드리지 않음 |
+| **추가되는 파일** | `forge-board.md` 1개만 프로젝트 루트에 생성 |
+| **SOUL 파일 위치** | `~/.claude/golem-garden/souls/`에 저장 (프로젝트 밖) |
+| **git 영향** | `forge-board.md`만 추가됨. `.gitignore`에 넣어도 무방 |
+| **팀원과 공유** | `forge-board.md`를 커밋하면 팀원도 같은 팀 구성 사용 가능 |
+| **제거** | `forge-board.md` 삭제하면 끝. 프로젝트에 흔적 없음 |
+
+### 한줄 요약
+
+```
+기존 프로젝트 폴더에서 Claude Code 열고:
+"forge-init: 기존 프로젝트, {기술스택 설명}"
+→ 끝. 바로 "forge build: ..." 사용 가능.
+```
+
+---
+
 ## 3. 첫 번째 해볼 것: 5분 체험
 
 ### Step 1: 현재 팀 확인
