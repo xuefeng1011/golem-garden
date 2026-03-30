@@ -1,90 +1,76 @@
 ---
 name: forge-init
-description: GolemGarden 프로젝트 초기화. 팀 구성과 SOUL 파일 생성.
-trigger: forge-init
+description: GolemGarden 프로젝트 초기화. 팀 구성과 SOUL 자동 생성.
+trigger: forge-init, forge init
 ---
 
-# forge-init — 프로젝트 초기화
+# forge-init — 프로젝트 초기화 실행 스킬
 
-프로젝트 유형을 파악하고 최적의 SOUL 팀을 구성한다.
+사용자가 `forge-init: {설명}` 형태로 입력하면 이 스킬이 실행된다.
 
-## 워크플로우
+## 실행 절차
 
 ### Step 1: 프로젝트 분석
 
-사용자 입력에서 프로젝트 정보를 추출한다:
-- 프로젝트 유형 (웹앱, API, 풀스택, 게임, 데이터 분석 등)
-- 기술스택 (언어, 프레임워크, DB 등)
-- 팀 규모 요구사항
+사용자 입력에서 다음을 추출한다:
+- **프로젝트 유형**: 웹앱, API, 풀스택, 게임, 데이터 분석 등
+- **기술스택**: 언어, 프레임워크, DB
+- **추가 요구사항**: 특별한 역할이나 도구
 
-### Step 2: SOUL 팀 추천
+예시: `forge-init: 풀스택 웹앱, Spring Boot + React`
+→ 유형=풀스택, BE=Spring Boot, FE=React
 
-프로젝트 유형에 따라 SOUL 조합을 추천한다:
+### Step 2: 도메인 팩 매칭 또는 개별 SOUL 구성
 
-| 프로젝트 유형 | 추천 SOUL 구성 |
-|-------------|--------------|
-| Backend API | Nex(Director) + Ryn(Backend) + Zen(QA) |
-| Frontend SPA | Nex(Director) + Kai(Frontend) + Zen(QA) |
-| 풀스택 웹앱 | Nex + Ryn + Kai + Zen |
-| 풀스택 + 배포 | Nex + Ryn + Kai + Zen + Bolt(DevOps) |
-| 게임 개발 | Nex + Sprite + Pixel + Glitch |
-| 데이터 분석 | Nex + Nova(Analyst) + Zen(QA) |
+프로젝트 유형에 따라 결정:
 
-### Step 3: SOUL 파일 생성
+| 유형 | 추천 |
+|------|------|
+| 풀스택 웹앱 | `bash forge.sh pack install fullstack` 실행 |
+| 게임 개발 | `bash forge.sh pack install gamedev` 실행 |
+| 주식/데이터 분석 | `bash forge.sh pack install trading` 실행 |
+| 그 외 | 개별 SOUL 생성 (아래 참고) |
 
-1. `souls/` 디렉토리에서 기존 SOUL 확인
-2. 필요한 SOUL이 없으면 `templates/soul-template.md` 기반으로 생성
-3. 프로젝트 컨텍스트를 SOUL.md에 반영:
-   - 기술스택 정보 주입
-   - 아키텍처 패턴 주입
-   - 코드 컨벤션 주입
+도메인 팩이 없는 경우 필요한 역할을 판단하여 개별 생성:
+```bash
+bash forge.sh soul-create backend-developer
+bash forge.sh soul-create frontend-developer
+bash forge.sh soul-create qa-tester
+```
+
+### Step 3: SOUL 컨텍스트 커스터마이징
+
+생성된 각 SOUL 파일(`souls/{name}.md`)을 Read로 읽고,
+사용자가 입력한 기술스택에 맞게 Edit으로 `프로젝트 컨텍스트` 섹션을 업데이트한다:
+
+```markdown
+## 프로젝트 컨텍스트 (프롬프트에 주입됨)
+- 기술스택: {사용자가 지정한 스택}
+- 아키텍처: {분석한 아키텍처 패턴}
+- 우선순위: {판단한 우선순위}
+```
 
 ### Step 4: forge-board.md 생성
 
-`templates/forge-board.md` 템플릿을 기반으로 프로젝트 루트에 `forge-board.md` 생성:
-- 팀 구성 테이블 작성
-- 기술스택 기록
-- OMC 실행 모드 기본값 설정
+프로젝트 루트에 `forge-board.md`를 생성한다.
+`templates/forge-board.md`를 Read로 읽고 플레이스홀더를 채워서 Write한다.
 
-### Step 5: growth-log 초기화
+### Step 5: 결과 보고
 
-각 SOUL에 대해 `growth-log/{name}.jsonl` 파일 생성:
-```json
-{"date":"{{DATE}}","task":"forge-init","result":"success","files_changed":0,"tests_passed":0}
-```
+`bash forge.sh status` 실행하여 최종 팀 구성을 사용자에게 보여준다.
 
-## 실행 예시
+## 예시 실행 흐름
 
 ```
 사용자: forge-init: 풀스택 웹앱, Spring Boot + React
 
-실행 결과:
-1. souls/nex.md  — Director (기존 로드)
-2. souls/ryn.md  — Backend Developer (기존 로드, Spring Boot 컨텍스트 업데이트)
-3. souls/kai.md  — Frontend Developer (신규 생성, React 컨텍스트)
-4. souls/zen.md  — QA/Tester (신규 생성)
-5. forge-board.md — 팀 구성 완료
-6. growth-log/   — 각 SOUL 초기 로그 생성
-```
+AI 실행:
+1. bash forge.sh pack install fullstack
+   → Nex(기존), Ryn(기존), Kai(신규), Zen(신규), Bolt(신규)
+2. souls/ryn.md Edit → 기술스택: Spring Boot 3.x, MariaDB 반영
+3. souls/kai.md Edit → 기술스택: React 18, TypeScript, Tailwind 반영
+4. forge-board.md Write → 팀 구성 완료
+5. bash forge.sh status → 결과 출력
 
-## 프롬프트 주입 형식
-
-forge-init 완료 후, 각 SOUL이 OMC 에이전트에 주입될 때의 형식:
-
-```
-[GolemGarden Context — {SOUL_NAME} ({ROLE})]
-프로젝트 컨텍스트:
-- 기술스택: {TECH_STACK}
-- 아키텍처: {ARCHITECTURE}
-- 코드 컨벤션: {CONVENTIONS}
-- 우선순위: {PRIORITIES}
-
-전문 지식 힌트:
-- {EXPERTISE_ITEMS}
-
-이전 작업 이력: {TASK_COUNT}건, 성공률 {SUCCESS_RATE}%
-현재 랭크: {RANK}
-
-이 컨텍스트에서 다음 태스크를 수행하라:
-{TASK_DESCRIPTION}
+응답: "풀스택 팀 구성 완료! Nex(Director), Ryn(Backend), Kai(Frontend), Zen(QA), Bolt(DevOps)"
 ```

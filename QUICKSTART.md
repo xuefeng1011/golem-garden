@@ -4,6 +4,78 @@
 
 ---
 
+## 0. 이것부터 이해하세요
+
+### 전체 워크플로우: Claude Code CLI 안에서 한 마디로 끝
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Claude Code CLI (대화창)                                  │
+│                                                          │
+│  사용자: forge build: 인증 API + 로그인 화면                 │
+│                                                          │
+│  ┌──── GolemGarden 스킬 (자동 실행) ────────────────────┐  │
+│  │                                                      │  │
+│  │  ① forge-board.md 읽기 → 팀 파악                     │  │
+│  │  ② Nex(Director) SOUL 로드 → 태스크 분석              │  │
+│  │  ③ "Backend → Ryn, Frontend → Kai" 분배               │  │
+│  │  ④ 각 SOUL 컨텍스트를 OMC Agent에 주입                 │  │
+│  │     ┌─────────────────┐  ┌──────────────────┐        │  │
+│  │     │ Ryn(executor)   │  │ Kai(designer)    │        │  │
+│  │     │ Spring Boot     │  │ React+TS         │        │  │
+│  │     │ 컨텍스트 주입    │  │ 컨텍스트 주입     │        │  │
+│  │     │ → 코드 생성     │  │ → 코드 생성      │        │  │
+│  │     └─────────────────┘  └──────────────────┘        │  │
+│  │         (병렬 실행)            (병렬 실행)              │  │
+│  │                                                      │  │
+│  │  ⑤ 완료 → growth-log 자동 기록                        │  │
+│  │  ⑥ Novice이므로 → 자동 리뷰 트리거                    │  │
+│  │  ⑦ Zen(QA)이 리뷰 → pass → 무결함 카운트 +1          │  │
+│  │                                                      │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                          │
+│  AI: "완료! Ryn: 인증 API (8파일), Kai: 로그인 (3파일)      │
+│       리뷰: Zen → Pass. Ryn 무결함 4연속!"                  │
+└──────────────────────────────────────────────────────────┘
+```
+
+**핵심: 사용자는 Claude Code 대화창에서 한 줄만 입력합니다.**
+나머지(팀 분배, SOUL 컨텍스트 주입, 실행, 기록, 리뷰)는 전부 자동입니다.
+
+### 어디서 뭘 치면 되나요?
+
+| 상황 | 어디서 | 뭘 치면 |
+|------|--------|--------|
+| **팀 구성** | Claude Code 대화창 | `forge-init: 풀스택 웹앱, Spring Boot + React` |
+| **작업 지시** | Claude Code 대화창 | `forge build: 사용자 인증 API + 로그인 화면` |
+| **간단한 작업** | Claude Code 대화창 | `forge quick: README 업데이트` |
+| **특정 SOUL에게** | Claude Code 대화창 | `forge assign ryn: JWT 미들웨어 구현` |
+| **코드 리뷰** | Claude Code 대화창 | `forge review ryn` |
+| **상태 확인** | Claude Code 대화창 | `forge status` |
+| **SOUL 추가** | Claude Code 대화창 | `forge soul-create devops-engineer` |
+| **팩 설치** | Claude Code 대화창 | `forge pack install trading` |
+
+**bash 터미널이 아닙니다. Claude Code 대화창에서 치는 겁니다.**
+Claude가 스킬을 인식하고 `forge.sh` + OMC Agent를 자동으로 호출합니다.
+
+### 수동으로도 쓸 수 있나요?
+
+네. 디버그나 확인 용도로 bash에서 직접 쓸 수도 있습니다:
+```bash
+# 팀 상태 확인
+bash forge.sh status
+
+# 프롬프트 미리보기 (어떤 컨텍스트가 주입되는지 확인)
+bash forge.sh prompt ryn "인증 API 구현"
+
+# 성장 기록 수동 추가
+bash forge.sh log-add ryn "JWT 구현" success 8 15
+```
+
+하지만 **일반적인 사용은 Claude Code 대화창에서** 합니다.
+
+---
+
 ## 1. 준비물
 
 | 항목 | 필수 여부 | 설명 |

@@ -1,80 +1,111 @@
 ---
 name: forge-team
-description: GolemGarden 팀 단위 작업 실행. SOUL 기반 역할 분배.
+description: GolemGarden 팀 단위 작업 실행. SOUL 컨텍스트를 OMC 에이전트에 주입하고 실행한다.
 trigger: forge build, forge quick, forge save, forge assign
 ---
 
-# forge-team — 팀 실행
+# forge-team — 팀 실행 스킬
 
-SOUL 기반으로 태스크를 분배하고 OMC 실행 모드로 실행한다.
+사용자가 `forge build: ...`, `forge quick: ...`, `forge assign {soul}: ...` 형태로 입력하면 실행된다.
 
-## 워크플로우
+## 실행 절차
 
-### Step 1: forge-board.md 로드
+### Step 1: 모드 판별
 
-프로젝트 루트의 `forge-board.md`에서 현재 팀 구성을 읽는다:
-- 활성 SOUL 목록
-- 각 SOUL의 역할, 모델, 랭크
-- OMC 실행 모드 설정
+사용자 입력에서 실행 모드를 결정한다:
 
-### Step 2: 태스크 분석 및 분배
-
-**분배 모드 판별:**
-
-| 입력 패턴 | 모드 | 동작 |
-|----------|------|------|
-| `forge build: {task}` | 자동 분배 | Nex가 분석 → SOUL별 배정 |
-| `forge assign {soul}: {task}` | 수동 지정 | 지정 SOUL만 실행 |
+| 입력 패턴 | 모드 | 분배 방식 |
+|----------|------|----------|
+| `forge build: {task}` | ultrapilot | Director가 자동 분배 → 병렬 실행 |
+| `forge quick: {task}` | autopilot | 최적 SOUL 1개 자동 선택 → 단독 실행 |
+| `forge save: {task}` | ecomode | haiku 모델로 비용 절약 실행 |
+| `forge assign {soul}: {task}` | 수동 | 지정 SOUL만 단독 실행 |
 | `forge build: {task}, {soul} 리드` | 리드 지정 | 리드 SOUL + 나머지 자동 |
 
-**자동 분배 시 Nex(Director)의 판단 기준:**
-1. 태스크 키워드와 SOUL `specialty` 매칭
-2. SOUL `rank` 기반 권한 범위 확인
-3. 가용 SOUL 중 최적 조합 선택
+### Step 2: SOUL 로드 및 분배
 
-### Step 3: SOUL 컨텍스트 주입
+#### 자동 분배 (forge build)
+
+1. `bash forge.sh prompt-director "{task}"` 실행하여 Director 프롬프트 생성
+2. Director(Nex)를 Agent(subagent_type=architect, model=opus)로 실행:
+   - 프롬프트에 가용 SOUL 목록 + 태스크 포함
+   - Director가 서브태스크 분배 결과를 반환
+3. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
+
+#### 수동 지정 (forge assign)
+
+1. 지정된 SOUL 이름으로 바로 Step 3 진행
+
+### Step 3: SOUL 컨텍스트 주입 + OMC 에이전트 실행
 
 각 배정된 SOUL에 대해:
-1. `souls/{name}.md` 로드
-2. `growth-log/{name}.jsonl` 에서 최근 이력 요약
-3. 프롬프트 조립:
+
+1. `bash forge.sh prompt {soul_name} "{task}"` 실행하여 프롬프트 생성
+2. SOUL의 role에 따른 OMC 에이전트 결정:
+
+| SOUL Role | Agent subagent_type | model |
+|-----------|-------------------|-------|
+| director | oh-my-claudecode:architect | opus |
+| backend-developer | oh-my-claudecode:executor | sonnet |
+| frontend-developer | oh-my-claudecode:designer | sonnet |
+| qa-tester | oh-my-claudecode:test-engineer | haiku |
+| devops-engineer | oh-my-claudecode:executor | sonnet |
+| security-auditor | oh-my-claudecode:security-reviewer | opus |
+
+3. Agent tool로 실행:
    ```
-   [GolemGarden Context — {NAME} ({ROLE})]
-   프로젝트 컨텍스트: ...
-   전문 지식 힌트: ...
-   이전 작업 이력: N건, 성공률 X%
-   현재 랭크: {RANK}
-
-   이 컨텍스트에서 다음 태스크를 수행하라:
-   {TASK}
+   Agent(
+     subagent_type = "{매핑된 에이전트}",
+     model = "{SOUL의 model 필드}",
+     prompt = "{forge.sh prompt로 생성된 프롬프트}\n\n태스크:\n{실제 태스크 내용}",
+     description = "{soul_name}: {task 요약}"
+   )
    ```
 
-### Step 4: OMC 실행 모드 선택
+4. **병렬 실행** (forge build):
+   - 독립적인 서브태스크는 Agent를 병렬로 호출 (한 메시지에 여러 Agent 호출)
+   - 의존성 있는 태스크는 순차 실행
 
-| 명령 | OMC 모드 | 설명 |
-|------|---------|------|
-| `forge build` | ultrapilot | SOUL별 병렬, 대규모 태스크 |
-| `forge quick` | autopilot | 단일 SOUL, 간단한 태스크 |
-| `forge save` | ecomode | haiku 기반, 비용 절약 |
-| `forge assign` | autopilot | 지정 SOUL 단독 실행 |
+### Step 4: 결과 기록
 
-### Step 5: 실행 완료 후 기록
+각 SOUL의 태스크 완료 후:
 
-각 SOUL의 태스크 결과를 `growth-log/{name}.jsonl`에 기록:
-```json
-{"date":"2026-03-30","task":"인증 API 구현","result":"success","files_changed":8,"tests_passed":15}
+1. `bash forge.sh log-add {soul_name} "{task}" {result} {files_changed} {tests_passed}` 실행
+   - result: 에이전트가 성공적으로 완료했으면 "success", 실패하면 "fail"
+   - files_changed: 변경된 파일 수 (git diff --stat로 확인)
+   - tests_passed: 통과한 테스트 수 (테스트 실행 결과에서 확인)
+
+2. 랭크 체크 자동 실행 (log-add에 포함됨)
+
+### Step 5: 자동 리뷰 트리거
+
+1. `bash forge.sh review-auto {soul_name} "{task}"` 실행
+   - Novice/Junior SOUL이면 자동으로 리뷰 시작 → forge-review 스킬로 이동
+   - Senior 이상이면 건너뜀
+
+### Step 6: 결과 보고
+
+사용자에게 요약 보고:
+- 각 SOUL별 태스크 결과
+- 변경된 파일 목록
+- 테스트 결과
+- 랭크 변동 사항
+
+## 예시 실행 흐름
+
 ```
+사용자: forge build: 사용자 인증 API + 로그인 화면
 
-forge-board.md 태스크 히스토리에도 추가.
+AI 실행:
+1. Director(Nex)에게 분배 의뢰 → "Backend API → Ryn, Frontend UI → Kai"
+2. 병렬 실행:
+   - Agent(executor, sonnet, Ryn 컨텍스트 + "인증 API 구현")
+   - Agent(designer, sonnet, Kai 컨텍스트 + "로그인 화면 구현")
+3. 완료 후:
+   - bash forge.sh log-add ryn "인증 API" success 8 15
+   - bash forge.sh log-add kai "로그인 화면" success 3 6
+4. 자동 리뷰 (둘 다 Novice이므로):
+   - forge-review 스킬로 자동 연결
 
-## 랭크 기반 권한 체크
-
-실행 전 SOUL의 rank에 따른 권한을 확인한다:
-
-| Rank | 허용 범위 |
-|------|----------|
-| Novice | 단일 파일 수정. 완료 후 자동 리뷰 배정 |
-| Junior | 멀티파일 수정, 테스트 작성 가능 |
-| Senior | 아키텍처 변경 가능, 자율 실행 |
-| Lead | 다른 SOUL에게 서브태스크 위임 가능 |
-| Master | 모든 작업 가능, 리뷰 면제 |
+응답: "완료! Ryn: 인증 API (8파일, 15테스트), Kai: 로그인 화면 (3파일, 6테스트)"
+```

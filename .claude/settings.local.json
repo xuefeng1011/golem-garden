@@ -43,7 +43,11 @@
       "Bash(bash forge.sh pack install gamedev)",
       "Bash(bash forge.sh pack install fullstack)",
       "Bash(bash forge.sh pack install trading)",
-      "Bash(bash install.sh)"
+      "Bash(bash install.sh)",
+      "Bash(cp skills/golem-garden/SKILL.md ~/.claude/skills/golem-garden/SKILL.md)",
+      "Bash(cp skills/golem-garden/forge-init/SKILL.md ~/.claude/skills/golem-garden/forge-init/SKILL.md)",
+      "Bash(cp skills/golem-garden/forge-team/SKILL.md ~/.claude/skills/golem-garden/forge-team/SKILL.md)",
+      "Bash(cp skills/golem-garden/forge-review/SKILL.md ~/.claude/skills/golem-garden/forge-review/SKILL.md)"
     ]
   }
 }

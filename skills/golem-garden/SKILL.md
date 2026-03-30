@@ -1,55 +1,54 @@
 ---
 name: golem-garden
-description: GolemGarden 메인 스킬. SOUL 기반 AI 에이전트 육성 시스템의 진입점.
+description: GolemGarden 메인 라우터. "forge"로 시작하는 모든 명령을 처리한다.
 trigger: forge
 ---
 
-# GolemGarden
+# GolemGarden — 실행 스킬
 
-SOUL 기반 AI 에이전트 육성 시스템. OMC 위에서 동작한다.
+사용자가 "forge"로 시작하는 명령을 입력하면 이 스킬이 트리거된다.
+아래 라우팅 규칙에 따라 적절한 서브스킬로 분기하거나 직접 실행한다.
 
-## 명령어
+## 명령 라우팅
 
-| 명령 | 스킬 | 설명 |
-|------|------|------|
-| `forge-init` | forge-init | 프로젝트 초기화, 팀 구성, SOUL 파일 생성 |
-| `forge build` | forge-team | SOUL별 병렬 실행 (ultrapilot) |
-| `forge quick` | forge-team | 단일 SOUL 자율 실행 (autopilot) |
-| `forge save` | forge-team | 비용 절약 모드 (ecomode) |
-| `forge assign` | forge-team | 특정 SOUL에 수동 배정 |
-| `forge review` | forge-review | 크로스 리뷰 |
-| `forge soul` | forge-soul | 커스텀 SOUL 생성 (대화형) |
-| `forge status` | golem-garden | 팀 상태 + SOUL 랭크 확인 |
-| `forge pack` | golem-garden | 도메인 스킬 팩 관리 |
+사용자 입력을 파싱하여 아래 패턴에 매칭:
 
-## SOUL → OMC 에이전트 매핑
+| 패턴 | 동작 |
+|------|------|
+| `forge-init: ...` 또는 `forge init: ...` | → `forge-init` 스킬 실행 |
+| `forge build: ...` | → `forge-team` 스킬 실행 (ultrapilot 모드) |
+| `forge quick: ...` | → `forge-team` 스킬 실행 (autopilot 모드) |
+| `forge assign {soul}: ...` | → `forge-team` 스킬 실행 (수동 지정 모드) |
+| `forge review ...` | → `forge-review` 스킬 실행 |
+| `forge status` | → 아래 직접 실행 |
+| `forge souls` | → 아래 직접 실행 |
+| `forge rank {name}` | → 아래 직접 실행 |
 
-SOUL의 `role` 필드를 기준으로 OMC 에이전트를 매핑한다.
+## 직접 실행 명령어
 
-| SOUL Role | OMC Agent | 기본 모델 |
-|-----------|-----------|----------|
-| director | architect | opus |
-| backend-developer | executor | sonnet |
-| frontend-developer | designer | sonnet |
-| qa-tester | test-engineer | haiku |
-| devops-engineer | executor | sonnet |
-| data-analyst | scientist | sonnet |
-| technical-writer | writer | haiku |
-| security-auditor | security-reviewer | opus |
+### forge status
+1. Bash로 `bash forge.sh status` 실행 (GOLEM_ROOT에서)
+2. 결과를 사용자에게 보여줌
 
-## 랭크 시스템
+### forge souls
+1. Bash로 `bash forge.sh souls` 실행
 
-| 랭크 | 태스크 완료 | 조건 | 권한 |
-|------|-----------|------|------|
-| Novice | 0 | 생성 직후 | 단일 파일 수정, 리뷰 필수 |
-| Junior | 10+ | 태스크 10회 완료 | 멀티파일 수정, 테스트 작성 |
-| Senior | 50+ | 무결함 10연속 | 아키텍처 제안, 자율 실행 |
-| Lead | 100+ | 멘토링 이력 | 팀 오케스트레이션 |
-| Master | 200+ | 커뮤니티 검증 | 모든 권한 |
+### forge rank {name}
+1. Bash로 `bash forge.sh rank {name}` 실행
 
-## 성장 기록 포맷
+### forge dashboard
+1. Bash로 `bash forge.sh dashboard` 실행
 
-`growth-log/{name}.jsonl` 에 한 줄씩 추가:
-```json
-{"date":"2026-03-30","task":"REST API 설계","result":"success","files_changed":5,"tests_passed":12,"reviewer":"zen","review_result":"pass"}
-```
+### forge soul-create {role}
+1. Bash로 `bash forge.sh soul-create {role}` 실행
+2. 생성된 SOUL 파일 내용을 Read로 확인하여 사용자에게 보여줌
+
+### forge pack install {name}
+1. Bash로 `bash forge.sh pack install {name}` 실행
+
+## GOLEM_ROOT 결정
+
+프로젝트 루트에서 `forge.sh`를 찾아 GOLEM_ROOT를 결정한다:
+1. 현재 작업 디렉토리에 `forge.sh`가 있으면 → 현재 디렉토리
+2. 없으면 → `~/.claude/golem-garden/`에서 찾기
+3. 없으면 → 사용자에게 경로 물어보기
