@@ -81,6 +81,42 @@ EOF
 
 # 메인 라우터
 case "${1:-}" in
+  init)
+    echo "=== GolemGarden 프로젝트 초기화 ==="
+    echo ""
+    echo "이 명령은 Claude Code 대화창에서 실행해야 합니다."
+    echo "Claude Code에서 다음을 입력하세요:"
+    echo ""
+    echo '  forge-init'
+    echo '  forge-init: 풀스택 웹앱, Spring Boot + React'
+    echo ""
+    echo "프로젝트를 자동 스캔하고 SOUL 팀을 구성합니다."
+    echo ""
+    echo "--- 빠른 수동 초기화 ---"
+    echo ""
+    if [ -n "${2:-}" ]; then
+      # 인자가 있으면 팩 설치로 처리
+      case "$2" in
+        fullstack|풀스택) pack_install fullstack ;;
+        gamedev|게임)     pack_install gamedev ;;
+        trading|트레이딩)  pack_install trading ;;
+        *)
+          echo "사용 가능한 팩: fullstack, gamedev, trading"
+          echo "또는 개별 SOUL 생성:"
+          echo "  forge soul-create backend-developer"
+          echo "  forge soul-create frontend-developer"
+          echo "  forge soul-create qa-tester"
+          ;;
+      esac
+    else
+      echo "현재 등록된 SOUL:"
+      soul_list
+      echo ""
+      echo "팩 설치: forge init fullstack | gamedev | trading"
+      echo "개별 생성: forge soul-create <role>"
+    fi
+    ;;
+
   status)
     echo ""
     soul_list

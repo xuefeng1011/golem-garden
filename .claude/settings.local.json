@@ -47,7 +47,17 @@
       "Bash(cp skills/golem-garden/SKILL.md ~/.claude/skills/golem-garden/SKILL.md)",
       "Bash(cp skills/golem-garden/forge-init/SKILL.md ~/.claude/skills/golem-garden/forge-init/SKILL.md)",
       "Bash(cp skills/golem-garden/forge-team/SKILL.md ~/.claude/skills/golem-garden/forge-team/SKILL.md)",
-      "Bash(cp skills/golem-garden/forge-review/SKILL.md ~/.claude/skills/golem-garden/forge-review/SKILL.md)"
+      "Bash(cp skills/golem-garden/forge-review/SKILL.md ~/.claude/skills/golem-garden/forge-review/SKILL.md)",
+      "Bash(~/.bashrc)",
+      "Read(//c/Users/xuefeng1011/**)",
+      "Bash(source ~/.bashrc)",
+      "Bash(forge status:*)",
+      "Bash(bash -i -c \"source ~/.bashrc && forge status\")",
+      "Bash(bash -i -c \"source ~/.bashrc && forge help\")",
+      "Bash(bash \"E:/18_CMS_3.0/00_claude/golem-garden/forge.sh\" help)",
+      "Bash(bash \"E:/18_CMS_3.0/00_claude/golem-garden/forge.sh\" status)",
+      "Bash(bash forge.sh init)",
+      "Bash(bash forge.sh init fullstack)"
     ]
   }
 }

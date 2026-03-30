@@ -142,7 +142,7 @@ forge 팩 설치 풀스택
 
 | 우선순위 | 키워드 | 동작 |
 |---------|--------|------|
-| 1 | `init`, `초기화`, `셋업`, `setup`, `시작`, `팀 구성` | → forge-init |
+| 1 | `init`, `초기화`, `셋업`, `setup`, `시작`, `팀 구성` | → forge-init 스킬 직접 실행 (forge.sh init을 호출하지 않음. 스킬이 직접 프로젝트를 스캔한다) |
 | 2 | `build`, `빌드`, `만들어`, `구현`, `개발` | → forge-team (ultrapilot) |
 | 3 | `quick`, `퀵`, `간단`, `빠르게` | → forge-team (autopilot) |
 | 4 | `assign` 또는 SOUL이름 + 태스크 | → forge-team (수동) |
