@@ -149,7 +149,7 @@ forge 팩 설치 풀스택
 | 5 | `review`, `리뷰`, `검토`, `코드리뷰` | → forge-review |
 | 6 | `status`, `상태`, `현황`, `목록` | → forge status |
 | 7 | `rank`, `랭크`, `레벨`, `승급` | → forge rank |
-| 8 | `soul`, `소울`, `에이전트`, `추가` + 역할 | → forge soul-create |
+| 8 | `soul`, `소울`, `에이전트`, `추가`, `만들어` + 역할 | → forge-soul 스킬 실행 (대화형 문진 생성기) |
 | 9 | `pack`, `팩` | → forge pack |
 
 ### 2. SOUL 이름 감지

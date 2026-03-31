@@ -64,7 +64,10 @@
       "Bash(mv forge-board-trading.md .golem/)",
       "Bash(bash \"E:/18_CMS_3.0/00_claude/golem-garden/forge.sh\" soul-presets)",
       "Read(//e/18_CMS_3.0/03_git/labs3-lb-for-creators-api/.golem/**)",
-      "Bash(rm -f forge-board-fullstack.md forge-board-gamedev.md forge-board-trading.md README.md)"
+      "Bash(rm -f forge-board-fullstack.md forge-board-gamedev.md forge-board-trading.md README.md)",
+      "Bash(mkdir -p ~/.claude/skills/golem-garden/forge-soul)",
+      "Bash(cp \"E:/18_CMS_3.0/00_claude/golem-garden/skills/golem-garden/forge-soul/SKILL.md\" ~/.claude/skills/golem-garden/forge-soul/SKILL.md)",
+      "Bash(cp \"E:/18_CMS_3.0/00_claude/golem-garden/skills/golem-garden/SKILL.md\" ~/.claude/skills/golem-garden/SKILL.md)"
     ]
   }
 }
