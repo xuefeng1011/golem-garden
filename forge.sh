@@ -34,6 +34,12 @@ GolemGarden — AI 에이전트 육성 시스템
 
 Usage: forge <command> [args...]
 
+Project Init:
+  init                프로젝트 초기화 안내 (Claude Code에서는 forge-init 사용)
+  init fullstack      풀스택 팩 바로 설치
+  init gamedev        게임 개발 팩 바로 설치
+  init trading        트레이딩 팩 바로 설치
+
 Commands:
   status              팀 상태 + SOUL 랭크 확인
   souls               등록된 SOUL 목록
