@@ -57,7 +57,11 @@
       "Bash(bash \"E:/18_CMS_3.0/00_claude/golem-garden/forge.sh\" help)",
       "Bash(bash \"E:/18_CMS_3.0/00_claude/golem-garden/forge.sh\" status)",
       "Bash(bash forge.sh init)",
-      "Bash(bash forge.sh init fullstack)"
+      "Bash(bash forge.sh init fullstack)",
+      "Bash(bash forge.sh prompt ryn \"테스트\")",
+      "Bash(mv forge-board-fullstack.md .golem/)",
+      "Bash(mv forge-board-gamedev.md .golem/)",
+      "Bash(mv forge-board-trading.md .golem/)"
     ]
   }
 }

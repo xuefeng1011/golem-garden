@@ -4,7 +4,20 @@
 
 set -e
 
+# 글로벌: GolemGarden 설치 경로 (라이브러리, 템플릿, 도메인팩)
 GOLEM_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# 프로젝트별: .golem/ 디렉토리 (forge-board, souls 오버라이드, growth-log)
+# GOLEM_PROJECT가 환경변수로 지정되면 사용, 아니면 현재 디렉토리
+GOLEM_PROJECT="${GOLEM_PROJECT:-$(pwd)}"
+GOLEM_DIR="${GOLEM_PROJECT}/.golem"
+
+# .golem/ 없으면 자동 생성
+if [ ! -d "${GOLEM_DIR}" ]; then
+  mkdir -p "${GOLEM_DIR}/souls"
+  mkdir -p "${GOLEM_DIR}/growth-log"
+fi
+
 source "${GOLEM_ROOT}/lib/soul-parser.sh"
 source "${GOLEM_ROOT}/lib/growth-log.sh"
 source "${GOLEM_ROOT}/lib/rank-system.sh"

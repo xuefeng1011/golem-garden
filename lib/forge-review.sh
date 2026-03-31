@@ -11,14 +11,13 @@ source "${GOLEM_ROOT}/lib/prompt-builder.sh"
 # 리뷰어 자동 선정 (작업자와 다른 SOUL 중 최적)
 review_select_reviewer() {
   local worker_name="$1"
-  local souls_dir="${GOLEM_ROOT}/souls"
-  local worker_file="${souls_dir}/${worker_name}.md"
+  local worker_file=$(_resolve_soul_file "$worker_name")
 
   soul_parse "$worker_file"
   local worker_role="$SOUL_ROLE"
 
   # QA SOUL이 있으면 우선 배정
-  for soul_file in "$souls_dir"/*.md; do
+  while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
     [ "$SOUL_NAME" = "$worker_name" ] && continue
@@ -26,10 +25,10 @@ review_select_reviewer() {
       echo "$SOUL_NAME"
       return 0
     fi
-  done
+  done < <(_all_soul_files)
 
   # QA가 없으면 Director 배정
-  for soul_file in "$souls_dir"/*.md; do
+  while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
     [ "$SOUL_NAME" = "$worker_name" ] && continue
@@ -37,16 +36,16 @@ review_select_reviewer() {
       echo "$SOUL_NAME"
       return 0
     fi
-  done
+  done < <(_all_soul_files)
 
   # 그 외 아무 다른 SOUL
-  for soul_file in "$souls_dir"/*.md; do
+  while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
     [ "$SOUL_NAME" = "$worker_name" ] && continue
     echo "$SOUL_NAME"
     return 0
-  done
+  done < <(_all_soul_files)
 
   echo ""
   return 1
@@ -55,7 +54,7 @@ review_select_reviewer() {
 # 리뷰 필요 여부 판단 (rank 기반)
 review_is_required() {
   local soul_name="$1"
-  local soul_file="${GOLEM_ROOT}/souls/${soul_name}.md"
+  local soul_file=$(_resolve_soul_file "$soul_name")
 
   soul_parse "$soul_file"
 
@@ -91,8 +90,8 @@ review_execute() {
     echo "[review] 리뷰어 자동 선정: ${reviewer_name}"
   fi
 
-  local worker_file="${GOLEM_ROOT}/souls/${worker_name}.md"
-  local reviewer_file="${GOLEM_ROOT}/souls/${reviewer_name}.md"
+  local worker_file=$(_resolve_soul_file "$worker_name")
+  local reviewer_file=$(_resolve_soul_file "$reviewer_name")
 
   if [ ! -f "$worker_file" ]; then
     echo "[review] ERROR: 작업자 SOUL 없음: ${worker_name}"
@@ -181,7 +180,7 @@ review_status() {
   printf "%-10s %-10s %-12s %-10s %s\n" "SOUL" "Rank" "Review" "Reviews" "Last Review"
   printf "%-10s %-10s %-12s %-10s %s\n" "----" "----" "------" "-------" "-----------"
 
-  for soul_file in "${GOLEM_ROOT}/souls/"*.md; do
+  while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
     local name="$SOUL_NAME"
@@ -198,5 +197,5 @@ review_status() {
     fi
 
     printf "%-10s %-10s %-12s %-10s %s\n" "$name" "$rank" "$review_req" "${review_count}건" "$last_review"
-  done
+  done < <(_all_soul_files)
 }

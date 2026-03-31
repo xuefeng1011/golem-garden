@@ -3,7 +3,11 @@
 # Usage: source lib/growth-log.sh && growth_log_append ryn "REST API 구현" success 5 12
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GROWTH_DIR="${GOLEM_ROOT}/growth-log"
+# 프로젝트별 .golem/growth-log/ 사용, 없으면 글로벌 폴백
+GROWTH_DIR="${GOLEM_DIR:-${GOLEM_ROOT}}/growth-log"
+
+# growth-log 디렉토리 없으면 자동 생성
+[ ! -d "$GROWTH_DIR" ] && mkdir -p "$GROWTH_DIR"
 
 # 성장 기록 추가
 growth_log_append() {

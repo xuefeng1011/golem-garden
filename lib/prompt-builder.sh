@@ -22,7 +22,7 @@ _extract_section() {
 prompt_build() {
   local soul_name="$1"
   local task="$2"
-  local soul_file="${GOLEM_ROOT}/souls/${soul_name}.md"
+  local soul_file=$(_resolve_soul_file "$soul_name")
 
   if [ ! -f "$soul_file" ]; then
     echo "[ERROR] SOUL 파일 없음: ${soul_file}" >&2
@@ -62,8 +62,8 @@ prompt_build_review() {
   local reviewer_name="$1"
   local worker_name="$2"
   local target="$3"
-  local reviewer_file="${GOLEM_ROOT}/souls/${reviewer_name}.md"
-  local worker_file="${GOLEM_ROOT}/souls/${worker_name}.md"
+  local reviewer_file=$(_resolve_soul_file "$reviewer_name")
+  local worker_file=$(_resolve_soul_file "$worker_name")
 
   soul_parse "$reviewer_file"
   local reviewer_role="$SOUL_ROLE"
@@ -97,16 +97,14 @@ PROMPT
 # Director(Nex) 태스크 분배 프롬프트
 prompt_build_director() {
   local task="$1"
-  local souls_dir="${GOLEM_ROOT}/souls"
-
   # 가용 SOUL 목록 수집
   local soul_list=""
-  for soul_file in "$souls_dir"/*.md; do
+  while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
     soul_list="${soul_list}
 - ${SOUL_NAME} (${SOUL_ROLE}): specialty=[${SOUL_SPECIALTY}], rank=${SOUL_RANK}, model=${SOUL_MODEL}"
-  done
+  done < <(_all_soul_files)
 
   cat <<PROMPT
 [GolemGarden Director — 태스크 분배]

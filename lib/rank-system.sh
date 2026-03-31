@@ -25,7 +25,7 @@ rank_index() {
 # 랭크 승급 조건 확인
 rank_check() {
   local soul_name="$1"
-  local soul_file="${GOLEM_ROOT}/souls/${soul_name}.md"
+  local soul_file=$(_resolve_soul_file "$soul_name")
 
   soul_parse "$soul_file"
   local current_rank="$SOUL_RANK"
@@ -83,7 +83,7 @@ rank_check() {
 # 랭크 승급 실행 (SOUL.md 업데이트 + growth-log 기록)
 rank_promote() {
   local soul_name="$1"
-  local soul_file="${GOLEM_ROOT}/souls/${soul_name}.md"
+  local soul_file=$(_resolve_soul_file "$soul_name")
 
   soul_parse "$soul_file"
   local current_rank="$SOUL_RANK"
@@ -135,7 +135,7 @@ rank_dashboard() {
   printf "%-10s %-10s %-8s %-8s %s\n" "SOUL" "Rank" "Tasks" "Streak" "Next Rank"
   printf "%-10s %-10s %-8s %-8s %s\n" "----" "----" "-----" "------" "---------"
 
-  for soul_file in "${GOLEM_ROOT}/souls/"*.md; do
+  while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
     local tasks=$(growth_log_task_count "$SOUL_NAME")
@@ -144,5 +144,5 @@ rank_dashboard() {
     local next="${check:-—}"
 
     printf "%-10s %-10s %-8s %-8s %s\n" "$SOUL_NAME" "$SOUL_RANK" "${tasks}건" "${streak}" "$next"
-  done
+  done < <(_all_soul_files)
 }
