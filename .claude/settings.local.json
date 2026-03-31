@@ -61,7 +61,10 @@
       "Bash(bash forge.sh prompt ryn \"테스트\")",
       "Bash(mv forge-board-fullstack.md .golem/)",
       "Bash(mv forge-board-gamedev.md .golem/)",
-      "Bash(mv forge-board-trading.md .golem/)"
+      "Bash(mv forge-board-trading.md .golem/)",
+      "Bash(bash \"E:/18_CMS_3.0/00_claude/golem-garden/forge.sh\" soul-presets)",
+      "Read(//e/18_CMS_3.0/03_git/labs3-lb-for-creators-api/.golem/**)",
+      "Bash(rm -f forge-board-fullstack.md forge-board-gamedev.md forge-board-trading.md README.md)"
     ]
   }
 }
