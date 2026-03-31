@@ -2,7 +2,7 @@
 # forge.sh — GolemGarden CLI 진입점
 # Usage: bash forge.sh <command> [args...]
 
-set -e
+# set -e 제거: 라이브러리 내 조건문이 false 반환 시 스크립트 중단 방지
 
 # 글로벌: GolemGarden 설치 경로 (라이브러리, 템플릿, 도메인팩)
 GOLEM_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -26,6 +26,7 @@ source "${GOLEM_ROOT}/lib/forge-review.sh"
 source "${GOLEM_ROOT}/lib/portability.sh"
 source "${GOLEM_ROOT}/lib/forge-soul.sh"
 source "${GOLEM_ROOT}/lib/domain-pack.sh"
+source "${GOLEM_ROOT}/lib/knowledge-sync.sh"
 
 # 도움말
 usage() {
@@ -74,6 +75,17 @@ Domain Packs:
   pack install <name> 팩 설치 (SOULs + forge-board)
   pack uninstall <name> 팩 제거
   pack info <name>    팩 상세 정보
+
+Knowledge Sync:
+  sync status           지식 승격 현황 대시보드
+  sync pending          승격 대기열 조회
+  sync history          심사 히스토리
+  sync record <soul> <learning> <scope> <confidence>
+                        학습 수동 기록
+  sync-judge <번호> <promote|hold|reject> [사유]
+                        심사 판정 (수동)
+  sync-promote <soul> <learning>
+                        글로벌 SOUL에 지식 반영
 
 Portability:
   export <name> <target_dir>
@@ -274,6 +286,46 @@ case "${1:-}" in
       exit 1
     fi
     soul_import_pack "$2"
+    ;;
+
+  sync)
+    case "${2:-}" in
+      status)
+        knowledge_dashboard
+        ;;
+      pending)
+        knowledge_pending
+        ;;
+      history)
+        knowledge_history
+        ;;
+      record)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge sync record <soul> <learning> [scope] [confidence]"
+          exit 1
+        fi
+        knowledge_record "$3" "$4" "${5:-universal}" "${6:-medium}" "${7:-}"
+        ;;
+      *)
+        knowledge_dashboard
+        ;;
+    esac
+    ;;
+
+  sync-judge)
+    if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+      echo "Usage: forge sync-judge <번호> <promote|hold|reject> [사유]"
+      exit 1
+    fi
+    knowledge_judge "$2" "$3" "${4:-}"
+    ;;
+
+  sync-promote)
+    if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+      echo "Usage: forge sync-promote <soul> <learning>"
+      exit 1
+    fi
+    knowledge_promote "$2" "$3"
     ;;
 
   portability)

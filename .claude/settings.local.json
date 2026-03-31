@@ -67,7 +67,19 @@
       "Bash(rm -f forge-board-fullstack.md forge-board-gamedev.md forge-board-trading.md README.md)",
       "Bash(mkdir -p ~/.claude/skills/golem-garden/forge-soul)",
       "Bash(cp \"E:/18_CMS_3.0/00_claude/golem-garden/skills/golem-garden/forge-soul/SKILL.md\" ~/.claude/skills/golem-garden/forge-soul/SKILL.md)",
-      "Bash(cp \"E:/18_CMS_3.0/00_claude/golem-garden/skills/golem-garden/SKILL.md\" ~/.claude/skills/golem-garden/SKILL.md)"
+      "Bash(cp \"E:/18_CMS_3.0/00_claude/golem-garden/skills/golem-garden/SKILL.md\" ~/.claude/skills/golem-garden/SKILL.md)",
+      "Bash(bash forge.sh sync status)",
+      "Bash(bash forge.sh sync record ryn \"JPA @BatchSize\\(100\\)이 N+1 해결 최적\" universal high \"인증 API 구현\")",
+      "Bash(bash forge.sh sync record ryn \"포트 8443으로 변경\" project low \"설정 변경\")",
+      "Bash(bash forge.sh sync pending)",
+      "Bash(bash forge.sh sync record ryn \"test learning\" universal high \"test\")",
+      "Bash(bash -x forge.sh sync record ryn \"test\" universal high \"test\")",
+      "Bash(bash -c 'source lib/knowledge-sync.sh && knowledge_record ryn \"\"test learning\"\" universal high \"\"test task\"\"')",
+      "Bash(bash forge.sh sync record ryn \"JPA @BatchSize\\(100\\)이 N+1 해결 최적\" universal high \"인증 API\")",
+      "Bash(bash forge.sh sync record ryn \"포트 8443으로 변경\" project low \"설정\")",
+      "Bash(bash forge.sh sync-judge 2 reject \"프로젝트 전용 설정\")",
+      "Bash(bash forge.sh sync-judge 1 promote)",
+      "Bash(bash forge.sh sync history)"
     ]
   }
 }

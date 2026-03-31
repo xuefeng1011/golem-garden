@@ -1,0 +1,2 @@
+{"date":"2026-04-01","soul":"ryn","learning":"포트 8443으로 변경","verdict":"reject","reason":"프로젝트 전용 설정"}
+{"date":"2026-04-01","soul":"ryn","learning":"JPA @BatchSize(100)이 N+1 해결 최적","verdict":"promote","reason":""}
