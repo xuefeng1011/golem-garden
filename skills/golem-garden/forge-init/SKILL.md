@@ -100,10 +100,22 @@ bash forge.sh soul-create frontend-developer
 bash forge.sh soul-create qa-tester
 ```
 
-### Step 2: SOUL 컨텍스트 커스터마이징
+### Step 2: SOUL 컨텍스트 커스터마이징 (프로젝트별 오버라이드)
 
-생성된 각 SOUL 파일(`souls/{name}.md`)을 Read로 읽고,
-**Step 0에서 분석한 실제 프로젝트 정보**로 Edit하여 업데이트한다:
+**글로벌 SOUL 원본은 건드리지 않는다.**
+대신 `.golem/souls/`에 프로젝트별 오버라이드 파일을 생성한다.
+
+#### 절차:
+
+1. `.golem/souls/` 디렉토리 생성 (없으면):
+   ```bash
+   mkdir -p .golem/souls
+   ```
+
+2. 팀에 배정된 각 SOUL에 대해:
+   - 글로벌 원본(`~/.claude/golem-garden/souls/{name}.md`)을 Read로 읽기
+   - 원본을 복사하여 `.golem/souls/{name}.md`로 Write
+   - **Step 0에서 분석한 실제 프로젝트 정보**로 `프로젝트 컨텍스트` 섹션을 수정:
 
 ```markdown
 ## 프로젝트 컨텍스트 (프롬프트에 주입됨)
@@ -113,13 +125,30 @@ bash forge.sh soul-create qa-tester
 - 우선순위: {프로젝트 상태 기반 판단}
 ```
 
-**중요: 프리셋 기본값이 아닌 실제 분석 결과를 반영한다.**
-예) 프리셋은 "Spring Boot 3.x"이지만, 실제 pom.xml이 2.7이면 "Spring Boot 2.7"로 반영.
+**중요:**
+- 글로벌 원본은 절대 수정하지 않음 → 다른 프로젝트에 영향 없음
+- `.golem/souls/`에 있는 파일이 글로벌보다 우선 적용됨
+- 프리셋 기본값이 아닌 **실제 분석 결과**를 반영
+  예) 프리셋은 "Spring Boot 3.x"이지만, pom.xml이 2.7이면 "Spring Boot 2.7"로 반영
 
-### Step 3: forge-board.md 생성
+3. `.golem/growth-log/` 초기화:
+   ```bash
+   mkdir -p .golem/growth-log
+   ```
+   각 SOUL에 대해 초기 로그 생성:
+   ```bash
+   bash forge.sh log-add {name} "forge-init" success 0 0
+   ```
 
-프로젝트 루트에 `forge-board.md`를 생성한다.
+### Step 3: .golem/forge-board.md 생성
+
+`.golem/forge-board.md`를 생성한다.
 `templates/forge-board.md`를 Read로 읽고, 분석 결과 + 팀 구성으로 채워서 Write한다.
+
+```bash
+mkdir -p .golem
+# Write로 .golem/forge-board.md 생성
+```
 
 ### Step 4: 결과 보고
 
@@ -146,10 +175,13 @@ AI 실행:
 
 7. (사용자 확인 후)
 8. bash forge.sh pack install fullstack
-9. souls/ryn.md Edit → "Spring Boot 3.2, MariaDB" 반영
-10. souls/kai.md Edit → "React 18, TypeScript" 반영
-11. forge-board.md Write
-12. bash forge.sh status → 결과 출력
+9. mkdir -p .golem/souls
+10. 글로벌 souls/ryn.md 복사 → .golem/souls/ryn.md Write
+    → 기술스택: "Spring Boot 3.2, MariaDB" 반영
+11. 글로벌 souls/kai.md 복사 → .golem/souls/kai.md Write
+    → 기술스택: "React 18, TypeScript" 반영
+12. .golem/forge-board.md Write
+13. bash forge.sh status → 결과 출력
 ```
 
 ### 예시 B: 기술스택을 직접 알려준 경우
@@ -159,12 +191,14 @@ AI 실행:
 
 AI 실행:
 1. [스캔 생략 — 사용자가 이미 알려줌]
-2. bash forge.sh soul-create backend-developer  → Ryn
-3. souls/ryn.md Edit → "Django 4.x, PostgreSQL" 반영 (Spring 대신)
-4. bash forge.sh soul-create frontend-developer → Kai
-5. souls/kai.md Edit → "React, TypeScript" 반영
-6. bash forge.sh soul-create qa-tester → Zen
-7. forge-board.md Write
+2. bash forge.sh soul-create backend-developer  → Ryn (글로벌)
+3. 글로벌 souls/ryn.md 복사 → .golem/souls/ryn.md
+   → "Django 4.x, PostgreSQL" 반영 (Spring 대신)
+4. bash forge.sh soul-create frontend-developer → Kai (글로벌)
+5. 글로벌 souls/kai.md 복사 → .golem/souls/kai.md
+   → "React, TypeScript" 반영
+6. bash forge.sh soul-create qa-tester → Zen (글로벌)
+7. .golem/forge-board.md Write
 8. bash forge.sh status
 ```
 
