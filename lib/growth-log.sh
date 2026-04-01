@@ -73,18 +73,29 @@ growth_log_streak() {
   fi
 
   # 최근 항목부터 역순으로 연속 성공 카운트
-  tac "$log_file" | while IFS= read -r line; do
+  # tac 대신 tail -r 폴백, 파이프 서브셸 대신 프로세스 치환 사용
+  local reversed
+  if command -v tac >/dev/null 2>&1; then
+    reversed=$(tac "$log_file")
+  else
+    reversed=$(tail -r "$log_file" 2>/dev/null || sed -n '1!G;h;$p' "$log_file")
+  fi
+
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
     # RANK_UP 이벤트는 건너뜀
     echo "$line" | grep -q '"task":"RANK_UP"' && continue
     # forge-init 이벤트는 건너뜀
     echo "$line" | grep -q '"task":"forge-init"' && continue
+    # pack-install 이벤트는 건너뜀
+    echo "$line" | grep -q '"task":"pack-install' && continue
 
     if echo "$line" | grep -q '"result":"success"'; then
       streak=$((streak + 1))
     else
       break
     fi
-  done
+  done <<< "$reversed"
   echo "$streak"
 }
 

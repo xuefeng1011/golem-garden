@@ -65,7 +65,8 @@ _pick_name() {
   for name in $name_pool; do
     name=$(echo "$name" | tr -d ' ')
     local lower_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
-    if [ ! -f "${GOLEM_ROOT}/souls/${lower_name}.md" ]; then
+    # 프로젝트 오버라이드와 글로벌 모두 확인
+    if [ ! -f "${GOLEM_DIR}/souls/${lower_name}.md" ] && [ ! -f "${GOLEM_ROOT}/souls/${lower_name}.md" ]; then
       echo "$name"
       return 0
     fi
@@ -73,7 +74,8 @@ _pick_name() {
   # 모든 이름 사용 중이면 숫자 접미사
   local first=$(echo "$name_pool" | cut -d',' -f1 | tr -d ' ')
   local i=2
-  while [ -f "${GOLEM_ROOT}/souls/$(echo "${first}${i}" | tr '[:upper:]' '[:lower:]').md" ]; do
+  while [ -f "${GOLEM_ROOT}/souls/$(echo "${first}${i}" | tr '[:upper:]' '[:lower:]').md" ] || \
+        [ -f "${GOLEM_DIR}/souls/$(echo "${first}${i}" | tr '[:upper:]' '[:lower:]').md" ]; do
     i=$((i + 1))
   done
   echo "${first}${i}"
@@ -108,8 +110,8 @@ soul_create_from_preset() {
   fi
   local lower_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
 
-  # 이미 존재하는지 확인
-  if [ -f "${GOLEM_ROOT}/souls/${lower_name}.md" ]; then
+  # 이미 존재하는지 확인 (프로젝트 오버라이드 + 글로벌)
+  if [ -f "${GOLEM_DIR}/souls/${lower_name}.md" ] || [ -f "${GOLEM_ROOT}/souls/${lower_name}.md" ]; then
     echo "[forge-soul] ERROR: ${name} SOUL이 이미 존재합니다."
     return 1
   fi
@@ -177,7 +179,7 @@ ${principles_lines}
 SOUL
 
   # growth-log 초기화
-  echo "{\"date\":\"${date}\",\"task\":\"forge-soul-create\",\"result\":\"success\",\"files_changed\":0,\"tests_passed\":0}" > "${GOLEM_ROOT}/growth-log/${lower_name}.jsonl"
+  echo "{\"date\":\"${date}\",\"task\":\"forge-soul-create\",\"result\":\"success\",\"files_changed\":0,\"tests_passed\":0}" > "${GROWTH_DIR}/${lower_name}.jsonl"
 
   echo "[forge-soul] ${name} (${role}) 생성 완료!"
   echo "  파일: souls/${lower_name}.md"
@@ -197,7 +199,7 @@ soul_create_custom() {
   local lower_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
   local date=$(date +%Y-%m-%d)
 
-  if [ -f "${GOLEM_ROOT}/souls/${lower_name}.md" ]; then
+  if [ -f "${GOLEM_DIR}/souls/${lower_name}.md" ] || [ -f "${GOLEM_ROOT}/souls/${lower_name}.md" ]; then
     echo "[forge-soul] ERROR: ${name} SOUL이 이미 존재합니다."
     return 1
   fi
@@ -229,7 +231,7 @@ created: ${date}
 - ${date}: 생성 (Novice)
 SOUL
 
-  echo "{\"date\":\"${date}\",\"task\":\"forge-soul-create\",\"result\":\"success\",\"files_changed\":0,\"tests_passed\":0}" > "${GOLEM_ROOT}/growth-log/${lower_name}.jsonl"
+  echo "{\"date\":\"${date}\",\"task\":\"forge-soul-create\",\"result\":\"success\",\"files_changed\":0,\"tests_passed\":0}" > "${GROWTH_DIR}/${lower_name}.jsonl"
 
   echo "[forge-soul] ${name} (${role}) 커스텀 생성 완료!"
   echo "  파일: souls/${lower_name}.md"

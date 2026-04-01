@@ -8,6 +8,15 @@ GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GOLEM_DIR="${GOLEM_DIR:-${GOLEM_ROOT}}"
 GOLEM_PROJECT="${GOLEM_PROJECT:-${GOLEM_ROOT}}"
 
+# 플랫폼 호환 sed -i 래퍼 (GNU/BSD 대응)
+_sed_i() {
+  if sed --version 2>/dev/null | grep -q 'GNU'; then
+    sed -i "$@"
+  else
+    sed -i '' "$@"
+  fi
+}
+
 # SOUL 파일 검색: .golem/souls/ 우선 → 글로벌 souls/ 폴백
 _resolve_soul_file() {
   local name="$1"

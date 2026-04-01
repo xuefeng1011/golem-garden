@@ -98,7 +98,7 @@ rank_promote() {
   local reason=$(echo "$check_result" | cut -d: -f3-)
 
   # SOUL.md에서 rank 필드 업데이트
-  sed -i "s/^rank: ${current_rank}/rank: ${next_rank}/" "$soul_file"
+  _sed_i "s/^rank: ${current_rank}/rank: ${next_rank}/" "$soul_file"
 
   # growth-log에 승급 이벤트 기록
   growth_log_rank_up "$soul_name" "$current_rank" "$next_rank" "$reason"

@@ -6,6 +6,9 @@ GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${GOLEM_ROOT}/lib/soul-parser.sh"
 source "${GOLEM_ROOT}/lib/growth-log.sh"
 
+# GROWTH_DIR 명시적 보장 (growth-log.sh source 순서 비의존)
+GROWTH_DIR="${GROWTH_DIR:-${GOLEM_DIR:-${GOLEM_ROOT}}/growth-log}"
+
 # SOUL을 다른 프로젝트로 내보내기
 soul_export() {
   local soul_name="$1"

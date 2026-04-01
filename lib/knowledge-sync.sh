@@ -88,7 +88,7 @@ knowledge_judge() {
   echo "{\"date\":\"${date}\",\"soul\":\"${soul}\",\"learning\":\"${learning}\",\"verdict\":\"${verdict}\",\"reason\":\"${reason}\"}" >> "$HISTORY_FILE"
 
   # pending에서 제거
-  sed -i "${line_num}d" "$PENDING_FILE"
+  _sed_i "${line_num}d" "$PENDING_FILE"
 
   case "$verdict" in
     promote)
@@ -121,12 +121,19 @@ knowledge_promote() {
     return 0
   fi
 
-  # 전문 지식 섹션의 마지막 항목 뒤에 추가
-  sed -i "/^## 전문 지식/,/^## /{/^## [^전]/!{/^$/!{/^- /H}}}" "$soul_file"
-  # 간단하게: 전문 지식 섹션의 마지막 - 항목 뒤에 삽입
-  local last_line=$(grep -n "^- " "$soul_file" | tail -1 | cut -d: -f1)
-  if [ -n "$last_line" ]; then
-    sed -i "${last_line}a\\- ${learning} (자동 승격: $(date +%Y-%m-%d))" "$soul_file"
+  # 전문 지식 섹션 범위 내에서만 마지막 bullet 라인 찾기
+  local last_line
+  last_line=$(awk '/^## 전문 지식/{start=NR; next} start && /^## /{exit} start && /^- /{line=NR} END{print line+0}' "$soul_file")
+
+  if [ "$last_line" -gt 0 ] 2>/dev/null; then
+    _sed_i "${last_line}a\\- ${learning} (자동 승격: $(date +%Y-%m-%d))" "$soul_file"
+  else
+    # 전문 지식 섹션 헤더 바로 다음에 삽입
+    local header_line
+    header_line=$(grep -n "^## 전문 지식" "$soul_file" | head -1 | cut -d: -f1)
+    if [ -n "$header_line" ]; then
+      _sed_i "${header_line}a\\- ${learning} (자동 승격: $(date +%Y-%m-%d))" "$soul_file"
+    fi
   fi
 
   echo "[knowledge] ✅ 글로벌 반영: ${soul_name} ← ${learning}"

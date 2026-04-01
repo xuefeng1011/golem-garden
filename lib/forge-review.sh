@@ -107,19 +107,28 @@ review_execute() {
   echo "[review] ${worker_name} rank 기반 리뷰 정책: ${review_req}"
 
   # 리뷰 프롬프트 생성
-  echo ""
-  echo "=== 리뷰 프롬프트 ==="
-  prompt_build_review "$reviewer_name" "$worker_name" "$target"
+  local review_prompt
+  review_prompt=$(prompt_build_review "$reviewer_name" "$worker_name" "$target")
 
   # OMC 에이전트 정보
   soul_parse "$reviewer_file"
   local omc_agent=$(soul_to_omc_agent "$SOUL_ROLE")
+
   echo ""
-  echo "=== OMC 실행 정보 ==="
+  echo "=== OMC 리뷰 실행 ==="
   echo "  리뷰어: ${reviewer_name} (${SOUL_ROLE})"
   echo "  OMC Agent: ${omc_agent}"
   echo "  모델: ${SOUL_MODEL}"
   echo "  대상: ${target}"
+  echo ""
+
+  # 프롬프트를 표준 출력으로 전달 (OMC/Claude Code에서 파이프로 활용)
+  echo "--- REVIEW_PROMPT_START ---"
+  echo "$review_prompt"
+  echo "--- REVIEW_PROMPT_END ---"
+  echo ""
+  echo "[review] 프롬프트 생성 완료. OMC 에이전트(${omc_agent}, model=${SOUL_MODEL})에 전달하세요."
+  echo "[review] 실행 예시: claude --agent ${omc_agent} --model ${SOUL_MODEL} --prompt '<위 프롬프트>'"
 
   return 0
 }
