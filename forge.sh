@@ -221,7 +221,7 @@ case "${1:-}" in
     growth_log_summary "$2"
     echo ""
     echo "--- 상세 기록 ---"
-    cat "${GOLEM_ROOT}/growth-log/${2}.jsonl" 2>/dev/null || echo "(기록 없음)"
+    cat "${GROWTH_DIR}/${2}.jsonl" 2>/dev/null || echo "(기록 없음)"
     ;;
 
   log-add)

@@ -77,9 +77,12 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record {worke
 ### Step 5: 이슈 수정 (fail인 경우)
 
 리뷰 결과가 `fail`이면:
-1. 리뷰 피드백을 작업자 SOUL에게 전달
-2. `forge assign {worker}: "리뷰 피드백 반영: {피드백 내용}"` 형태로 수정 요청
-3. 수정 완료 후 재리뷰 (최대 2회)
+1. 리뷰 피드백을 사용자에게 보고한다
+2. **자동으로 forge assign을 트리거하지 않는다** (재귀 루프 방지)
+3. 사용자에게 수정 방안을 제안하고 선택을 기다린다:
+   - "리뷰 이슈 {N}건 발견. 수정하시겠습니까? (`forge assign {worker}: 리뷰 피드백 반영`)"
+4. 사용자가 수정을 요청하면 그때 forge-assign 실행
+5. 재리뷰는 최대 1회, 사용자 명시적 요청 시에만 실행
 
 ### Step 6: 랭크 승급 체크
 

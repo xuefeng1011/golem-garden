@@ -77,19 +77,31 @@ trigger: forge build, forge quick, forge save, forge assign
 
 2. 랭크 체크 자동 실행 (log-add에 포함됨)
 
-### Step 5: 자동 리뷰 트리거
+### Step 5: 자동 리뷰 트리거 (선택적)
+
+**중요: 리뷰는 빌드 완료 후 별도 단계로만 실행. 리뷰 결과로 인한 재빌드(forge assign)는 절대 자동 트리거하지 않는다.**
 
 1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-auto {soul_name} "{task}"` 실행
-   - Novice/Junior SOUL이면 자동으로 리뷰 시작 → forge-review 스킬로 이동
+   - Novice/Junior SOUL이면 리뷰 필요 여부만 알려줌
    - Senior 이상이면 건너뜀
+2. 리뷰가 필요한 경우, **결과 보고에 리뷰 권고 사항만 포함**한다
+3. **리뷰 실행은 사용자가 `forge review`로 별도 요청해야 한다** (자동 실행 금지)
 
-### Step 6: 결과 보고
+### Step 6: 결과 보고 (빌드 종료 시그널)
+
+**이 단계를 출력하면 forge-build가 완전히 종료된다. 추가 forge 명령을 자동으로 실행하지 않는다.**
 
 사용자에게 요약 보고:
 - 각 SOUL별 태스크 결과
 - 변경된 파일 목록
 - 테스트 결과
 - 랭크 변동 사항
+- (리뷰 필요 시) "리뷰 권고: `forge review {soul}`로 실행하세요"
+
+**⛔ 종료 규칙:**
+- Step 6 출력 후 forge-team 스킬은 완료 상태
+- 추가 forge 명령(forge assign, forge review 등)을 자동 호출하지 않는다
+- 사용자의 다음 입력을 기다린다
 
 ## 예시 실행 흐름
 
