@@ -58,7 +58,7 @@ growth_log_task_count() {
     return
   fi
 
-  grep '"result":"success"' "$log_file" 2>/dev/null | grep -v '"task":"forge-init"' | grep -v '"task":"RANK_UP"' | wc -l | tr -d ' \r'
+  grep '"result":"success"' "$log_file" 2>/dev/null | grep -v '"task":"forge-init"' | grep -v '"task":"RANK_UP"' | grep -v '"task":"pack-install' | grep -v '"task":"forge-soul-create"' | wc -l | tr -d ' \r'
 }
 
 # 연속 무결함 카운트 (최근 연속으로 issues_found=0 또는 review_result=pass)
@@ -109,7 +109,7 @@ growth_log_success_rate() {
     return
   fi
 
-  local total=$(grep '"task":' "$log_file" 2>/dev/null | grep -v '"task":"RANK_UP"' | grep -v '"task":"forge-init"' | wc -l | tr -d ' \r')
+  local total=$(grep '"task":' "$log_file" 2>/dev/null | grep -v '"task":"RANK_UP"' | grep -v '"task":"forge-init"' | grep -v '"task":"pack-install' | grep -v '"task":"forge-soul-create"' | wc -l | tr -d ' \r')
   total=${total:-0}
 
   if [ "$total" -eq 0 ]; then
@@ -117,7 +117,7 @@ growth_log_success_rate() {
     return
   fi
 
-  local success=$(grep '"result":"success"' "$log_file" 2>/dev/null | grep -v '"task":"RANK_UP"' | grep -v '"task":"forge-init"' | wc -l | tr -d ' \r')
+  local success=$(grep '"result":"success"' "$log_file" 2>/dev/null | grep -v '"task":"RANK_UP"' | grep -v '"task":"forge-init"' | grep -v '"task":"pack-install' | grep -v '"task":"forge-soul-create"' | wc -l | tr -d ' \r')
   success=${success:-0}
   echo $(( (success * 100) / total ))
 }
