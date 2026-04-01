@@ -172,7 +172,7 @@ SOUL의 캐릭터성을 부여하여 팀원처럼 느끼게 한다.
 
 3. growth-log 초기화:
    ```bash
-   bash forge.sh log-add {name} "forge-soul-create" success 0 0
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {name} "forge-soul-create" success 0 0
    ```
 
 #### 3-2. 생성 결과 리뷰

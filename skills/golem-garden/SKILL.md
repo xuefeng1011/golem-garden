@@ -171,32 +171,46 @@ forge 팩 설치 풀스택
 ## 직접 실행 명령어
 
 ### forge status / forge 상태
-1. Bash로 `bash forge.sh status` 실행 (GOLEM_ROOT에서)
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh status` 실행 (GOLEM_ROOT에서)
 2. 결과를 사용자에게 보여줌
 
 ### forge souls / SOUL 목록
-1. Bash로 `bash forge.sh souls` 실행
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh souls` 실행
 
 ### forge rank {name}
-1. Bash로 `bash forge.sh rank {name}` 실행
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh rank {name}` 실행
 
 ### forge dashboard
-1. Bash로 `bash forge.sh dashboard` 실행
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh dashboard` 실행
 
 ### forge soul-create {role}
-1. Bash로 `bash forge.sh soul-create {role}` 실행
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create {role}` 실행
 2. 생성된 SOUL 파일 내용을 사용자에게 보여줌
 
 ### forge pack install {name}
-1. Bash로 `bash forge.sh pack install {name}` 실행
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh pack install {name}` 실행
+
+## forge.sh 호출 규칙 (중요)
+
+**모든 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh` 호출 시 반드시 `GOLEM_PROJECT`를 현재 작업 디렉토리로 설정하라:**
+
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh {command} {args}
+```
+
+이렇게 하면:
+- `.golem/souls/` 프로젝트 오버라이드가 적용됨
+- `.golem/growth-log/` 프로젝트별 성장 기록에 저장됨
+- `.golem/forge-board.md` 팀 구성이 읽힘
+
+**절대 `GOLEM_PROJECT` 없이 호출하지 마라.** 글로벌에만 기록되고 프로젝트에 반영 안 됨.
 
 ## GOLEM_ROOT 결정
 
-프로젝트 루트에서 `forge.sh`를 찾아 GOLEM_ROOT를 결정한다:
-1. 현재 작업 디렉토리에 `forge.sh`가 있으면 → 현재 디렉토리
-2. 없으면 → `~/.claude/golem-garden/`에서 찾기
-3. 없으면 → golem-garden 리포를 clone한 경로에서 찾기
-4. 없으면 → 사용자에게 경로 물어보기
+forge.sh는 `~/.claude/golem-garden/forge.sh` 에 설치되어 있다.
+1. 글로벌 경로: `~/.claude/golem-garden/`
+2. 프로젝트 경로: 현재 작업 디렉토리의 `.golem/`
+3. 없으면 → 사용자에게 경로 물어보기
 
 ## 오타 / 오입력 처리
 

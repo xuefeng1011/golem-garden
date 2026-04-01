@@ -92,12 +92,12 @@ Bash: find . -maxdepth 3 -type d | grep -v node_modules | grep -v .git | grep -v
 
 ```bash
 # 팩 매칭 시
-bash forge.sh pack install fullstack
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh pack install fullstack
 
 # 개별 생성 시
-bash forge.sh soul-create backend-developer
-bash forge.sh soul-create frontend-developer
-bash forge.sh soul-create qa-tester
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create backend-developer
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create frontend-developer
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create qa-tester
 ```
 
 ### Step 2: SOUL 컨텍스트 커스터마이징 (프로젝트별 오버라이드)
@@ -137,7 +137,7 @@ bash forge.sh soul-create qa-tester
    ```
    각 SOUL에 대해 초기 로그 생성:
    ```bash
-   bash forge.sh log-add {name} "forge-init" success 0 0
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {name} "forge-init" success 0 0
    ```
 
 ### Step 3: .golem/forge-board.md 생성
@@ -152,7 +152,7 @@ mkdir -p .golem
 
 ### Step 4: 결과 보고
 
-`bash forge.sh status` 실행하여 최종 팀 구성을 사용자에게 보여준다.
+`GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh status` 실행하여 최종 팀 구성을 사용자에게 보여준다.
 
 ## 예시 실행 흐름
 
@@ -174,14 +174,14 @@ AI 실행:
     이 구성으로 팀을 만들까요?"
 
 7. (사용자 확인 후)
-8. bash forge.sh pack install fullstack
+8. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh pack install fullstack
 9. mkdir -p .golem/souls
 10. 글로벌 souls/ryn.md 복사 → .golem/souls/ryn.md Write
     → 기술스택: "Spring Boot 3.2, MariaDB" 반영
 11. 글로벌 souls/kai.md 복사 → .golem/souls/kai.md Write
     → 기술스택: "React 18, TypeScript" 반영
 12. .golem/forge-board.md Write
-13. bash forge.sh status → 결과 출력
+13. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh status → 결과 출력
 ```
 
 ### 예시 B: 기술스택을 직접 알려준 경우
@@ -191,15 +191,15 @@ AI 실행:
 
 AI 실행:
 1. [스캔 생략 — 사용자가 이미 알려줌]
-2. bash forge.sh soul-create backend-developer  → Ryn (글로벌)
+2. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create backend-developer  → Ryn (글로벌)
 3. 글로벌 souls/ryn.md 복사 → .golem/souls/ryn.md
    → "Django 4.x, PostgreSQL" 반영 (Spring 대신)
-4. bash forge.sh soul-create frontend-developer → Kai (글로벌)
+4. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create frontend-developer → Kai (글로벌)
 5. 글로벌 souls/kai.md 복사 → .golem/souls/kai.md
    → "React, TypeScript" 반영
-6. bash forge.sh soul-create qa-tester → Zen (글로벌)
+6. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create qa-tester → Zen (글로벌)
 7. .golem/forge-board.md Write
-8. bash forge.sh status
+8. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh status
 ```
 
 ### 예시 C: 신규 빈 프로젝트

@@ -26,7 +26,7 @@ trigger: forge build, forge quick, forge save, forge assign
 
 #### 자동 분배 (forge build)
 
-1. `bash forge.sh prompt-director "{task}"` 실행하여 Director 프롬프트 생성
+1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt-director "{task}"` 실행하여 Director 프롬프트 생성
 2. Director(Nex)를 Agent(subagent_type=architect, model=opus)로 실행:
    - 프롬프트에 가용 SOUL 목록 + 태스크 포함
    - Director가 서브태스크 분배 결과를 반환
@@ -40,7 +40,7 @@ trigger: forge build, forge quick, forge save, forge assign
 
 각 배정된 SOUL에 대해:
 
-1. `bash forge.sh prompt {soul_name} "{task}"` 실행하여 프롬프트 생성
+1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt {soul_name} "{task}"` 실행하여 프롬프트 생성
 2. SOUL의 role에 따른 OMC 에이전트 결정:
 
 | SOUL Role | Agent subagent_type | model |
@@ -70,7 +70,7 @@ trigger: forge build, forge quick, forge save, forge assign
 
 각 SOUL의 태스크 완료 후:
 
-1. `bash forge.sh log-add {soul_name} "{task}" {result} {files_changed} {tests_passed}` 실행
+1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {soul_name} "{task}" {result} {files_changed} {tests_passed}` 실행
    - result: 에이전트가 성공적으로 완료했으면 "success", 실패하면 "fail"
    - files_changed: 변경된 파일 수 (git diff --stat로 확인)
    - tests_passed: 통과한 테스트 수 (테스트 실행 결과에서 확인)
@@ -79,7 +79,7 @@ trigger: forge build, forge quick, forge save, forge assign
 
 ### Step 5: 자동 리뷰 트리거
 
-1. `bash forge.sh review-auto {soul_name} "{task}"` 실행
+1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-auto {soul_name} "{task}"` 실행
    - Novice/Junior SOUL이면 자동으로 리뷰 시작 → forge-review 스킬로 이동
    - Senior 이상이면 건너뜀
 
@@ -102,8 +102,8 @@ AI 실행:
    - Agent(executor, sonnet, Ryn 컨텍스트 + "인증 API 구현")
    - Agent(designer, sonnet, Kai 컨텍스트 + "로그인 화면 구현")
 3. 완료 후:
-   - bash forge.sh log-add ryn "인증 API" success 8 15
-   - bash forge.sh log-add kai "로그인 화면" success 3 6
+   - GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add ryn "인증 API" success 8 15
+   - GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add kai "로그인 화면" success 3 6
 4. 자동 리뷰 (둘 다 Novice이므로):
    - forge-review 스킬로 자동 연결
 

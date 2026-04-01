@@ -33,7 +33,7 @@ forge sync history          ← 심사 히스토리
 ### Step 1: 대기열 확인
 
 ```bash
-bash forge.sh sync pending
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync pending
 ```
 
 대기열이 비어있으면 종료.
@@ -83,20 +83,20 @@ Sage의 응답을 파싱하여:
 
 - **promote**:
   ```bash
-  bash forge.sh sync-promote {soul_name} "{learning}"
+  GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync-promote {soul_name} "{learning}"
   # → 글로벌 souls/{name}.md 전문 지식에 추가
   # → 심사 히스토리에 기록
   ```
 
 - **hold**:
   ```bash
-  bash forge.sh sync-judge {번호} hold "{reason}"
+  GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync-judge {번호} hold "{reason}"
   # → 대기열에 유지, 다음 심사 때 재검토
   ```
 
 - **reject**:
   ```bash
-  bash forge.sh sync-judge {번호} reject "{reason}"
+  GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync-judge {번호} reject "{reason}"
   # → 대기열에서 제거, 히스토리에 기각 기록
   ```
 

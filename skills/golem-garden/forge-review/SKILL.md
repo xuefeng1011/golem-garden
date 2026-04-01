@@ -23,7 +23,7 @@ trigger: forge review
 
 1. 작업자(worker) SOUL 결정
 2. 리뷰어(reviewer) 결정:
-   - 지정되지 않은 경우 `bash forge.sh review {worker}` 실행 → 자동 선정
+   - 지정되지 않은 경우 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review {worker}` 실행 → 자동 선정
    - QA SOUL 우선, 없으면 Director, 없으면 다른 아무 SOUL
 3. 리뷰 대상 결정:
    - 지정된 경우 해당 파일/모듈
@@ -31,7 +31,7 @@ trigger: forge review
 
 ### Step 2: 리뷰 프롬프트 생성
 
-`bash forge.sh prompt-review {reviewer} {worker} "{target}"` 실행하여 리뷰 프롬프트 생성.
+`GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt-review {reviewer} {worker} "{target}"` 실행하여 리뷰 프롬프트 생성.
 
 생성되는 프롬프트 구조:
 ```
@@ -71,7 +71,7 @@ Agent(
 리뷰 에이전트의 결과를 파싱하여:
 
 ```bash
-bash forge.sh review-record {worker} {reviewer} "{target}" {result} {issues_found} {severity}
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record {worker} {reviewer} "{target}" {result} {issues_found} {severity}
 ```
 
 ### Step 5: 이슈 수정 (fail인 경우)
@@ -84,12 +84,12 @@ bash forge.sh review-record {worker} {reviewer} "{target}" {result} {issues_foun
 ### Step 6: 랭크 승급 체크
 
 ```bash
-bash forge.sh rank {worker}
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh rank {worker}
 ```
 
 승급 가능하면:
 ```bash
-bash forge.sh promote {worker}
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh promote {worker}
 ```
 
 ### Step 7: 결과 보고
@@ -110,8 +110,8 @@ AI 실행:
 2. 리뷰 프롬프트 생성 (Zen의 전문 지식 기반)
 3. Agent(code-reviewer, haiku, 리뷰 프롬프트) 실행
 4. 결과: pass, 0건 이슈
-5. bash forge.sh review-record ryn zen "전체 변경사항" pass 0 none
-6. bash forge.sh rank ryn → "novice 유지 (tasks=5, streak=3)"
+5. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record ryn zen "전체 변경사항" pass 0 none
+6. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh rank ryn → "novice 유지 (tasks=5, streak=3)"
 
 응답: "리뷰 완료! Zen이 Ryn의 코드를 리뷰 → Pass (이슈 0건). 무결함 3연속!"
 ```

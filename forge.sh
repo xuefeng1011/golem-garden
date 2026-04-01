@@ -8,9 +8,20 @@
 GOLEM_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # 프로젝트별: .golem/ 디렉토리 (forge-board, souls 오버라이드, growth-log)
-# GOLEM_PROJECT가 환경변수로 지정되면 사용, 아니면 현재 디렉토리
-GOLEM_PROJECT="${GOLEM_PROJECT:-$(pwd)}"
-GOLEM_DIR="${GOLEM_PROJECT}/.golem"
+# 우선순위: GOLEM_PROJECT 환경변수 → pwd에 .golem/이 있으면 → GOLEM_ROOT 폴백
+if [ -n "${GOLEM_PROJECT:-}" ]; then
+  GOLEM_DIR="${GOLEM_PROJECT}/.golem"
+elif [ -d "$(pwd)/.golem" ]; then
+  GOLEM_PROJECT="$(pwd)"
+  GOLEM_DIR="$(pwd)/.golem"
+elif [ -d "${OLDPWD:-}/.golem" ]; then
+  # Claude Code가 cd 후 실행한 경우 OLDPWD 확인
+  GOLEM_PROJECT="${OLDPWD}"
+  GOLEM_DIR="${OLDPWD}/.golem"
+else
+  GOLEM_PROJECT="$(pwd)"
+  GOLEM_DIR="${GOLEM_ROOT}/.golem"
+fi
 
 # .golem/ 없으면 자동 생성
 if [ ! -d "${GOLEM_DIR}" ]; then
