@@ -63,3 +63,53 @@ State: `.omc/state/`, `.omc/state/sessions/{sessionId}/`, `.omc/notepad.md`, `.o
 Say "setup omc" or run `/oh-my-claudecode:omc-setup`.
 
 <!-- OMC:END -->
+
+# GolemGarden — 프로젝트 고유 지침
+
+이 프로젝트는 AI 에이전트 페르소나(SOUL) 관리 시스템이다.
+Bash 스크립트 + Markdown 기반으로 Claude Code CLI 위에서 동작한다.
+
+## 핵심 규칙
+
+<golem_rules>
+- `forge` 키워드 입력 시 `golem-garden` 스킬을 사용하라
+- SOUL 파일(`souls/*.md`)은 직접 Edit/Write 하지 마라 — `forge soul-create` 또는 `forge-init`을 사용
+- growth-log(`growth-log/*.jsonl`)은 직접 수정하지 마라 — `forge.sh log-add`로만 기록
+- 모든 `forge.sh` 호출 시 반드시 `GOLEM_PROJECT="$(pwd)"` 환경변수를 전달하라
+- `.golem/souls/` 오버라이드가 `souls/` 글로벌보다 우선 적용됨
+</golem_rules>
+
+## 디렉토리 구조
+
+```
+souls/          — 글로벌 SOUL 원본 (수정 금지, forge-soul로만 관리)
+.golem/         — 프로젝트별 오버라이드 (forge-init이 생성)
+  souls/        — 프로젝트 맞춤 SOUL (글로벌 원본 기반 커스터마이징)
+  growth-log/   — 프로젝트별 성장 기록
+  forge-board.md — 팀 구성 보드
+  analysis.md   — OMC 심층 분석 결과 (forge-init Phase 1)
+lib/            — Bash 라이브러리 (soul-parser, prompt-builder, rank-system 등)
+skills/         — OMC 스킬 정의 (forge-init, forge-team, forge-review 등)
+growth-log/     — 글로벌 성장 기록
+domain-packs/   — 프리셋 팀 번들 (fullstack, gamedev, trading)
+```
+
+## 코딩 컨벤션
+
+- 언어: Bash (POSIX 호환 지향, GNU 전용 명령 사용 시 폴백 필수)
+- `sed -i` 사용 금지 → `_sed_i()` 래퍼 사용 (lib/soul-parser.sh에 정의)
+- JSONL 파싱: grep/sed 기반 (jq 미사용)
+- SOUL.md: YAML frontmatter + 마크다운 섹션 구조
+- 변수: `GOLEM_ROOT`(글로벌), `GOLEM_DIR`(프로젝트 .golem/), `GROWTH_DIR`(성장 기록 경로)
+
+## forge 명령 체계
+
+```
+forge-init          프로젝트 초기화 (OMC 분석 → SOUL 팀 구성)
+forge build: {task} 팀 빌드 (Director 분배 → 병렬 실행)
+forge quick: {task} 단독 빌드 (최적 SOUL 1개)
+forge assign {soul}: {task}  지정 SOUL에 태스크 배정
+forge review {soul} 크로스 리뷰 실행
+forge sync          지식 승격 심사 (Sage)
+forge status        팀 상태 + 대시보드
+```

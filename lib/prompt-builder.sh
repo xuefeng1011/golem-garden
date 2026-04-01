@@ -38,6 +38,27 @@ prompt_build() {
   # 프로젝트 컨텍스트 추출
   local project_context=$(_extract_section "$soul_file" "프로젝트 컨텍스트")
   local expertise=$(_extract_section "$soul_file" "전문 지식")
+  local principles=$(_extract_section "$soul_file" "행동 원칙")
+
+  # 랭크 기반 권한 제약
+  local rank_constraint=""
+  case "$SOUL_RANK" in
+    novice)
+      rank_constraint="[랭크 제약: Novice] 단일 파일 수정만 허용. 멀티파일 변경 시 파일별로 나누어 요청하라. 작업 완료 후 리뷰 필수."
+      ;;
+    junior)
+      rank_constraint="[랭크 제약: Junior] 멀티파일 수정 가능. 테스트 코드 작성 필수. 작업 완료 후 리뷰 필수."
+      ;;
+    senior)
+      rank_constraint="[랭크 제약: Senior] 아키텍처 판단 가능. 리뷰 선택적."
+      ;;
+    lead)
+      rank_constraint="[랭크 제약: Lead] 태스크 위임 가능. 아키텍처 결정권 보유."
+      ;;
+    master)
+      rank_constraint="[랭크 제약: Master] 모든 권한. 리뷰 면제."
+      ;;
+  esac
 
   cat <<PROMPT
 [GolemGarden Context — ${SOUL_NAME} (${SOUL_ROLE})]
@@ -45,14 +66,19 @@ prompt_build() {
 프로젝트 컨텍스트:
 ${project_context}
 
-전문 지식 힌트:
+전문 지식:
 ${expertise}
+
+행동 원칙:
+${principles}
+
+${rank_constraint}
 
 이전 작업 이력: ${task_count}건, 성공률 ${success_rate}%
 현재 랭크: ${SOUL_RANK}
 OMC 에이전트: ${omc_agent} (모델: ${SOUL_MODEL})
 
-이 컨텍스트에서 다음 태스크를 수행하라:
+이 컨텍스트와 행동 원칙을 준수하여 다음 태스크를 수행하라:
 ${task}
 PROMPT
 }
@@ -115,8 +141,15 @@ prompt_build_director() {
     if [ -n "$board_members" ]; then
       echo "$board_members" | grep -qi "$SOUL_NAME" || continue
     fi
+    local perm=""
+    case "$SOUL_RANK" in
+      novice) perm="단일파일, 리뷰필수" ;;
+      junior) perm="멀티파일, 리뷰필수" ;;
+      senior) perm="아키텍처가능, 리뷰선택" ;;
+      lead|master) perm="전체권한" ;;
+    esac
     soul_list="${soul_list}
-- ${SOUL_NAME} (${SOUL_ROLE}): specialty=[${SOUL_SPECIALTY}], rank=${SOUL_RANK}, model=${SOUL_MODEL}"
+- ${SOUL_NAME} (${SOUL_ROLE}): specialty=[${SOUL_SPECIALTY}], rank=${SOUL_RANK}(${perm}), model=${SOUL_MODEL}"
   done < <(_all_soul_files)
 
   cat <<PROMPT

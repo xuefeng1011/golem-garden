@@ -136,28 +136,43 @@ forge 팩 설치 풀스택
 
 ## 라우팅 판단 로직
 
+**이 메인 라우터는 사용자 입력을 분석하여 올바른 서브스킬로 디스패치한다.**
+**서브스킬(forge-init, forge-team 등)이 직접 트리거될 수도 있으므로, 이 라우터는 퍼지 매칭/오타 처리/모호성 해소 역할에 집중한다.**
+
 사용자 입력을 받으면 다음 순서로 판단한다:
 
-### 1. 키워드 매칭
+### 1. SOUL/에이전트 생성 요청 감지 (최우선)
+
+입력에 `soul`, `소울`, `에이전트` + `만들어`, `생성`, `추가`, `만들기` 조합이 있으면:
+→ **forge-soul 스킬** 실행 (대화형 문진 생성기)
+
+예: "에이전트 만들어줘", "새 SOUL 추가", "소울 생성: 백엔드"
+
+### 2. 키워드 매칭
 
 | 우선순위 | 키워드 | 동작 |
 |---------|--------|------|
-| 1 | `init`, `초기화`, `셋업`, `setup`, `시작`, `팀 구성` | → forge-init 스킬 직접 실행 (forge.sh init을 호출하지 않음. 스킬이 직접 프로젝트를 스캔한다) |
-| 2 | `build`, `빌드`, `만들어`, `구현`, `개발` | → forge-team (ultrapilot) |
+| 1 | `init`, `초기화`, `셋업`, `setup`, `시작`, `팀 구성` | → forge-init 스킬 |
+| 2 | `build`, `빌드`, `구현`, `개발` | → forge-team (ultrapilot) |
 | 3 | `quick`, `퀵`, `간단`, `빠르게` | → forge-team (autopilot) |
 | 4 | `assign` 또는 SOUL이름 + 태스크 | → forge-team (수동) |
 | 5 | `review`, `리뷰`, `검토`, `코드리뷰` | → forge-review |
-| 6 | `status`, `상태`, `현황`, `목록` | → forge status |
-| 7 | `rank`, `랭크`, `레벨`, `승급` | → forge rank |
-| 8 | `soul`, `소울`, `에이전트`, `추가`, `만들어` + 역할 | → forge-soul 스킬 실행 (대화형 문진 생성기) |
-| 9 | `pack`, `팩` | → forge pack |
+| 6 | `sync`, `동기화`, `지식`, `승격` | → forge-sync |
+| 7 | `status`, `상태`, `현황`, `목록` | → forge status (bash 직접 실행) |
+| 8 | `rank`, `랭크`, `레벨`, `승급` | → forge rank (bash 직접 실행) |
+| 9 | `pack`, `팩` | → forge pack (bash 직접 실행) |
 
-### 2. SOUL 이름 감지
+**주의: `만들어`는 단독으로 forge-team 트리거가 아니다.**
+- "만들어줘" + 코드/기능 설명 → forge-team (`forge build`)
+- "만들어줘" + 에이전트/SOUL/역할 → forge-soul
+- 판단 기준: 대상이 코드인가 SOUL인가
+
+### 3. SOUL 이름 감지
 
 입력에 등록된 SOUL 이름이 있고 + 태스크 설명이 있으면:
 → `forge assign {soul}: {태스크}`로 처리
 
-### 3. 애매한 경우
+### 4. 애매한 경우
 
 위 규칙으로 판단이 안 되면 사용자에게 되물어본다:
 ```
@@ -165,7 +180,8 @@ forge 팩 설치 풀스택
 1) 팀 구성 (forge-init)
 2) 코드 생성 (forge build)
 3) 리뷰 (forge review)
-4) 상태 확인 (forge status)"
+4) 상태 확인 (forge status)
+5) SOUL 생성 (forge soul)"
 ```
 
 ## 직접 실행 명령어

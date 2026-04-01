@@ -66,6 +66,11 @@ Agent(
 )
 ```
 
+**에러 처리:**
+- Review Agent 실패 시: "리뷰 실행 오류. `forge review {worker}`로 재시도하세요" 안내
+- Agent 응답에 result/issues_found/severity 형식이 없을 시: Agent 원문 응답을 보여주고 사용자에게 pass/fail 수동 판정 요청
+- 리뷰 대상 파일이 없을 시 (git diff 비어있음): "변경 사항 없음. 리뷰 건너뜀" 안내
+
 ### Step 4: 리뷰 결과 기록
 
 리뷰 에이전트의 결과를 파싱하여:

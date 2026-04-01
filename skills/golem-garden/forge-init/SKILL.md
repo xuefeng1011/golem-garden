@@ -138,6 +138,11 @@ Explore + Architect 결과를 통합하여 다음 형식으로 정리한다:
 
 사용자가 수정을 요청하면 반영 후 Phase 2 진행.
 
+**Phase 1 에러 처리:**
+- Explore Agent 실패/빈 결과 시: 기본 파일 스캔(`ls`, `find`)으로 폴백하여 최소 정보 수집
+- Architect Agent 실패 시: Explore 결과만으로 Phase 2 진행 (아키텍처 소견 없이)
+- 사용자가 분석 결과를 거부 시: 사용자 입력으로 직접 기술스택 지정 → Phase 2 진행
+
 ---
 
 ## Phase 2: SOUL 팀 구성

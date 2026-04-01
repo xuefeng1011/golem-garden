@@ -34,6 +34,11 @@ trigger: forge build, forge quick, forge save, forge assign
    - Director가 서브태스크 분배 결과를 반환
 4. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
 
+**에러 처리:**
+- Director Agent 실패 시: 사용자에게 "Director 분배 실패. 수동 지정하시겠습니까? (`forge assign {soul}: {task}`)" 안내
+- Director 응답이 SOUL 이름을 포함하지 않을 시: 가용 SOUL 목록 보여주고 사용자에게 선택 요청
+- forge.sh prompt-director 실행 실패 시: "GolemGarden 미설치 또는 경로 오류. `forge status`로 확인하세요" 안내
+
 #### 수동 지정 (forge assign)
 
 1. 지정된 SOUL 이름으로 바로 Step 3 진행
@@ -67,6 +72,11 @@ trigger: forge build, forge quick, forge save, forge assign
 4. **병렬 실행** (forge build):
    - 독립적인 서브태스크는 Agent를 병렬로 호출 (한 메시지에 여러 Agent 호출)
    - 의존성 있는 태스크는 순차 실행
+
+**에러 처리:**
+- Worker Agent 실패 시: 해당 SOUL의 태스크를 "fail"로 log-add 기록. 다른 SOUL의 작업은 계속 진행
+- forge.sh prompt 실행 실패 시: 해당 SOUL 건너뛰고 사용자에게 알림
+- 코드 충돌(동일 파일 수정) 시: 사용자에게 충돌 파일 보여주고 수동 해결 요청
 
 ### Step 4: 결과 기록
 
@@ -111,15 +121,18 @@ trigger: forge build, forge quick, forge save, forge assign
 사용자: forge build: 사용자 인증 API + 로그인 화면
 
 AI 실행:
-1. Director(Nex)에게 분배 의뢰 → "Backend API → Ryn, Frontend UI → Kai"
-2. 병렬 실행:
-   - Agent(executor, sonnet, Ryn 컨텍스트 + "인증 API 구현")
-   - Agent(designer, sonnet, Kai 컨텍스트 + "로그인 화면 구현")
-3. 완료 후:
+1. .golem/analysis.md Read (있으면 아키텍처 컨텍스트 확보)
+2. Director(Nex)에게 분배 의뢰 → "Backend API → Ryn, Frontend UI → Kai"
+3. 병렬 실행:
+   - Agent(executor, sonnet, Ryn 컨텍스트 + 행동 원칙 + 랭크 제약 + "인증 API 구현")
+   - Agent(designer, sonnet, Kai 컨텍스트 + 행동 원칙 + 랭크 제약 + "로그인 화면 구현")
+4. 완료 후:
    - GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add ryn "인증 API" success 8 15
    - GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add kai "로그인 화면" success 3 6
-4. 자동 리뷰 (둘 다 Novice이므로):
-   - forge-review 스킬로 자동 연결
+5. 리뷰 권고 (둘 다 Novice이므로):
+   - "리뷰 권고: `forge review ryn`, `forge review kai`로 실행하세요"
+   - ⛔ 자동 리뷰 실행하지 않음
 
-응답: "완료! Ryn: 인증 API (8파일, 15테스트), Kai: 로그인 화면 (3파일, 6테스트)"
+응답: "완료! Ryn: 인증 API (8파일, 15테스트), Kai: 로그인 화면 (3파일, 6테스트)
+       리뷰 권고: forge review ryn / forge review kai"
 ```
