@@ -94,14 +94,27 @@ ${expertise}
 PROMPT
 }
 
+# forge-board.md에서 팀 멤버 이름 추출
+_board_members() {
+  local board_file="${GOLEM_DIR}/forge-board.md"
+  if [ -f "$board_file" ]; then
+    grep "^|" "$board_file" | grep -v "^| SOUL\|^| ---\|^|---" | awk -F'|' '{gsub(/^ +| +$/, "", $2); print $2}' | tr -d '\r'
+  fi
+}
+
 # Director(Nex) 태스크 분배 프롬프트
 prompt_build_director() {
   local task="$1"
-  # 가용 SOUL 목록 수집
+  # forge-board에 팀이 있으면 해당 멤버만, 없으면 전체
+  local board_members=$(_board_members)
   local soul_list=""
   while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
+    # forge-board가 있으면 등록된 SOUL만 포함
+    if [ -n "$board_members" ]; then
+      echo "$board_members" | grep -qi "$SOUL_NAME" || continue
+    fi
     soul_list="${soul_list}
 - ${SOUL_NAME} (${SOUL_ROLE}): specialty=[${SOUL_SPECIALTY}], rank=${SOUL_RANK}, model=${SOUL_MODEL}"
   done < <(_all_soul_files)

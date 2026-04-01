@@ -18,6 +18,9 @@ if [ ! -d "${GOLEM_DIR}" ]; then
   mkdir -p "${GOLEM_DIR}/growth-log"
 fi
 
+# 하위 source에서 덮어쓰지 않도록 export
+export GOLEM_DIR GOLEM_PROJECT
+
 source "${GOLEM_ROOT}/lib/soul-parser.sh"
 source "${GOLEM_ROOT}/lib/growth-log.sh"
 source "${GOLEM_ROOT}/lib/rank-system.sh"

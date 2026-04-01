@@ -79,7 +79,21 @@
       "Bash(bash forge.sh sync record ryn \"포트 8443으로 변경\" project low \"설정\")",
       "Bash(bash forge.sh sync-judge 2 reject \"프로젝트 전용 설정\")",
       "Bash(bash forge.sh sync-judge 1 promote)",
-      "Bash(bash forge.sh sync history)"
+      "Bash(bash forge.sh sync history)",
+      "Bash(bash ~/.claude/golem-garden/forge.sh souls)",
+      "Bash(xargs ls:*)",
+      "Bash(find E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api -name application*.yml -o -name application*.properties)",
+      "Bash(mkdir -p \"E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api/model/src/main/java/com/hunet/creators/model/dto/creator\")",
+      "Bash(mkdir -p \"E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api/repository/src/main/java/com/hunet/creators/repository/query/creator\")",
+      "Bash(mkdir -p \"E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api/repository/src/main/resources/mappers/creator\")",
+      "Bash(mkdir -p \"E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api/service/src/main/java/com/hunet/creators/service/query/creator\")",
+      "Bash(mkdir -p \"E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api/service/src/main/java/com/hunet/creators/service/query/impl/creator\")",
+      "Bash(find E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api -path */src/main/resources/application*.yml -o -path */src/main/resources/application*.properties)",
+      "Bash(find E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api/api/src E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api/repository/src -name *.yml -o -name *.properties)",
+      "Bash(grep -r mapper-locations E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api --include=*.yml --include=*.properties)",
+      "Bash(grep -r mybatis E:/18_CMS_3.0/03_git/labs3-lb-for-creators-api --include=*.yml --include=*.properties --include=*.java)",
+      "Bash(cp \"E:/18_CMS_3.0/00_claude/golem-garden/lib/prompt-builder.sh\" ~/.claude/golem-garden/lib/prompt-builder.sh)",
+      "Bash(cp \"E:/18_CMS_3.0/00_claude/golem-garden/forge.sh\" ~/.claude/golem-garden/forge.sh)"
     ]
   }
 }
