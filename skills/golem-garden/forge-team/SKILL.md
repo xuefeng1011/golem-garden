@@ -26,11 +26,13 @@ trigger: forge build, forge quick, forge save, forge assign
 
 #### 자동 분배 (forge build)
 
-1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt-director "{task}"` 실행하여 Director 프롬프트 생성
-2. Director(Nex)를 Agent(subagent_type=architect, model=opus)로 실행:
+1. `.golem/analysis.md`가 존재하면 Read로 읽어 아키텍처 컨텍스트를 확보한다
+2. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt-director "{task}"` 실행하여 Director 프롬프트 생성
+3. Director(Nex)를 Agent(subagent_type=architect, model=opus)로 실행:
    - 프롬프트에 가용 SOUL 목록 + 태스크 포함
+   - `.golem/analysis.md` 아키텍처 소견이 있으면 추가 컨텍스트로 주입
    - Director가 서브태스크 분배 결과를 반환
-3. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
+4. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
 
 #### 수동 지정 (forge assign)
 
