@@ -9,7 +9,7 @@ GROWTH_DIR="${GOLEM_DIR:-${GOLEM_ROOT}}/growth-log"
 # growth-log 디렉토리 없으면 자동 생성
 [ ! -d "$GROWTH_DIR" ] && mkdir -p "$GROWTH_DIR"
 
-# 성장 기록 추가
+# 성장 기록 추가 (비용 추적 필드 포함)
 growth_log_append() {
   local soul_name="$1"
   local task="$2"
@@ -18,6 +18,13 @@ growth_log_append() {
   local tests_passed="${5:-0}"
   local reviewer="${6:-}"
   local review_result="${7:-}"
+  # Phase 1 확장: 비용 추적 필드
+  local tokens_in="${8:-0}"
+  local tokens_out="${9:-0}"
+  local tokens_cache="${10:-0}"
+  local cost_usd="${11:-0.000}"
+  local model="${12:-}"
+  local duration_ms="${13:-0}"
 
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
   local date=$(date +%Y-%m-%d)
@@ -26,9 +33,19 @@ growth_log_append() {
 
   if [ -n "$reviewer" ]; then
     entry="${entry},\"reviewer\":\"${reviewer}\",\"review_result\":\"${review_result}\"}"
-  else
-    entry="${entry}}"
   fi
+
+  # 비용 필드 추가 (tokens_in > 0일 때만)
+  if [ "$tokens_in" -gt 0 ] 2>/dev/null; then
+    entry="${entry},\"tokens_in\":${tokens_in},\"tokens_out\":${tokens_out},\"tokens_cache\":${tokens_cache},\"cost_usd\":${cost_usd},\"model\":\"${model}\",\"duration_ms\":${duration_ms}"
+  fi
+
+  # reviewer 없고 cost도 없으면 이미 } 닫힘, 아니면 닫기
+  # entry 끝에 } 없으면 추가
+  case "$entry" in
+    *"}")  ;;  # 이미 닫힘
+    *)     entry="${entry}}" ;;
+  esac
 
   echo "$entry" >> "$log_file"
   echo "[growth-log] ${soul_name}: ${task} → ${result}"
@@ -135,12 +152,41 @@ growth_log_summary() {
   echo "  연속 무결함: ${streak}건"
 }
 
+# 숫자를 K 접미사로 포맷 (15000 → 15K, 1500 → 1.5K, 500 → 500)
+_format_k() {
+  local num="${1:-0}"
+  if [ "$num" -ge 10000 ] 2>/dev/null; then
+    echo "$((num / 1000))K"
+  elif [ "$num" -ge 1000 ] 2>/dev/null; then
+    local major=$((num / 1000))
+    local minor=$(( (num % 1000) / 100 ))
+    if [ "$minor" -gt 0 ]; then
+      echo "${major}.${minor}K"
+    else
+      echo "${major}K"
+    fi
+  else
+    echo "$num"
+  fi
+}
+
+# SOUL의 총 비용 문자열 반환 ($X.XX)
+_growth_log_total_cost() {
+  local soul_name="$1"
+  local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
+  if [ ! -f "$log_file" ]; then
+    echo "0.000"
+    return
+  fi
+  grep -o '"cost_usd":[0-9.]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {printf "%.3f", s+0}' || echo "0.000"
+}
+
 # 전체 SOUL 성장 대시보드
 growth_log_dashboard() {
   echo "=== GolemGarden Growth Dashboard ==="
   echo ""
-  printf "%-10s %-8s %-10s %-8s %s\n" "SOUL" "Tasks" "Rate" "Streak" "Last Task"
-  printf "%-10s %-8s %-10s %-8s %s\n" "----" "-----" "----" "------" "---------"
+  printf "%-10s %-8s %-10s %-8s %-8s %s\n" "SOUL" "Tasks" "Rate" "Streak" "Cost" "Last Task"
+  printf "%-10s %-8s %-10s %-8s %-8s %s\n" "----" "-----" "----" "------" "----" "---------"
 
   for log_file in "${GROWTH_DIR}"/*.jsonl; do
     [ -f "$log_file" ] || continue
@@ -148,8 +194,87 @@ growth_log_dashboard() {
     local tasks=$(growth_log_task_count "$name")
     local rate=$(growth_log_success_rate "$name")
     local streak=$(growth_log_streak "$name")
+    local cost=$(_growth_log_total_cost "$name")
     local last_task=$(tail -1 "$log_file" | grep -o '"task":"[^"]*"' | head -1 | sed 's/"task":"//;s/"//')
 
-    printf "%-10s %-8s %-10s %-8s %s\n" "$name" "${tasks}건" "${rate}%" "${streak}연속" "$last_task"
+    printf "%-10s %-8s %-10s %-8s %-8s %s\n" "$name" "${tasks}건" "${rate}%" "${streak}연속" "\$${cost}" "$last_task"
   done
+}
+
+# SOUL별 비용 요약
+growth_log_cost_summary() {
+  local soul_name="$1"
+  local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
+
+  if [ ! -f "$log_file" ]; then
+    echo "[cost] ${soul_name}: 기록 없음"
+    return
+  fi
+
+  local total_cost=$(_growth_log_total_cost "$soul_name")
+  local task_count=$(growth_log_task_count "$soul_name")
+  local tokens_in=$(grep -o '"tokens_in":[0-9]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {print s+0}')
+  local tokens_out=$(grep -o '"tokens_out":[0-9]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {print s+0}')
+  local tokens_cache=$(grep -o '"tokens_cache":[0-9]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {print s+0}')
+
+  local avg_cost="0.000"
+  if [ "$task_count" -gt 0 ] 2>/dev/null; then
+    avg_cost=$(echo "$total_cost $task_count" | awk '{printf "%.3f", $1/$2}')
+  fi
+
+  echo "=== ${soul_name} 비용 요약 ==="
+  echo "  총 비용: \$${total_cost}"
+  echo "  태스크: ${task_count}건"
+  echo "  평균 비용/태스크: \$${avg_cost}"
+  echo "  토큰: in=$(_format_k "$tokens_in") / out=$(_format_k "$tokens_out") / cache=$(_format_k "$tokens_cache")"
+}
+
+# 전체 비용 대시보드
+growth_log_cost_dashboard() {
+  echo "=== GolemGarden Cost Dashboard ==="
+  echo ""
+  printf "%-10s %-8s %-10s %-10s %-22s %s\n" "SOUL" "Tasks" "Total\$" "Avg\$/task" "Tokens(in/out/cache)" "Model"
+  printf "%-10s %-8s %-10s %-10s %-22s %s\n" "----" "-----" "------" "---------" "--------------------" "-----"
+
+  local grand_cost=0
+  local grand_tasks=0
+  local grand_in=0
+  local grand_out=0
+  local grand_cache=0
+
+  for log_file in "${GROWTH_DIR}"/*.jsonl; do
+    [ -f "$log_file" ] || continue
+    local name=$(basename "$log_file" .jsonl)
+    local tasks=$(growth_log_task_count "$name")
+    local total_cost=$(_growth_log_total_cost "$name")
+    local tokens_in=$(grep -o '"tokens_in":[0-9]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {print s+0}')
+    local tokens_out=$(grep -o '"tokens_out":[0-9]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {print s+0}')
+    local tokens_cache=$(grep -o '"tokens_cache":[0-9]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {print s+0}')
+    local model=$(grep -o '"model":"[^"]*"' "$log_file" 2>/dev/null | tail -1 | sed 's/"model":"//;s/"//')
+    [ -z "$model" ] && model="—"
+
+    local avg_cost="0.000"
+    if [ "$tasks" -gt 0 ] 2>/dev/null; then
+      avg_cost=$(echo "$total_cost $tasks" | awk '{printf "%.3f", $1/$2}')
+    fi
+
+    local token_str="$(_format_k "$tokens_in")/$(_format_k "$tokens_out")/$(_format_k "$tokens_cache")"
+
+    printf "%-10s %-8s %-10s %-10s %-22s %s\n" "$name" "${tasks}건" "\$${total_cost}" "\$${avg_cost}" "$token_str" "$model"
+
+    grand_cost=$(echo "$grand_cost $total_cost" | awk '{printf "%.3f", $1+$2}')
+    grand_tasks=$((grand_tasks + tasks))
+    grand_in=$((grand_in + tokens_in))
+    grand_out=$((grand_out + tokens_out))
+    grand_cache=$((grand_cache + tokens_cache))
+  done
+
+  local grand_avg="0.000"
+  if [ "$grand_tasks" -gt 0 ]; then
+    grand_avg=$(echo "$grand_cost $grand_tasks" | awk '{printf "%.3f", $1/$2}')
+  fi
+  local grand_token_str="$(_format_k "$grand_in")/$(_format_k "$grand_out")/$(_format_k "$grand_cache")"
+
+  printf "%-10s %-8s %-10s %-10s %-22s %s\n" "---" "---" "---" "---" "---" "---"
+  printf "%-10s %-8s %-10s %-10s %-22s %s\n" "Total" "${grand_tasks}건" "\$${grand_cost}" "\$${grand_avg}" "$grand_token_str" "—"
 }

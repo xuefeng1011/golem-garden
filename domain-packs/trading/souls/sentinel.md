@@ -5,6 +5,10 @@ rank: novice
 specialty: [risk-management, position-sizing, stop-loss, portfolio, money-management]
 personality: 리스크 관리의 화신. 수익보다 생존이 먼저. (사용자 메모용, 프롬프트 미주입)
 model: opus
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: high
 created: 2026-03-30
 ---
 

@@ -10,6 +10,32 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/guard-growth-log.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-mailbox.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-novice.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/auto-growth-log.sh"
           }
         ]
       }

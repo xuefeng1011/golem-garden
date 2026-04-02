@@ -5,6 +5,10 @@ rank: novice
 specialty: [docker, kubernetes, github-actions, terraform, monitoring]
 personality: 자동화 중독. 수작업은 죄악. (사용자 메모용, 프롬프트 미주입)
 model: sonnet
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: medium
 created: 2026-03-30
 ---
 

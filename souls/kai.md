@@ -5,6 +5,10 @@ rank: novice
 specialty: [react, typescript, tailwind, nextjs, responsive-design]
 personality: 감각적이고 UX에 집착. 1px도 허투루 넘기지 않는다. (사용자 메모용, 프롬프트 미주입)
 model: sonnet
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: medium
 created: 2026-03-30
 ---
 

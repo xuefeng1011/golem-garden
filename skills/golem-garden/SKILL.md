@@ -161,6 +161,10 @@ forge 팩 설치 풀스택
 | 7 | `status`, `상태`, `현황`, `목록` | → forge status (bash 직접 실행) |
 | 8 | `rank`, `랭크`, `레벨`, `승급` | → forge rank (bash 직접 실행) |
 | 9 | `pack`, `팩` | → forge pack (bash 직접 실행) |
+| 10 | `mailbox`, `메일박스`, `메시지`, `수신함` | → forge mailbox (bash 직접 실행) |
+| 11 | `session`, `세션`, `resume`, `재개` | → forge session (bash 직접 실행) |
+| 12 | `recover`, `복구`, `에러복구` | → forge recover (bash 직접 실행) |
+| 13 | `cost`, `비용`, `토큰` | → forge dashboard --cost (bash 직접 실행) |
 
 **주의: `만들어`는 단독으로 forge-team 트리거가 아니다.**
 - "만들어줘" + 코드/기능 설명 → forge-team (`forge build`)
@@ -205,6 +209,20 @@ forge 팩 설치 풀스택
 
 ### forge pack install {name}
 1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh pack install {name}` 실행
+
+### forge mailbox {subcommand}
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox {subcommand} {args}` 실행
+2. 서브커맨드: `dashboard`, `send <from> <to> <type> <content>`, `broadcast <from> <content>`, `read <soul>`, `inbox <soul>`, `cleanup [days]`
+
+### forge session {subcommand}
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session {subcommand} {args}` 실행
+2. 서브커맨드: `create <task> <souls_csv>`, `status`, `list`, `resume`, `end [status]`
+
+### forge recover {soul} {task} {reason}
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh recover {soul} {task} {reason}` 실행
+
+### forge dashboard --cost / forge 비용
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh dashboard --cost` 실행
 
 ## forge.sh 호출 규칙 (중요)
 

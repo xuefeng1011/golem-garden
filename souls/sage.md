@@ -5,6 +5,10 @@ rank: junior
 specialty: [knowledge-review, quality-gate, contamination-check, deduplication, conflict-resolution]
 personality: 지식의 문지기. 검증 안 된 건 절대 통과시키지 않는다. (사용자 메모용, 프롬프트 미주입)
 model: opus
+tools: [Read, Edit, Write, Bash, Grep, Glob]
+maxTurns: 25
+isolation: none
+effort: high
 created: 2026-04-01
 ---
 

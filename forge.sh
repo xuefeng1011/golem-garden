@@ -27,6 +27,8 @@ fi
 if [ ! -d "${GOLEM_DIR}" ]; then
   mkdir -p "${GOLEM_DIR}/souls"
   mkdir -p "${GOLEM_DIR}/growth-log"
+  mkdir -p "${GOLEM_DIR}/mailbox"
+  mkdir -p "${GOLEM_DIR}/sessions"
 fi
 
 # 하위 source에서 덮어쓰지 않도록 export
@@ -41,6 +43,9 @@ source "${GOLEM_ROOT}/lib/portability.sh"
 source "${GOLEM_ROOT}/lib/forge-soul.sh"
 source "${GOLEM_ROOT}/lib/domain-pack.sh"
 source "${GOLEM_ROOT}/lib/knowledge-sync.sh"
+source "${GOLEM_ROOT}/lib/mailbox.sh"
+source "${GOLEM_ROOT}/lib/session.sh"
+source "${GOLEM_ROOT}/lib/error-recovery.sh"
 
 # 도움말
 usage() {
@@ -100,6 +105,34 @@ Knowledge Sync:
                         심사 판정 (수동)
   sync-promote <soul> <learning>
                         글로벌 SOUL에 지식 반영
+
+Mailbox (SOUL 간 통신):
+  mailbox dashboard   메일박스 현황 대시보드
+  mailbox send <from> <to> <type> <content>
+                      메시지 전송
+  mailbox broadcast <from> <content>
+                      전체 공지
+  mailbox read <soul>  미읽음 메시지 읽기
+  mailbox inbox <soul> 전체 수신함 조회
+  mailbox cleanup [days]
+                      오래된 메시지 정리 (기본 30일)
+
+Session (세션 지속성):
+  session create <task> <souls_csv>
+                      새 세션 생성
+  session status      현재 세션 상태
+  session list        전체 세션 목록
+  session resume      마지막 세션 재개
+  session end [status]
+                      세션 종료 (completed|aborted)
+  session log <soul> <action> <detail>
+                      세션 이벤트 기록
+
+Recovery (에러 복구):
+  recover <soul> <task> <reason>
+                      3단계 복구 실행
+  recover-history <soul>
+                      복구 이력 조회
 
 Portability:
   export <name> <target_dir>
@@ -235,7 +268,14 @@ case "${1:-}" in
     ;;
 
   dashboard)
-    growth_log_dashboard
+    case "${2:-}" in
+      --cost|cost)
+        growth_log_cost_dashboard
+        ;;
+      *)
+        growth_log_dashboard
+        ;;
+    esac
     ;;
 
   rank-board)
@@ -344,6 +384,107 @@ case "${1:-}" in
 
   portability)
     portability_status
+    ;;
+
+  mailbox)
+    case "${2:-}" in
+      dashboard|"")
+        mailbox_dashboard
+        ;;
+      send)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ] || [ -z "${6:-}" ]; then
+          echo "Usage: forge mailbox send <from> <to> <type> <content>"
+          exit 1
+        fi
+        mailbox_send "$3" "$4" "$5" "$6"
+        ;;
+      broadcast)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge mailbox broadcast <from> <content>"
+          exit 1
+        fi
+        mailbox_broadcast "$3" "$4"
+        ;;
+      read)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge mailbox read <soul_name>"
+          exit 1
+        fi
+        mailbox_read "$3"
+        ;;
+      inbox)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge mailbox inbox <soul_name>"
+          exit 1
+        fi
+        mailbox_inbox "$3"
+        ;;
+      cleanup)
+        mailbox_cleanup "${3:-30}"
+        ;;
+      init)
+        mailbox_init
+        ;;
+      *)
+        echo "Usage: forge mailbox <dashboard|send|broadcast|read|inbox|cleanup|init>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  session)
+    case "${2:-}" in
+      create)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge session create <task> <souls_csv>"
+          exit 1
+        fi
+        session_create "$3" "$4"
+        ;;
+      status|"")
+        session_status
+        ;;
+      list)
+        session_list
+        ;;
+      resume)
+        session_resume
+        ;;
+      end)
+        session_end "${3:-completed}"
+        ;;
+      log)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
+          echo "Usage: forge session log <soul> <action> <detail>"
+          exit 1
+        fi
+        session_log "$3" "$4" "$5"
+        ;;
+      *)
+        echo "Usage: forge session <create|status|list|resume|end|log>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  recover)
+    if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+      echo "Usage: forge recover <soul> <task> <failure_reason>"
+      exit 1
+    fi
+    error_recover "$2" "$3" "$4"
+    ;;
+
+  recover-history)
+    if [ -z "${2:-}" ]; then
+      echo "Usage: forge recover-history <soul_name>"
+      exit 1
+    fi
+    error_history "$2"
+    ;;
+
+  cost-dashboard)
+    growth_log_cost_dashboard
     ;;
 
   soul-create)

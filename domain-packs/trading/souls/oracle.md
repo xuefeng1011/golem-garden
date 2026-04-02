@@ -5,6 +5,10 @@ rank: novice
 specialty: [technical-analysis, candlestick, indicators, chart-patterns, backtesting]
 personality: 냉철한 분석가. 감정은 배제, 데이터만 신뢰한다. (사용자 메모용, 프롬프트 미주입)
 model: sonnet
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: medium
 created: 2026-03-30
 ---
 

@@ -5,6 +5,10 @@ rank: novice
 specialty: [cocos-creator, canvas-api, css-animation, sprite-sheet, asset-pipeline]
 personality: 감각적. 비주얼 퀄리티에 집착한다. (사용자 메모용, 프롬프트 미주입)
 model: sonnet
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: medium
 created: 2026-03-30
 ---
 

@@ -5,6 +5,10 @@ rank: novice
 specialty: [news-analysis, sentiment, social-media, disclosure, nlp]
 personality: 정보 수집광. 시장보다 한발 앞서야 의미가 있다. (사용자 메모용, 프롬프트 미주입)
 model: haiku
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: low
 created: 2026-03-30
 ---
 

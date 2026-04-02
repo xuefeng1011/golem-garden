@@ -77,6 +77,44 @@ soul_parse() {
   SOUL_MODEL=$(soul_get_field "$soul_file" "model")
   SOUL_CREATED=$(soul_get_field "$soul_file" "created")
 
+  # Phase 1 확장 필드 (없으면 rank 기반 기본값 사용)
+  SOUL_TOOLS=$(soul_get_field "$soul_file" "tools" | tr -d '[]')
+  SOUL_MAX_TURNS=$(soul_get_field "$soul_file" "maxTurns")
+  SOUL_ISOLATION=$(soul_get_field "$soul_file" "isolation")
+  SOUL_EFFORT=$(soul_get_field "$soul_file" "effort")
+
+  # 기본값 적용 (하위 호환)
+  if [ -z "$SOUL_TOOLS" ]; then
+    case "$SOUL_RANK" in
+      novice)      SOUL_TOOLS="Read, Edit, Grep, Glob" ;;
+      junior)      SOUL_TOOLS="Read, Edit, Write, Bash, Grep, Glob" ;;
+      senior)      SOUL_TOOLS="Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch" ;;
+      lead)        SOUL_TOOLS="Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch, SendMessage" ;;
+      master)      SOUL_TOOLS="Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch, SendMessage, TaskCreate" ;;
+    esac
+    [ "$SOUL_ROLE" = "director" ] && SOUL_TOOLS="Agent, SendMessage, TaskCreate, TaskStop, Read, Grep, Glob"
+  fi
+  if [ -z "$SOUL_MAX_TURNS" ]; then
+    case "$SOUL_RANK" in
+      novice) SOUL_MAX_TURNS=15 ;; junior) SOUL_MAX_TURNS=25 ;; senior) SOUL_MAX_TURNS=40 ;;
+      lead)   SOUL_MAX_TURNS=60 ;; master) SOUL_MAX_TURNS=80 ;;
+    esac
+    [ "$SOUL_ROLE" = "director" ] && SOUL_MAX_TURNS=50
+  fi
+  [ -z "$SOUL_ISOLATION" ] && {
+    case "$SOUL_RANK" in
+      novice|junior) SOUL_ISOLATION="none" ;;
+      *) SOUL_ISOLATION="worktree" ;;
+    esac
+    [ "$SOUL_ROLE" = "director" ] && SOUL_ISOLATION="none"
+    [ "$SOUL_ROLE" = "qa-tester" ] && SOUL_ISOLATION="none"
+  }
+  [ -z "$SOUL_EFFORT" ] && {
+    case "$SOUL_MODEL" in
+      haiku) SOUL_EFFORT="low" ;; sonnet) SOUL_EFFORT="medium" ;; opus) SOUL_EFFORT="high" ;; *) SOUL_EFFORT="medium" ;;
+    esac
+  }
+
   # personality는 프롬프트에 주입하지 않음 (사용자 메모용)
   SOUL_PERSONALITY=$(soul_get_field "$soul_file" "personality")
 }
@@ -103,13 +141,13 @@ soul_to_omc_agent() {
 soul_list() {
   echo "=== GolemGarden SOULs ==="
   echo ""
-  printf "%-10s %-22s %-10s %-8s %s\n" "Name" "Role" "Rank" "Model" "Specialty"
-  printf "%-10s %-22s %-10s %-8s %s\n" "----" "----" "----" "-----" "---------"
+  printf "%-10s %-22s %-10s %-8s %-10s %-6s %s\n" "Name" "Role" "Rank" "Model" "Isolation" "Turns" "Specialty"
+  printf "%-10s %-22s %-10s %-8s %-10s %-6s %s\n" "----" "----" "----" "-----" "---------" "-----" "---------"
 
   while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
-    printf "%-10s %-22s %-10s %-8s %s\n" "$SOUL_NAME" "$SOUL_ROLE" "$SOUL_RANK" "$SOUL_MODEL" "$SOUL_SPECIALTY"
+    printf "%-10s %-22s %-10s %-8s %-10s %-6s %s\n" "$SOUL_NAME" "$SOUL_ROLE" "$SOUL_RANK" "$SOUL_MODEL" "$SOUL_ISOLATION" "$SOUL_MAX_TURNS" "$SOUL_SPECIALTY"
   done < <(_all_soul_files)
 }
 
