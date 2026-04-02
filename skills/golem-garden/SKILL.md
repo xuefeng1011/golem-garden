@@ -165,6 +165,7 @@ forge 팩 설치 풀스택
 | 11 | `session`, `세션`, `resume`, `재개` | → forge session (bash 직접 실행) |
 | 12 | `recover`, `복구`, `에러복구` | → forge recover (bash 직접 실행) |
 | 13 | `cost`, `비용`, `토큰` | → forge dashboard --cost (bash 직접 실행) |
+| 14 | `worktree`, `격리`, `isolation` | → forge worktree (bash 직접 실행) |
 
 **주의: `만들어`는 단독으로 forge-team 트리거가 아니다.**
 - "만들어줘" + 코드/기능 설명 → forge-team (`forge build`)
@@ -223,6 +224,10 @@ forge 팩 설치 풀스택
 
 ### forge dashboard --cost / forge 비용
 1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh dashboard --cost` 실행
+
+### forge worktree {subcommand}
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree {subcommand} {args}` 실행
+2. 서브커맨드: `create <soul> [task]`, `merge <soul> [strategy]`, `cleanup <soul|all>`, `status`
 
 ## forge.sh 호출 규칙 (중요)
 

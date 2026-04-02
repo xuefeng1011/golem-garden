@@ -46,6 +46,7 @@ source "${GOLEM_ROOT}/lib/knowledge-sync.sh"
 source "${GOLEM_ROOT}/lib/mailbox.sh"
 source "${GOLEM_ROOT}/lib/session.sh"
 source "${GOLEM_ROOT}/lib/error-recovery.sh"
+source "${GOLEM_ROOT}/lib/worktree.sh"
 
 # 도움말
 usage() {
@@ -133,6 +134,15 @@ Recovery (에러 복구):
                       3단계 복구 실행
   recover-history <soul>
                       복구 이력 조회
+
+Worktree (격리 실행):
+  worktree create <soul> [task]
+                      SOUL별 격리 worktree 생성
+  worktree merge <soul> [strategy]
+                      Worktree 변경사항 머지 (merge|squash|rebase)
+  worktree cleanup <soul|all>
+                      Worktree 정리
+  worktree status     활성 worktree 현황
 
 Portability:
   export <name> <target_dir>
@@ -485,6 +495,39 @@ case "${1:-}" in
 
   cost-dashboard)
     growth_log_cost_dashboard
+    ;;
+
+  worktree)
+    case "${2:-}" in
+      create)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge worktree create <soul_name> [task]"
+          exit 1
+        fi
+        forge_worktree_create "$3" "${4:-work}"
+        ;;
+      merge)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge worktree merge <soul_name> [strategy]"
+          exit 1
+        fi
+        forge_worktree_merge "$3" "${4:-merge}"
+        ;;
+      cleanup)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge worktree cleanup <soul_name|all>"
+          exit 1
+        fi
+        forge_worktree_cleanup "$3"
+        ;;
+      status|"")
+        forge_worktree_status
+        ;;
+      *)
+        echo "Usage: forge worktree <create|merge|cleanup|status>"
+        exit 1
+        ;;
+    esac
     ;;
 
   soul-create)

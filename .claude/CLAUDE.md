@@ -132,4 +132,7 @@ forge session create    세션 생성
 forge session resume    세션 재개
 forge session status    세션 상태
 forge recover {soul}    3단계 에러 복구
+forge worktree create   SOUL별 격리 worktree 생성
+forge worktree merge    Worktree 변경사항 머지
+forge worktree status   활성 worktree 현황
 ```

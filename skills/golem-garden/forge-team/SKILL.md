@@ -10,6 +10,16 @@ trigger: forge build, forge quick, forge save, forge assign
 
 ## 실행 절차
 
+### Step 0: 세션 생성
+
+모든 forge-team 실행은 세션으로 추적된다:
+
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{task}" "{soul1,soul2,...}"
+```
+
+이후 각 단계에서 세션 이벤트를 기록한다.
+
 ### Step 1: 모드 판별
 
 사용자 입력에서 실행 모드를 결정한다:
@@ -29,13 +39,17 @@ trigger: forge build, forge quick, forge save, forge assign
 1. `.golem/analysis.md`가 존재하면 Read로 읽어 아키텍처 컨텍스트를 확보한다
 2. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt-director "{task}"` 실행하여 Director 프롬프트 생성
 3. Director(Nex)를 Agent(subagent_type=architect, model=opus)로 실행:
-   - 프롬프트에 가용 SOUL 목록 + 태스크 포함
+   - 프롬프트에 가용 SOUL 목록(tools/maxTurns/isolation 포함) + 태스크 포함
    - `.golem/analysis.md` 아키텍처 소견이 있으면 추가 컨텍스트로 주입
-   - Director가 서브태스크 분배 결과를 반환
+   - Director가 서브태스크 분배 결과를 반환 (각 SOUL별 isolation 모드 포함)
 4. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
+5. **메일박스 통지**: Director가 각 SOUL에게 task_assign 메시지 전송
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send nex {soul} task_assign "{subtask}"
+   ```
 
 **에러 처리:**
-- Director Agent 실패 시: 사용자에게 "Director 분배 실패. 수동 지정하시겠습니까? (`forge assign {soul}: {task}`)" 안내
+- Director Agent 실패 시: `forge recover nex "{task}" "Director 분배 실패"` 실행
 - Director 응답이 SOUL 이름을 포함하지 않을 시: 가용 SOUL 목록 보여주고 사용자에게 선택 요청
 - forge.sh prompt-director 실행 실패 시: "GolemGarden 미설치 또는 경로 오류. `forge status`로 확인하세요" 안내
 
@@ -47,8 +61,14 @@ trigger: forge build, forge quick, forge save, forge assign
 
 각 배정된 SOUL에 대해:
 
-1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt {soul_name} "{task}"` 실행하여 프롬프트 생성
-2. SOUL의 role에 따른 OMC 에이전트 결정:
+1. **세션 업데이트**: SOUL 상태를 "working"으로 변경
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session log {soul_name} task_start "{task}"
+   ```
+
+2. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt {soul_name} "{task}"` 실행하여 프롬프트 생성
+
+3. SOUL의 role에 따른 OMC 에이전트 결정:
 
 | SOUL Role | Agent subagent_type | model |
 |-----------|-------------------|-------|
@@ -59,26 +79,51 @@ trigger: forge build, forge quick, forge save, forge assign
 | devops-engineer | oh-my-claudecode:executor | sonnet |
 | security-auditor | oh-my-claudecode:security-reviewer | opus |
 
-3. Agent tool로 실행:
+4. **Worktree 격리** (SOUL의 isolation=worktree일 때):
+   - ultrapilot 모드에서 SOUL의 `isolation` 필드가 `worktree`이면:
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree create {soul_name} "{task}"
+   ```
+   - Agent 실행 시 worktree 경로를 작업 디렉토리로 전달
+   - 현재 novice/junior는 `isolation: none`이므로 동일 디렉토리에서 작업
+   - senior 이상 승급 시 자동으로 worktree 격리 활성화
+
+5. **도구 제한**: SOUL의 `tools` frontmatter를 Agent의 도구 풀로 전달
    ```
    Agent(
      subagent_type = "{매핑된 에이전트}",
      model = "{SOUL의 model 필드}",
      prompt = "{forge.sh prompt로 생성된 프롬프트}\n\n태스크:\n{실제 태스크 내용}",
-     description = "{soul_name}: {task 요약}"
+     description = "{soul_name}: {task 요약}",
+     isolation = "{worktree일 때만 지정}"
    )
    ```
+   프롬프트에 이미 `허용 도구: [...]`, `최대 턴: N`이 포함되어 있으므로 Agent가 이를 준수한다.
 
-4. **병렬 실행** (forge build):
+6. **병렬 실행** (forge build):
    - 독립적인 서브태스크는 Agent를 병렬로 호출 (한 메시지에 여러 Agent 호출)
    - 의존성 있는 태스크는 순차 실행
 
-**에러 처리:**
-- Worker Agent 실패 시: 해당 SOUL의 태스크를 "fail"로 log-add 기록. 다른 SOUL의 작업은 계속 진행
+**에러 처리 (3단계 복구 프로토콜):**
+- Worker Agent 1회 실패 시: 같은 SOUL로 재시도 (실패 원인 주입)
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh recover {soul_name} "{task}" "{failure_reason}"
+   ```
+- Worker Agent 2회 실패 시: 대체 SOUL에 위임 (specialty 매칭)
+- Worker Agent 3회 실패 시: Director에게 에스컬레이션 → 사용자에게 보고
 - forge.sh prompt 실행 실패 시: 해당 SOUL 건너뛰고 사용자에게 알림
 - 코드 충돌(동일 파일 수정) 시: 사용자에게 충돌 파일 보여주고 수동 해결 요청
 
-### Step 4: 결과 기록
+### Step 4: Worktree 머지 (격리 모드일 때)
+
+isolation=worktree로 실행된 SOUL이 있으면:
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul_name} squash
+```
+- 변경사항 없으면 자동 정리
+- 충돌 시 사용자에게 보고
+
+### Step 5: 결과 기록
 
 각 SOUL의 태스크 완료 후:
 
@@ -89,7 +134,14 @@ trigger: forge build, forge quick, forge save, forge assign
 
 2. 랭크 체크 자동 실행 (log-add에 포함됨)
 
-### Step 5: 자동 리뷰 트리거 (선택적)
+3. **메일박스 통지**: SOUL이 Director에게 완료 보고
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send {soul_name} nex task_done "{task} 완료"
+   ```
+
+4. **세션 업데이트**: SOUL 상태를 "done"으로 변경
+
+### Step 6: 자동 리뷰 트리거 (선택적)
 
 **중요: 리뷰는 빌드 완료 후 별도 단계로만 실행. 리뷰 결과로 인한 재빌드(forge assign)는 절대 자동 트리거하지 않는다.**
 
@@ -99,19 +151,25 @@ trigger: forge build, forge quick, forge save, forge assign
 2. 리뷰가 필요한 경우, **결과 보고에 리뷰 권고 사항만 포함**한다
 3. **리뷰 실행은 사용자가 `forge review`로 별도 요청해야 한다** (자동 실행 금지)
 
-### Step 6: 결과 보고 (빌드 종료 시그널)
+### Step 7: 세션 종료 + 결과 보고 (빌드 종료 시그널)
 
 **이 단계를 출력하면 forge-build가 완전히 종료된다. 추가 forge 명령을 자동으로 실행하지 않는다.**
 
-사용자에게 요약 보고:
-- 각 SOUL별 태스크 결과
-- 변경된 파일 목록
-- 테스트 결과
-- 랭크 변동 사항
-- (리뷰 필요 시) "리뷰 권고: `forge review {soul}`로 실행하세요"
+1. 세션 종료:
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session end completed
+   ```
+
+2. 사용자에게 요약 보고:
+   - 각 SOUL별 태스크 결과
+   - 변경된 파일 목록
+   - 테스트 결과
+   - 랭크 변동 사항
+   - Worktree 머지 결과 (해당 시)
+   - (리뷰 필요 시) "리뷰 권고: `forge review {soul}`로 실행하세요"
 
 **⛔ 종료 규칙:**
-- Step 6 출력 후 forge-team 스킬은 완료 상태
+- Step 7 출력 후 forge-team 스킬은 완료 상태
 - 추가 forge 명령(forge assign, forge review 등)을 자동 호출하지 않는다
 - 사용자의 다음 입력을 기다린다
 
@@ -121,18 +179,26 @@ trigger: forge build, forge quick, forge save, forge assign
 사용자: forge build: 사용자 인증 API + 로그인 화면
 
 AI 실행:
+0. 세션 생성: forge session create "사용자 인증 API + 로그인 화면" "nex,ryn,kai"
 1. .golem/analysis.md Read (있으면 아키텍처 컨텍스트 확보)
 2. Director(Nex)에게 분배 의뢰 → "Backend API → Ryn, Frontend UI → Kai"
+   - mailbox send nex ryn task_assign "인증 API 구현"
+   - mailbox send nex kai task_assign "로그인 화면 구현"
 3. 병렬 실행:
-   - Agent(executor, sonnet, Ryn 컨텍스트 + 행동 원칙 + 랭크 제약 + "인증 API 구현")
-   - Agent(designer, sonnet, Kai 컨텍스트 + 행동 원칙 + 랭크 제약 + "로그인 화면 구현")
-4. 완료 후:
-   - GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add ryn "인증 API" success 8 15
-   - GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add kai "로그인 화면" success 3 6
-5. 리뷰 권고 (둘 다 Novice이므로):
+   - Agent(executor, sonnet, Ryn 컨텍스트 + 행동 원칙 + 랭크 제약 + tools=[Read,Edit,Grep,Glob] + "인증 API 구현")
+   - Agent(designer, sonnet, Kai 컨텍스트 + 행동 원칙 + 랭크 제약 + tools=[Read,Edit,Grep,Glob] + "로그인 화면 구현")
+4. (Worktree 머지 — novice이므로 해당 없음)
+5. 완료 후:
+   - forge log-add ryn "인증 API" success 8 15
+   - forge log-add kai "로그인 화면" success 3 6
+   - mailbox send ryn nex task_done "인증 API 완료"
+   - mailbox send kai nex task_done "로그인 화면 완료"
+6. 리뷰 권고 (둘 다 Novice이므로):
    - "리뷰 권고: `forge review ryn`, `forge review kai`로 실행하세요"
    - ⛔ 자동 리뷰 실행하지 않음
+7. 세션 종료 + 결과 보고
 
 응답: "완료! Ryn: 인증 API (8파일, 15테스트), Kai: 로그인 화면 (3파일, 6테스트)
-       리뷰 권고: forge review ryn / forge review kai"
+       리뷰 권고: forge review ryn / forge review kai
+       세션: 2026-04-02_사용자-인증-api-+-로그인-화면 (completed)"
 ```

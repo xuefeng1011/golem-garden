@@ -30,6 +30,13 @@ forge sync history          ← 심사 히스토리
 
 ## 실행 절차
 
+### Step 0.5: 세션 생성
+
+지식 승격 심사도 세션으로 추적:
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "knowledge-sync" "sage"
+```
+
 ### Step 1: 대기열 확인
 
 ```bash
@@ -106,6 +113,17 @@ Sage 응답 파싱 성공 시:
   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync-judge {번호} reject "{reason}"
   # → 대기열에서 제거, 히스토리에 기각 기록
   ```
+
+### Step 3.5: 메일박스 통지
+
+각 심사 결과를 해당 SOUL에게 통지:
+```bash
+# 승격 시
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send sage {soul} info "지식 승격됨: {learning}"
+
+# 기각 시
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send sage {soul} info "지식 기각: {learning} ({reason})"
+```
 
 ### Step 4: 결과 보고
 

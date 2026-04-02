@@ -20,7 +20,7 @@ if [ ! -d "$HOME/.claude/plugins" ] && [ ! -f "$HOME/.claude/settings.json" ]; t
 fi
 
 # 2. 디렉토리 생성
-echo "[1/5] 디렉토리 생성..."
+echo "[1/6] 디렉토리 생성..."
 mkdir -p "$GOLEM_HOME/souls"
 mkdir -p "$GOLEM_HOME/growth-log"
 mkdir -p "$GOLEM_HOME/lib"
@@ -29,6 +29,8 @@ mkdir -p "$GOLEM_HOME/templates"
 mkdir -p "$SKILLS_HOME/forge-init"
 mkdir -p "$SKILLS_HOME/forge-team"
 mkdir -p "$SKILLS_HOME/forge-review"
+mkdir -p "$SKILLS_HOME/forge-sync"
+mkdir -p "$GOLEM_HOME/.claude/hooks"
 
 # 3. SOUL 파일 복사 (글로벌 원본만, .golem/은 제외)
 echo "[2/5] SOUL 템플릿 설치..."
@@ -42,14 +44,21 @@ cp "$SCRIPT_DIR/lib/"*.sh "$GOLEM_HOME/lib/" 2>/dev/null || true
 cp -r "$SCRIPT_DIR/domain-packs/"* "$GOLEM_HOME/domain-packs/" 2>/dev/null || true
 
 # 5. 스킬 파일 복사
-echo "[4/5] 스킬 설치..."
+echo "[4/6] 스킬 설치..."
 cp "$SCRIPT_DIR/skills/golem-garden/SKILL.md" "$SKILLS_HOME/SKILL.md"
 cp "$SCRIPT_DIR/skills/golem-garden/forge-init/SKILL.md" "$SKILLS_HOME/forge-init/SKILL.md"
 cp "$SCRIPT_DIR/skills/golem-garden/forge-team/SKILL.md" "$SKILLS_HOME/forge-team/SKILL.md"
 cp "$SCRIPT_DIR/skills/golem-garden/forge-review/SKILL.md" "$SKILLS_HOME/forge-review/SKILL.md"
+cp "$SCRIPT_DIR/skills/golem-garden/forge-sync/SKILL.md" "$SKILLS_HOME/forge-sync/SKILL.md" 2>/dev/null || true
+
+# 5.5. Hook 파일 복사
+echo "[5/6] Hook 설치..."
+if [ -d "$SCRIPT_DIR/.claude/hooks" ]; then
+  cp "$SCRIPT_DIR/.claude/hooks/"*.sh "$GOLEM_HOME/.claude/hooks/" 2>/dev/null || true
+fi
 
 # 6. growth-log 초기화
-echo "[5/5] Growth log 초기화..."
+echo "[6/6] Growth log 초기화..."
 for soul_file in "$GOLEM_HOME/souls/"*.md; do
   [ -f "$soul_file" ] || continue
   name=$(basename "$soul_file" .md)
@@ -69,11 +78,16 @@ echo ""
 echo "글로벌 구조:"
 echo "  $GOLEM_HOME/"
 echo "  ├── forge.sh          CLI 진입점"
-echo "  ├── souls/             SOUL 원본"
-echo "  ├── lib/               라이브러리"
+echo "  ├── souls/             SOUL 원본 (tools/maxTurns/isolation/effort 포함)"
+echo "  ├── lib/               라이브러리 (12개 모듈)"
+echo "  │   ├── mailbox.sh     SOUL 간 통신"
+echo "  │   ├── session.sh     세션 지속성"
+echo "  │   ├── error-recovery.sh  3단계 복구"
+echo "  │   └── worktree.sh    Worktree 격리"
 echo "  ├── templates/         템플릿"
 echo "  ├── domain-packs/      도메인 팩"
-echo "  └── growth-log/        글로벌 성장 기록"
+echo "  ├── .claude/hooks/     Hook 스크립트"
+echo "  └── growth-log/        글로벌 성장 기록 (비용 추적 포함)"
 echo ""
 echo "프로젝트별 (.golem/)은 forge-init 시 자동 생성됩니다."
 echo ""

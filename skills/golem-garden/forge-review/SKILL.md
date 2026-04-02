@@ -19,6 +19,18 @@ trigger: forge review
 
 ## 실행 절차
 
+### Step 0.5: 메일박스 통지
+
+리뷰 시작 시 Director에게 알림:
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send {worker} nex review_request "{worker} 리뷰 시작"
+```
+
+활성 세션이 있으면 이벤트 기록:
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session log {worker} review_start "{reviewer}에 의한 리뷰"
+```
+
 ### Step 1: 리뷰 대상 파악
 
 1. 작업자(worker) SOUL 결정
@@ -88,6 +100,14 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record {worke
    - "리뷰 이슈 {N}건 발견. 수정하시겠습니까? (`forge assign {worker}: 리뷰 피드백 반영`)"
 4. 사용자가 수정을 요청하면 그때 forge-assign 실행
 5. 재리뷰는 최대 1회, 사용자 명시적 요청 시에만 실행
+
+### Step 5.5: 메일박스 결과 통지
+
+리뷰 완료 후 결과를 메일박스로 전송:
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send {reviewer} {worker} info "리뷰 완료: {result} ({issues_found}건 이슈)"
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send {reviewer} nex task_done "리뷰 완료: {worker} → {result}"
+```
 
 ### Step 6: 랭크 승급 체크
 
