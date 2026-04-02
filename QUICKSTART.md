@@ -28,9 +28,10 @@
 │  │     └─────────────────┘  └──────────────────┘        │  │
 │  │         (병렬 실행)            (병렬 실행)              │  │
 │  │                                                      │  │
-│  │  ⑤ 완료 → growth-log 자동 기록                        │  │
-│  │  ⑥ Novice이므로 → 자동 리뷰 트리거                    │  │
-│  │  ⑦ Zen(QA)이 리뷰 → pass → 무결함 카운트 +1          │  │
+│  │  ⑤ 완료 → growth-log 자동 기록 (비용 포함)       │  │
+│  │  ⑥ 메일박스: Ryn/Kai → Nex task_done              │  │
+│  │  ⑦ 리뷰 권고 (Novice이므로)                       │  │
+│  │  ⑧ 세션 종료 + 결과 보고                          │  │
 │  │                                                      │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                          │
@@ -54,6 +55,11 @@
 | **상태 확인** | Claude Code 대화창 | `forge status` |
 | **SOUL 추가** | Claude Code 대화창 | `forge soul-create devops-engineer` |
 | **팩 설치** | Claude Code 대화창 | `forge pack install trading` |
+| **비용 확인** | Claude Code 대화창 | `forge dashboard --cost` |
+| **메시지 확인** | Claude Code 대화창 | `forge mailbox read ryn` |
+| **세션 재개** | Claude Code 대화창 | `forge session resume` |
+| **에러 복구** | Claude Code 대화창 | `forge recover ryn "API 구현" "타입 오류"` |
+| **격리 실행** | Claude Code 대화창 | `forge worktree status` |
 
 **bash 터미널이 아닙니다. Claude Code 대화창에서 치는 겁니다.**
 Claude가 스킬을 인식하고 `forge.sh` + OMC Agent를 자동으로 호출합니다.
@@ -123,10 +129,10 @@ bash forge.sh status
 ```
 === GolemGarden SOULs ===
 
-Name       Role                   Rank       Model    Specialty
-----       ----                   ----       -----    ---------
-Nex        director               junior     opus     architecture, task-decomposition...
-Ryn        backend-developer      novice     sonnet   spring-boot, mariadb, rest-api...
+Name       Role                   Rank       Model    Isolation  Turns  Specialty
+----       ----                   ----       -----    ---------  -----  ---------
+Nex        director               junior     opus     none       50     architecture, task-decomposition...
+Ryn        backend-developer      novice     sonnet   none       15     spring-boot, mariadb, rest-api...
 ```
 
 ---
@@ -657,19 +663,61 @@ bash forge.sh review-record ryn zen "AuthController" pass 0 none
 | `forge export-pack <pack_name> [target_dir]` | 전체 팀 팩으로 내보내기 |
 | `forge import-pack <pack_dir>` | 팩 가져오기 |
 
+### 통신 (메일박스)
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge mailbox dashboard` | 메일박스 현황 |
+| `forge mailbox send <from> <to> <type> <content>` | 메시지 전송 |
+| `forge mailbox broadcast <from> <content>` | 전체 공지 |
+| `forge mailbox read <soul>` | 미읽음 메시지 읽기 |
+| `forge mailbox inbox <soul>` | 전체 수신함 |
+
+### 세션 관리
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge session create <task> <souls>` | 세션 생성 |
+| `forge session status` | 현재 세션 상태 |
+| `forge session resume` | 마지막 세션 재개 |
+| `forge session list` | 전체 세션 목록 |
+| `forge session end [status]` | 세션 종료 |
+
+### 에러 복구
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge recover <soul> <task> <reason>` | 3단계 복구 실행 |
+| `forge recover-history <soul>` | 복구 이력 조회 |
+
+### Worktree (격리 실행)
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge worktree create <soul> [task]` | SOUL별 worktree 생성 |
+| `forge worktree merge <soul> [strategy]` | 변경사항 머지 |
+| `forge worktree cleanup <soul\|all>` | worktree 정리 |
+| `forge worktree status` | 활성 worktree 현황 |
+
+### 비용 추적
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge dashboard --cost` | SOUL별 비용 대시보드 |
+
 ---
 
 ## 6. 랭크 시스템
 
 SOUL은 태스크를 수행할수록 성장합니다.
 
-| 랭크 | 승급 조건 | 권한 |
-|------|----------|------|
-| **Novice** | 생성 직후 | 단일 파일 수정, 리뷰 필수 |
-| **Junior** | 태스크 10회 완료 | 멀티파일 수정, 테스트 작성 |
-| **Senior** | 태스크 50회 + 무결함 10연속 | 아키텍처 제안, 자율 실행 |
-| **Lead** | 태스크 100회 + 멘토링 | 팀 오케스트레이션 |
-| **Master** | 태스크 200회 + 커뮤니티 검증 | 모든 권한, 리뷰 면제 |
+| 랭크 | 승급 조건 | 권한 | 허용 도구 |
+|------|----------|------|----------|
+| **Novice** | 생성 직후 | 단일 파일 수정, 리뷰 필수 | Read, Edit, Grep, Glob |
+| **Junior** | 태스크 10회 완료 | 멀티파일 수정, 테스트 작성 | + Write, Bash |
+| **Senior** | 태스크 50회 + 무결함 10연속 | 아키텍처 제안, worktree 격리 | + Agent, WebFetch |
+| **Lead** | 태스크 100회 + 멘토링 | 팀 오케스트레이션 | + SendMessage |
+| **Master** | 태스크 200회 + 커뮤니티 검증 | 모든 권한, 리뷰 면제 | 전체 도구 |
 
 ```bash
 # 랭크 확인
@@ -750,18 +798,20 @@ GolemGarden은 OMC를 대체하지 않습니다. OMC 위에서 **방향**만 잡
 ```
 사용자: "forge build: 인증 API 만들어줘"
   ↓
-① forge-board.md에서 팀 로드 → Nex, Ryn, Zen
+① 세션 생성 + forge-board.md에서 팀 로드
   ↓
 ② Nex(Director) → 태스크 분석 → Ryn 배정
+   메일박스: Nex → Ryn task_assign
   ↓
 ③ Ryn의 SOUL.md 로드 → OMC executor에 컨텍스트 주입
-   "기술스택: Spring Boot 3.x, MariaDB
-    우선순위: 에러 핸들링 > 기능 완성
-    이전 이력: 15건, 성공률 93%"
+   tools=[Read,Edit,Grep,Glob], maxTurns=15, isolation=none
   ↓
 ④ OMC가 실행 (executor 에이전트, sonnet 모델)
   ↓
-⑤ 완료 → growth-log 기록 → 랭크 체크
+⑤ 완료 → growth-log 기록 (비용 포함) → 랭크 체크
+   메일박스: Ryn → Nex task_done
+  ↓
+⑥ 세션 종료 + 결과 보고
 ```
 
 **SOUL = 족쇄가 아니라 나침반.** OMC 에이전트의 능력은 100% 유지, 방향만 안내.
@@ -784,6 +834,18 @@ GolemGarden은 OMC를 대체하지 않습니다. OMC 위에서 **방향**만 잡
 
 ### Q: 랭크를 수동으로 올릴 수 있나요?
 **A:** `souls/{name}.md`의 `rank:` 필드를 직접 수정하면 됩니다. 다만 growth-log 기반 자동 승급을 권장합니다.
+
+### Q: 메일박스 메시지는 어디에 저장되나요?
+**A:** `.golem/mailbox/{soul_name}.jsonl`에 JSONL 형식으로 저장됩니다. `forge mailbox cleanup 30`으로 30일 이전 메시지를 정리할 수 있습니다.
+
+### Q: 세션을 재개할 수 있나요?
+**A:** `forge session resume`으로 마지막 활성 세션을 재개할 수 있습니다. 세션에는 SOUL별 상태와 작업 트랜스크립트가 기록됩니다.
+
+### Q: SOUL이 작업에 실패하면 어떻게 되나요?
+**A:** 3단계 복구 프로토콜이 적용됩니다: ①같은 SOUL로 재시도(실패원인 주입) → ②다른 SOUL에 위임(specialty 매칭) → ③Director에게 에스컬레이션.
+
+### Q: Worktree 격리는 언제 사용되나요?
+**A:** Senior 이상 SOUL(isolation=worktree)이 ultrapilot 모드에서 병렬 작업할 때 자동으로 git worktree를 생성합니다. 충돌 없이 동시 작업이 가능해집니다.
 
 ---
 
@@ -815,6 +877,23 @@ bash forge.sh rank-board
 
 # 팀 백업
 bash forge.sh export-pack my-team ./backup
+
+# 비용 확인
+bash forge.sh dashboard --cost
+
+# 메일박스
+bash forge.sh mailbox dashboard
+bash forge.sh mailbox read ryn
+
+# 세션 관리
+bash forge.sh session status
+bash forge.sh session resume
+
+# Worktree 격리
+bash forge.sh worktree status
+
+# 에러 복구
+bash forge.sh recover ryn "JWT 구현" "타입 오류"
 ```
 
 ---

@@ -27,34 +27,41 @@ GolemGarden가 얹는 것:
 ## 아키텍처
 
 ```
-┌─────────────────────────────────────────────┐
-│            GolemGarden Layer                  │
-│                                             │
-│  ~/.claude/                                 │
-│  ├── golem-garden/                           │
-│  │   ├── souls/          ← 에이전트 페르소나 │
-│  │   │   ├── nex.md      (Director)         │
-│  │   │   ├── ryn.md      (Backend Dev)      │
-│  │   │   ├── kai.md      (Frontend Dev)     │
-│  │   │   └── zen.md      (QA/Review)        │
-│  │   ├── forge-board.md  ← 프로젝트 팀 구성  │
-│  │   └── growth-log/     ← 성장 기록         │
-│  │       ├── nex.jsonl                      │
-│  │       └── ryn.jsonl                      │
-│  └── skills/                                │
-│      └── golem-garden/    ← GolemGarden 스킬   │
-│          ├── SKILL.md                       │
-│          ├── forge-init/SKILL.md            │
-│          ├── forge-team/SKILL.md            │
-│          └── forge-review/SKILL.md          │
-├─────────────────────────────────────────────┤
-│         oh-my-claudecode (OMC)              │
-│  32 agents | 31+ skills | 5 exec modes     │
-│  Model routing | HUD | Token optimization   │
-├─────────────────────────────────────────────┤
-│            Claude Code CLI                  │
-│         Claude Max $100/월 구독              │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│              GolemGarden Layer                    │
+│                                                 │
+│  ~/.claude/golem-garden/                         │
+│  ├── souls/            ← SOUL 페르소나            │
+│  │   (tools, maxTurns, isolation, effort 포함)   │
+│  ├── lib/ (13개 모듈)                             │
+│  │   ├── soul-parser, growth-log, rank-system   │
+│  │   ├── prompt-builder (캐시 최적화)             │
+│  │   ├── mailbox (SOUL간 통신)                    │
+│  │   ├── session (세션 지속성)                     │
+│  │   ├── error-recovery (3단계 복구)              │
+│  │   └── worktree (Git 격리 실행)                 │
+│  ├── growth-log/       ← 성장 + 비용 추적         │
+│  └── domain-packs/     ← 팀 번들                  │
+│                                                 │
+│  .golem/ (프로젝트별)                              │
+│  ├── souls/            ← 프로젝트 오버라이드       │
+│  ├── mailbox/          ← SOUL 간 메시지           │
+│  ├── sessions/         ← 작업 트랜스크립트         │
+│  ├── worktrees/        ← Git worktree 격리        │
+│  └── forge-board.md    ← 팀 구성                  │
+│                                                 │
+│  ~/.claude/skills/golem-garden/                   │
+│  ├── SKILL.md (메타 라우터)                        │
+│  ├── forge-init/ forge-team/ forge-review/       │
+│  └── forge-sync/                                │
+├─────────────────────────────────────────────────┤
+│         oh-my-claudecode (OMC)                  │
+│  32 agents | 31+ skills | 5 exec modes          │
+│  Model routing | HUD | Token optimization       │
+├─────────────────────────────────────────────────┤
+│            Claude Code CLI                      │
+│         Claude Max $100/월 구독                  │
+└─────────────────────────────────────────────────┘
 ```
 
 ---
@@ -70,10 +77,14 @@ OMC의 에이전트 커스터마이징 시스템과 호환되는 포맷.
 ---
 name: Ryn
 role: backend-developer
-rank: junior          # novice → junior → senior → lead → master
-specialty: [spring-boot, mariadb, rest-api]
+rank: novice          # novice → junior → senior → lead → master
+specialty: [spring-boot, mariadb, rest-api, jpa, clean-architecture]
 personality: 꼼꼼하고 보수적. (사용자 메모용, 프롬프트 미주입)
 model: sonnet         # 기본 모델 (OMC 라우팅과 연동)
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: medium
 created: 2026-03-30
 ---
 
@@ -95,17 +106,17 @@ created: 2026-03-30
 
 ### 랭크 시스템
 
-| 랭크 | 조건 | 권한 |
-|------|------|------|
-| Novice | 생성 직후 | 단일 파일 수정, 리뷰 필수 |
-| Junior | 태스크 10회 완료 | 멀티파일 수정, 테스트 작성 |
-| Senior | 태스크 50회 + 무결함 10연속 | 아키텍처 제안, 자율 실행 |
-| Lead | 태스크 100회 + 다른 에이전트 멘토링 | 팀 오케스트레이션 |
-| Master | 커뮤니티 공유 + 검증됨 | 모든 권한 |
+| 랭크 | 조건 | 권한 | 허용 도구 |
+|------|------|------|----------|
+| Novice | 생성 직후 | 단일 파일 수정, 리뷰 필수 | Read, Edit, Grep, Glob |
+| Junior | 태스크 10회 | 멀티파일 수정, 테스트 작성 | + Write, Bash |
+| Senior | 50회 + 무결함 10연속 | 아키텍처 제안, worktree 격리 | + Agent, WebFetch |
+| Lead | 100회 | 팀 오케스트레이션 | + SendMessage |
+| Master | 200회 | 모든 권한, 리뷰 면제 | + TaskCreate (전체) |
 
 성장 기록은 `growth-log/{name}.jsonl`에 자동 누적:
 ```json
-{"date":"2026-03-30","task":"REST API 설계","result":"success","files_changed":5,"tests_passed":12}
+{"date":"2026-04-02","task":"REST API 설계","result":"success","files_changed":5,"tests_passed":12,"tokens_in":15000,"tokens_out":8000,"tokens_cache":12000,"cost_usd":0.087,"model":"sonnet","duration_ms":45000}
 ```
 
 ---
@@ -162,19 +173,37 @@ description: GolemGarden 팀 크로스 리뷰. 다른 SOUL이 코드 리뷰.
 4. 무결함 연속 카운트 업데이트 → 랭크 승급 체크
 ```
 
+### 4. forge-sync (지식 승격)
+
+```
+Sage(심사관)가 프로젝트 학습을 검증 후 글로벌 SOUL에 반영.
+5단계 오염 방지 체크리스트 적용.
+```
+
+### 5. 통신/세션/복구 시스템
+
+```
+- forge mailbox: SOUL간 JSONL 기반 메시지 교환
+- forge session: 작업 트랜스크립트 + 재개
+- forge recover: 3단계 실패 복구 (재시도→위임→에스컬레이션)
+- forge worktree: Git worktree 기반 SOUL 격리 실행
+- forge dashboard --cost: SOUL별 비용 대시보드
+```
+
 ---
 
 ## OMC 연동 매핑
 
 GolemGarden SOUL → OMC 에이전트 매핑:
 
-| GolemGarden SOUL | OMC Agent | 모델 |
-|-----------------|-----------|------|
-| Nex (Director) | architect | opus |
-| Ryn (Backend) | coder | sonnet |
-| Kai (Frontend) | frontend-specialist | sonnet |
-| Zen (QA) | tester | haiku |
-| (리서치 필요시) | researcher | haiku |
+| GolemGarden SOUL | OMC Agent | 모델 | 도구 제한 |
+|-----------------|-----------|------|----------|
+| Nex (Director) | architect | opus | Agent, SendMessage, TaskCreate, TaskStop |
+| Ryn (Backend) | executor | sonnet | rank 기반 점진적 확장 |
+| Kai (Frontend) | designer | sonnet | rank 기반 점진적 확장 |
+| Zen (QA) | test-engineer | haiku | Read, Edit, Grep, Glob |
+| Sage (Auditor) | code-reviewer | opus | Read, Edit, Write, Bash, Grep, Glob |
+| Bolt (DevOps) | executor | sonnet | rank 기반 점진적 확장 |
 
 OMC 실행 모드 매핑:
 
@@ -223,26 +252,30 @@ forge review: Ryn이 작성한 AuthController를 Zen이 리뷰
 
 ## 로드맵
 
-### Phase 1: 기반 구축 (1~2주)
-- [ ] OMC 설치 및 기본 설정
-- [ ] SOUL.md 템플릿 작성 (Nex, Ryn 2개)
-- [ ] forge-init 스킬 작성
-- [ ] forge-board.md 포맷 정의
+### Phase 1: 기반 구축 — 완료
+- [x] SOUL.md 템플릿 + 12개 글로벌 SOUL
+- [x] forge-init / forge-team / forge-review 스킬
+- [x] SOUL → OMC 에이전트 매핑 + 프롬프트 주입
+- [x] Growth-log 자동 기록 + 랭크 시스템
+- [x] SOUL 스키마 공식화 (tools, maxTurns, isolation, effort)
+- [x] 비용 추적 (tokens, cost_usd per task)
+- [x] 프롬프트 캐시 최적화 (공통/SOUL별 분리)
 
-### Phase 2: 팀 실행 (2~3주)
-- [ ] forge-team 스킬 작성
-- [ ] SOUL → OMC 에이전트 매핑 로직
-- [ ] growth-log 자동 기록
+### Phase 2: 통신 체계 — 완료
+- [x] 메일박스 시스템 (SOUL 간 파일 기반 통신)
+- [x] 세션 지속성 (트랜스크립트 + resume/status)
+- [x] 에러 복구 (3단계: 재시도→위임→에스컬레이션)
+- [x] Coordinator 프로토콜 (Nex 4단계 워크플로)
+- [x] Hook 확장 (guard-novice, auto-growth-log, guard-mailbox)
 
-### Phase 3: 리뷰 + 성장 (3~4주)
-- [ ] forge-review 스킬 작성
-- [ ] 랭크 자동 승급 로직
-- [ ] SOUL 포터빌리티 (프로젝트 간 이동)
+### Phase 3: 격리와 병렬성 — 완료
+- [x] Worktree 격리 (SOUL별 git worktree)
+- [x] 도구 실제 제한 (rank 기반 tools 필드)
+- [x] forge-team 스킬 강화 (세션/메일박스/복구 연동)
 
-### Phase 4: 확장 (선택)
-- [ ] 커스텀 SOUL 생성기
-- [ ] 도메인 스킬 팩 (게임 개발, 주식 분석 등)
-- [ ] DeerFlow 연동 (API 가격 하락 시)
+### Phase 4: TypeScript 전환 — 미착수 (선택)
+- [ ] 핵심 라이브러리 TS + Zod 전환
+- [ ] MCP 서버화
 
 ---
 
@@ -504,35 +537,6 @@ forge pack list
 
 **핵심 차별점**: OMC는 "무엇을 할 것인가"에 집중.
 GolemGarden는 "누가, 어떤 성격과 역량으로, 어떤 경험을 쌓아가며 할 것인가"를 추가.
-
----
-
-## 로드맵
-
-### Phase 1: 기반 구축 (1~2주)
-- [ ] OMC 설치 및 기본 설정
-- [ ] SOUL.md 템플릿 작성 (Nex, Ryn 2개)
-- [ ] forge-init 스킬 작성
-- [ ] forge-board.md 포맷 정의
-
-### Phase 2: 팀 실행 (2~3주)
-- [ ] forge-team 스킬 작성
-- [ ] SOUL → OMC 에이전트 매핑 + 프롬프트 주입 로직
-- [ ] 3가지 분배 모드 구현 (자동/수동/리드지정)
-- [ ] growth-log 자동 기록
-
-### Phase 3: 리뷰 + 성장 (3~4주)
-- [ ] forge-review 스킬 작성
-- [ ] 랭크 자동 승급 로직
-- [ ] SOUL 포터빌리티 (프로젝트 간 이동)
-
-### Phase 4: 생성기 + 도메인 팩
-- [ ] forge-soul 커스텀 SOUL 생성기 (대화형)
-- [ ] SOUL 프리셋 라이브러리 (7개 역할)
-- [ ] 🎮 게임 개발 팩
-- [ ] 📈 주식/크립토 분석 팩
-- [ ] 🏗️ 풀스택 웹앱 팩
-- [ ] DeerFlow 연동 (API 가격 하락 시)
 
 ---
 
