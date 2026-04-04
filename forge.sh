@@ -57,6 +57,7 @@ source "${GOLEM_ROOT}/lib/chemistry.sh"
 source "${GOLEM_ROOT}/lib/achievement.sh"
 source "${GOLEM_ROOT}/lib/skill-tree.sh"
 source "${GOLEM_ROOT}/lib/project-dna.sh"
+source "${GOLEM_ROOT}/lib/dashboard-web.sh"
 
 # 도움말
 usage() {
@@ -307,6 +308,9 @@ case "${1:-}" in
     case "${2:-}" in
       --cost|cost)
         growth_log_cost_dashboard
+        ;;
+      --web|web)
+        dashboard_web_generate
         ;;
       *)
         growth_log_dashboard
