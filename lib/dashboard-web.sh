@@ -311,6 +311,82 @@ HTMLEOF
   echo "    2. 데이터 갱신:     forge dashboard refresh"
   echo "    3. 브라우저 열어두면 30초마다 자동 갱신"
   echo ""
-  echo "  팁: forge build 완료 후 자동 갱신하려면:"
-  echo "    Stop Hook에 'forge dashboard refresh' 추가"
+  echo "  팁: Stop Hook으로 자동 갱신이 ��정되어 있습니다."
+  echo "       forge build 완료 시 data.json이 자동 갱신됩니다."
+}
+
+# 로컬 HTTP 서버 시작 (auto-refresh가 동작하려면 필요)
+# dashboard_web_serve [port]
+dashboard_web_serve() {
+  local port="${1:-9470}"
+
+  if [ ! -f "$DASHBOARD_HTML" ]; then
+    dashboard_web_generate
+  else
+    dashboard_web_refresh
+  fi
+
+  # 기존 서버 프로세스 확인
+  local pid_file="${DASHBOARD_DIR}/.server.pid"
+  if [ -f "$pid_file" ]; then
+    local old_pid=$(cat "$pid_file" | tr -d '\r\n')
+    if kill -0 "$old_pid" 2>/dev/null; then
+      echo "[dashboard] 서버 이미 실행 중 (PID: ${old_pid}, port: ${port})"
+      echo "  http://localhost:${port}"
+      return 0
+    fi
+  fi
+
+  # Python 사용 가능 확인
+  local python_cmd=""
+  if command -v python3 >/dev/null 2>&1; then
+    python_cmd="python3"
+  elif command -v python >/dev/null 2>&1; then
+    python_cmd="python"
+  else
+    echo "[dashboard] ERROR: Python이 없습니다. ��동��로 HTTP 서버를 시작하세요:"
+    echo "  cd ${DASHBOARD_DIR} && python -m http.server ${port}"
+    return 1
+  fi
+
+  # 백그라운드로 서버 시작
+  cd "$DASHBOARD_DIR"
+  $python_cmd -m http.server "$port" >/dev/null 2>&1 &
+  local server_pid=$!
+  echo "$server_pid" > "$pid_file"
+  cd - >/dev/null
+
+  echo "[dashboard] 로컬 서버 시작 (PID: ${server_pid}, port: ${port})"
+  echo ""
+  echo "  http://localhost:${port}"
+  echo ""
+  echo "  - 30���마다 자동 새로고침"
+  echo "  - forge build 완료 시 자동 데이터 갱신 (Stop Hook)"
+  echo "  - 서버 종료: forge dashboard stop"
+
+  # 브라우저 자동 열기
+  if command -v start >/dev/null 2>&1; then
+    start "" "http://localhost:${port}" 2>/dev/null
+  elif command -v open >/dev/null 2>&1; then
+    open "http://localhost:${port}" 2>/dev/null
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "http://localhost:${port}" 2>/dev/null
+  fi
+}
+
+# 서버 종료
+dashboard_web_stop() {
+  local pid_file="${DASHBOARD_DIR}/.server.pid"
+  if [ -f "$pid_file" ]; then
+    local pid=$(cat "$pid_file" | tr -d '\r\n')
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null
+      echo "[dashboard] 서버 종료 (PID: ${pid})"
+    else
+      echo "[dashboard] 서버가 이미 종료됨"
+    fi
+    rm -f "$pid_file"
+  else
+    echo "[dashboard] 실행 중인 서버 없음"
+  fi
 }

@@ -315,6 +315,15 @@ case "${1:-}" in
       refresh)
         dashboard_web_refresh
         ;;
+      serve)
+        dashboard_web_serve "${3:-9470}"
+        ;;
+      stop)
+        dashboard_web_stop
+        ;;
+      open)
+        dashboard_web_serve "${3:-9470}"
+        ;;
       *)
         growth_log_dashboard
         ;;
