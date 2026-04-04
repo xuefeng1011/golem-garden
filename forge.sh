@@ -58,6 +58,7 @@ source "${GOLEM_ROOT}/lib/achievement.sh"
 source "${GOLEM_ROOT}/lib/skill-tree.sh"
 source "${GOLEM_ROOT}/lib/project-dna.sh"
 source "${GOLEM_ROOT}/lib/dashboard-web.sh"
+source "${GOLEM_ROOT}/lib/dashboard-global.sh"
 
 # 도움말
 usage() {
@@ -323,6 +324,24 @@ case "${1:-}" in
         ;;
       open)
         dashboard_web_serve "${3:-9470}"
+        ;;
+      global)
+        dashboard_global_generate
+        ;;
+      global-refresh)
+        dashboard_global_refresh
+        ;;
+      global-serve)
+        dashboard_global_serve "${3:-9471}"
+        ;;
+      global-stop)
+        dashboard_global_stop
+        ;;
+      global-projects)
+        dashboard_global_projects
+        ;;
+      global-register)
+        dashboard_global_register "${3:-}"
         ;;
       *)
         growth_log_dashboard
