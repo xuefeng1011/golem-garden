@@ -312,6 +312,9 @@ case "${1:-}" in
       --web|web)
         dashboard_web_generate
         ;;
+      refresh)
+        dashboard_web_refresh
+        ;;
       *)
         growth_log_dashboard
         ;;
