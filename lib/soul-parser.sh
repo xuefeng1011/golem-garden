@@ -94,6 +94,18 @@ soul_parse() {
     esac
     [ "$SOUL_ROLE" = "director" ] && SOUL_TOOLS="Agent, SendMessage, TaskCreate, TaskStop, Read, Grep, Glob"
   fi
+
+  # Coordinator 도구 분리 (시스템 레벨 강제)
+  # Director는 실행 도구(Edit, Write, Bash)를 절대 보유할 수 없음
+  # 프롬프트가 아닌 도구 필터링으로 강제
+  if [ "$SOUL_ROLE" = "director" ]; then
+    SOUL_TOOLS="Agent, SendMessage, TaskCreate, TaskStop, Read, Grep, Glob"
+    SOUL_DISALLOWED_TOOLS="Edit, Write, Bash, FileEdit, FileWrite, NotebookEdit"
+    SOUL_IS_COORDINATOR="true"
+  else
+    SOUL_DISALLOWED_TOOLS=""
+    SOUL_IS_COORDINATOR="false"
+  fi
   if [ -z "$SOUL_MAX_TURNS" ]; then
     case "$SOUL_RANK" in
       novice) SOUL_MAX_TURNS=15 ;; junior) SOUL_MAX_TURNS=25 ;; senior) SOUL_MAX_TURNS=40 ;;

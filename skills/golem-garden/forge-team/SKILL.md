@@ -10,7 +10,19 @@ trigger: forge build, forge quick, forge save, forge assign
 
 ## 실행 절차
 
-### Step 0: 세션 생성
+### Step 0: 세션 생성 + 예산 초기화
+
+모든 forge-team 실행은 세션으로 추적되고, 예산 추적이 시작된다:
+
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh budget init
+```
+
+**예산 체크**: 각 SOUL 턴 완료 후 `forge budget check` 실행
+- `ok` → 계속 진행
+- `warning` → 사용자에게 경고 표시, 계속 진행
+- `exceeded` → 자동 중단, 사용자에게 보고
+- `stagnating` → 접근법 변경 권고 또는 중단
 
 모든 forge-team 실행은 세션으로 추적된다:
 
@@ -101,8 +113,13 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
    프롬프트에 이미 `허용 도구: [...]`, `최대 턴: N`이 포함되어 있으므로 Agent가 이를 준수한다.
 
 6. **병렬 실행** (forge build):
+   - 병렬 실행 전 도구 성격 체크: `forge tool-char parallel {soul1} {soul2}`
+     - `yes` → 안전하게 병렬
+     - `conditional` → 파일 영역 분리 필요
+     - `worktree_required` → worktree 격리 후 병렬
    - 독립적인 서브태스크는 Agent를 병렬로 호출 (한 메시지에 여러 Agent 호출)
    - 의존성 있는 태스크는 순차 실행
+   - **Fork 캐시 최적화**: 병렬 SOUL 소환 시 `prompt_build_fork`로 byte-identical prefix 공유
 
 **에러 처리 (3단계 복구 프로토콜):**
 - Worker Agent 1회 실패 시: 같은 SOUL로 재시도 (실패 원인 주입)

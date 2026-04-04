@@ -200,9 +200,17 @@ prompt_build_director() {
 - SOUL 실패 2회: 다른 SOUL에 위임 (specialty 매칭)
 - SOUL 실패 3회: 에스컬레이션 (사용자에게 보고)
 
-## 비용 효율
+## 비용 효율 + 예산
 - haiku로 충분한 작업은 haiku SOUL에 배정
-- 병렬 SOUL 소환 시 공통 프롬프트 접두사 유지 (캐시 최적화)
+- 병렬 SOUL 소환 시 공통 프롬프트 접두사 유지 (Fork 캐시 최적화)
+- 예산 상태 확인: 매 턴 budget_check 실행, exceeded/stagnating 시 중단
+- 수확체감 감지: 3턴 연속 진전 없으면 접근법 변경 또는 중단
+
+## 도구 성격 기반 병렬화 판단
+- SOUL의 도구가 모두 readOnly → 자유롭게 병렬 (safe)
+- 쓰기 도구 포함 → 파일 영역 분리 필요 (caution)
+- 파괴적 도구(Bash) 포함 → worktree 격리 또는 직렬 (unsafe)
+- 도구 성격: isReadOnly, isConcurrencySafe, isDestructive, isIdempotent
 
 ## 가용 SOUL 목록
 ${soul_list}
@@ -222,4 +230,100 @@ ${task}
 - 실행 모드: {ultrapilot|autopilot|pipeline}
 - 예상 비용: {model별 대략 비용}
 PROMPT
+}
+
+# ─────────────────────────────────────────────────────────
+# Fork Subagent 캐시 최적화 프롬프트 빌더
+# byte-identical prefix를 공유하여 API 프롬프트 캐시 히트율 극대화
+# 5 fork × 100k prefix → 캐시 없이 500k, 캐시 적용 시 ~120k (76% 절감)
+# ─────────────────────────────────────────────────────────
+
+# 공통 접두사 생성 (모든 SOUL이 동일하게 공유)
+# prompt_build_fork_prefix <project_context_soul>
+# 어떤 SOUL이든 프로젝트 컨텍스트는 동일하므로 첫 번째 SOUL 파일에서 추출
+prompt_build_fork_prefix() {
+  local reference_soul="$1"
+  local soul_file=$(_resolve_soul_file "$reference_soul")
+
+  if [ ! -f "$soul_file" ]; then
+    echo "[ERROR] SOUL 파일 없음: ${reference_soul}" >&2
+    return 1
+  fi
+
+  local project_context=$(_extract_section "$soul_file" "프로젝트 컨텍스트")
+
+  # 이 블록은 모든 fork에서 byte-identical
+  cat <<FORK_PREFIX
+[GolemGarden — Project Context (Fork Cache-Optimized Prefix)]
+
+프로젝트 컨텍스트:
+${project_context}
+
+공통 규칙:
+- 코드 품질: 함수 50줄 이하, 파일 800줄 이하
+- 테스트: 단위 테스트 동반 필수
+- 보안: 하드코딩 시크릿 금지, 입력 검증 필수
+- Git: conventional commits 형식
+- 에러 복구: 일시적 에러는 자동 재시도, 구문/로직 에러만 보고
+FORK_PREFIX
+}
+
+# Fork 개별 접미사 생성 (SOUL별로 다른 부분만)
+# prompt_build_fork_suffix <soul_name> <task>
+prompt_build_fork_suffix() {
+  local soul_name="$1"
+  local task="$2"
+  local soul_file=$(_resolve_soul_file "$soul_name")
+
+  soul_parse "$soul_file"
+
+  local task_count=$(growth_log_task_count "$soul_name")
+  local success_rate=$(growth_log_success_rate "$soul_name")
+  local omc_agent=$(soul_to_omc_agent "$SOUL_ROLE")
+  local expertise=$(_extract_section "$soul_file" "전문 지식")
+  local principles=$(_extract_section "$soul_file" "행동 원칙")
+
+  local tools="${SOUL_TOOLS:-Read, Edit, Grep, Glob}"
+  local max_turns="${SOUL_MAX_TURNS:-20}"
+  local isolation="${SOUL_ISOLATION:-none}"
+
+  local rank_constraint=""
+  case "$SOUL_RANK" in
+    novice) rank_constraint="[랭크 제약: Novice] 단일 파일 수정만 허용. 리뷰 필수." ;;
+    junior) rank_constraint="[랭크 제약: Junior] 멀티파일 가능. 테스트 필수. 리뷰 필수." ;;
+    senior) rank_constraint="[랭크 제약: Senior] 아키텍처 판단 가능. 리뷰 선택적." ;;
+    lead)   rank_constraint="[랭크 제약: Lead] 태스크 위임 가능." ;;
+    master) rank_constraint="[랭크 제약: Master] 모든 권한." ;;
+  esac
+
+  cat <<FORK_SUFFIX
+---
+
+[GolemGarden — SOUL: ${SOUL_NAME} (${SOUL_ROLE})]
+
+전문 지식:
+${expertise}
+
+행동 원칙:
+${principles}
+
+${rank_constraint}
+
+이력: ${task_count}건, 성공률 ${success_rate}%
+랭크: ${SOUL_RANK} | 도구: [${tools}] | 턴: ${max_turns} | 격리: ${isolation}
+OMC: ${omc_agent} (${SOUL_MODEL})
+
+태스크: ${task}
+FORK_SUFFIX
+}
+
+# Fork 전체 프롬프트 (prefix + suffix)
+# prompt_build_fork <soul_name> <task> [reference_soul_for_prefix]
+prompt_build_fork() {
+  local soul_name="$1"
+  local task="$2"
+  local ref_soul="${3:-$soul_name}"
+
+  prompt_build_fork_prefix "$ref_soul"
+  prompt_build_fork_suffix "$soul_name" "$task"
 }

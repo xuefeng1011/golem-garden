@@ -47,6 +47,8 @@ source "${GOLEM_ROOT}/lib/mailbox.sh"
 source "${GOLEM_ROOT}/lib/session.sh"
 source "${GOLEM_ROOT}/lib/error-recovery.sh"
 source "${GOLEM_ROOT}/lib/worktree.sh"
+source "${GOLEM_ROOT}/lib/budget.sh"
+source "${GOLEM_ROOT}/lib/tool-character.sh"
 
 # 도움말
 usage() {
@@ -134,6 +136,22 @@ Recovery (에러 복구):
                       3단계 복구 실행
   recover-history <soul>
                       복구 이력 조회
+
+Budget (예산 추적):
+  budget status       예산 상태 (토큰/USD/수확체감)
+  budget init         예산 초기화
+  budget reset        예산 리셋
+  budget record <soul> <tokens> [cost]
+                      사용량 기록
+  budget check        중단 필요 여부 (ok|warning|exceeded|stagnating)
+
+Tool Character (도구 성격):
+  tool-char check <tool>
+                      도구 성격 조회 (readOnly/concurrent/destructive/idempotent)
+  tool-char guide <soul>
+                      SOUL 병렬 실행 가이드
+  tool-char parallel <soul1> <soul2>
+                      두 SOUL 동시 실행 가능 여부
 
 Worktree (격리 실행):
   worktree create <soul> [task]
@@ -495,6 +513,58 @@ case "${1:-}" in
 
   cost-dashboard)
     growth_log_cost_dashboard
+    ;;
+
+  budget)
+    case "${2:-}" in
+      init)     budget_init ;;
+      reset)    budget_reset ;;
+      record)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge budget record <soul> <tokens_out> [cost_usd]"
+          exit 1
+        fi
+        budget_record "$3" "$4" "${5:-0.000}"
+        ;;
+      check)    budget_check ;;
+      status|"") budget_status ;;
+      *)
+        echo "Usage: forge budget <init|reset|record|check|status>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  tool-char)
+    case "${2:-}" in
+      check)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge tool-char check <tool_name>"
+          exit 1
+        fi
+        _tc_char=$(tool_get_character "$3")
+        echo "$3: readOnly=$(echo $_tc_char | awk '{print $1}') concurrent=$(echo $_tc_char | awk '{print $2}') destructive=$(echo $_tc_char | awk '{print $3}') idempotent=$(echo $_tc_char | awk '{print $4}')"
+        ;;
+      guide)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge tool-char guide <soul_name>"
+          exit 1
+        fi
+        soul_concurrency_guide "$3"
+        ;;
+      parallel)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge tool-char parallel <soul1> <soul2>"
+          exit 1
+        fi
+        _tc_result=$(can_run_parallel "$3" "$4")
+        echo "${3} + ${4}: ${_tc_result}"
+        ;;
+      *)
+        echo "Usage: forge tool-char <check|guide|parallel>"
+        exit 1
+        ;;
+    esac
     ;;
 
   worktree)

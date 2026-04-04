@@ -8,6 +8,46 @@ source "${GOLEM_ROOT}/lib/soul-parser.sh"
 # 메일박스 디렉토리
 MAILBOX_DIR="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/mailbox"
 
+# ─────────────────────────────────────────────────────────
+# 구조화된 시스템 메시지 타입 (Claude Code 패턴)
+# 일반 메시지: task_assign, task_done, review_request, info, broadcast
+# 시스템 메시지: shutdown_request, shutdown_response, plan_approval,
+#              budget_warning, stagnation_alert, escalation
+# ─────────────────────────────────────────────────────────
+
+# 팀 종료 요청 (Coordinator → 전체)
+mailbox_shutdown_request() {
+  local from="$1"
+  local reason="${2:-작업 완료}"
+  mailbox_broadcast "$from" "SYSTEM:shutdown_request:${reason}"
+}
+
+# 팀 종료 응답 (Worker → Coordinator)
+mailbox_shutdown_response() {
+  local from="$1"
+  local coordinator="$2"
+  local status="${3:-ready}"  # ready | busy | error
+  mailbox_send "$from" "$coordinator" "shutdown_response" "SYSTEM:shutdown_ack:${status}"
+}
+
+# 예산 경고 브로드캐스트
+mailbox_budget_warning() {
+  local level="$1"    # warning | exceeded | stagnating
+  local detail="$2"
+  mailbox_broadcast "system" "SYSTEM:budget_${level}:${detail}"
+}
+
+# 계획 승인 요청 (Coordinator → 사용자)
+mailbox_plan_approval() {
+  local from="$1"
+  local plan_summary="$2"
+  [ ! -d "$MAILBOX_DIR" ] && mailbox_init
+  local ts=$(date -u +%Y-%m-%dT%H:%M:%S 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+  local entry="{\"id\":\"msg_$(date +%s)_$$\",\"from\":\"${from}\",\"to\":\"user\",\"type\":\"plan_approval\",\"content\":\"${plan_summary}\",\"ts\":\"${ts}\",\"status\":\"pending\"}"
+  echo "$entry" >> "${MAILBOX_DIR}/broadcast.jsonl"
+  echo "[mailbox] ${from} → user: plan_approval (승인 대기)"
+}
+
 # 메일박스 초기화
 mailbox_init() {
   mkdir -p "$MAILBOX_DIR"

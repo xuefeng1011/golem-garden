@@ -10,6 +10,93 @@ source "${GOLEM_ROOT}/lib/prompt-builder.sh"
 # 최대 재시도 횟수 (환경변수로 오버라이드 가능)
 GOLEM_MAX_RETRY="${GOLEM_MAX_RETRY:-2}"
 
+# ─────────────────────────────────────────────────────────
+# Withholding 패턴: 에러를 모델에 즉시 보고하지 않고
+# 에이전트 레벨에서 자동 복구를 우선 시도한다.
+# 복구 불가능한 에러만 모델에 보고하여 컨텍스트 오염을 방지.
+# ─────────────────────────────────────────────────────────
+
+# 에러를 보류(withhold)할지 판단
+# error_should_withhold <error_type> <error_message>
+# 반환: withhold (보류 → 자동 복구) | report (모델에 보고)
+error_should_withhold() {
+  local error_type="$1"
+  local error_msg="$2"
+
+  case "$error_type" in
+    # === 자동 복구 가능한 에러 (보류) ===
+    timeout)         echo "withhold" ;;  # 네트워크 타임아웃 → 재시도
+    rate_limit)      echo "withhold" ;;  # API 한도 → 대기 후 재시도
+    transient)       echo "withhold" ;;  # 일시적 오류 → 재시도
+    file_not_found)                       # 파일 경로 → 검색 후 재시도
+      echo "withhold" ;;
+    permission)                           # 권한 → 다른 방법 시도
+      echo "withhold" ;;
+    lock_conflict)   echo "withhold" ;;  # 파일 잠금 → 대기 후 재시도
+
+    # === 모델 개입 필요한 에러 (보고) ===
+    syntax_error)    echo "report" ;;    # 코드 구문 오류 → 모델이 수정해야
+    logic_error)     echo "report" ;;    # 로직 오류 → 모델이 판단해야
+    test_failure)    echo "report" ;;    # 테스트 실패 → 모델이 분석해야
+    type_error)      echo "report" ;;    # 타입 오류 → 모델이 수정해야
+    dependency)      echo "report" ;;    # 의존성 문제 → 모델이 해결해야
+
+    # === 알 수 없는 에러 → 메시지 내용으로 추가 판단 ===
+    *)
+      # 일시적 에러 패턴 감지
+      if echo "$error_msg" | grep -qi "timeout\|ECONNRESET\|ETIMEDOUT\|429\|503\|retry"; then
+        echo "withhold"
+      # 구문/로직 에러 패턴
+      elif echo "$error_msg" | grep -qi "SyntaxError\|TypeError\|ReferenceError\|undefined is not\|cannot read"; then
+        echo "report"
+      else
+        echo "report"  # 기본: 보수적으로 보고
+      fi
+      ;;
+  esac
+}
+
+# Withholding 자동 복구 시도 (모델에 보고하기 전)
+# error_withhold_recover <soul_name> <error_type> <error_message> <attempt>
+# 반환: 0=복구 성공, 1=복구 실패(모델에 보고 필요)
+error_withhold_recover() {
+  local soul_name="$1"
+  local error_type="$2"
+  local error_msg="$3"
+  local attempt="${4:-1}"
+
+  echo "[recovery:withhold] ${soul_name}: ${error_type} 에러 보류 — 자동 복구 시도 (${attempt}/2)"
+
+  case "$error_type" in
+    timeout|rate_limit|transient)
+      # 대기 후 재시도 시그널
+      local wait_sec=$((attempt * 3))
+      echo "[recovery:withhold] ${wait_sec}초 대기 후 재시도 권고"
+      echo "WITHHOLD_RETRY:${wait_sec}"
+      return 0
+      ;;
+    file_not_found)
+      echo "[recovery:withhold] 파일 검색으로 대체 경로 탐색 권고"
+      echo "WITHHOLD_SEARCH"
+      return 0
+      ;;
+    lock_conflict)
+      echo "[recovery:withhold] 2초 대기 후 재시도 권고"
+      echo "WITHHOLD_RETRY:2"
+      return 0
+      ;;
+    permission)
+      echo "[recovery:withhold] 읽기 전용 모드로 폴백 권고"
+      echo "WITHHOLD_FALLBACK:readonly"
+      return 0
+      ;;
+    *)
+      echo "[recovery:withhold] 자동 복구 불가 — 모델에 보고"
+      return 1
+      ;;
+  esac
+}
+
 # 메인 복구 진입점
 # error_recover <soul_name> <task> <failure_reason>
 error_recover() {
