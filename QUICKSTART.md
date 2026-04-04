@@ -60,6 +60,12 @@
 | **세션 재개** | Claude Code 대화창 | `forge session resume` |
 | **에러 복구** | Claude Code 대화창 | `forge recover ryn "API 구현" "타입 오류"` |
 | **격리 실행** | Claude Code 대화창 | `forge worktree status` |
+| **학습 기억** | Claude Code 대화창 | `forge memory dashboard` |
+| **회고 확인** | Claude Code 대화창 | `forge retro latest` |
+| **팀 케미** | Claude Code 대화창 | `forge chemistry dashboard` |
+| **업적 확인** | Claude Code 대화창 | `forge achievement dashboard` |
+| **전문화** | Claude Code 대화창 | `forge skill-tree dashboard` |
+| **프로젝트 DNA** | Claude Code 대화창 | `forge dna show` |
 
 **bash 터미널이 아닙니다. Claude Code 대화창에서 치는 겁니다.**
 Claude가 스킬을 인식하고 `forge.sh` + OMC Agent를 자동으로 호출합니다.
@@ -705,6 +711,59 @@ bash forge.sh review-record ryn zen "AuthController" pass 0 none
 |--------|------|
 | `forge dashboard --cost` | SOUL별 비용 대시보드 |
 
+### SOUL Memory (학습 기억)
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge memory record <soul> <task> <lesson> [tags]` | 학습 기록 |
+| `forge memory recall <soul> <keywords>` | 관련 기억 검색 |
+| `forge memory list <soul>` | 전체 기억 조회 |
+| `forge memory dashboard` | 기억 대시보드 |
+
+### Retrospective (회고)
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge retro generate <task> <souls>` | 회고 생성 |
+| `forge retro list` | 회고 목록 |
+| `forge retro latest` | 최근 회고 |
+| `forge retro trend` | 누적 트렌드 |
+
+### Chemistry (팀 케미)
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge chemistry record <s1> <s2> <type> <result>` | 케미 기록 |
+| `forge chemistry score <s1> <s2>` | 점수 조회 |
+| `forge chemistry best <soul>` | 최고 파트너 |
+| `forge chemistry matrix <souls_csv>` | 케미 매트릭스 |
+| `forge chemistry dashboard` | 케미 대시보드 |
+
+### Achievement (업적)
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge achievement check <soul>` | 업적 체크 |
+| `forge achievement list <soul>` | 보유 업적 |
+| `forge achievement dashboard` | 업적 대시보드 |
+
+### Skill Tree (전문화)
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge skill-tree branches <role>` | 브랜치 목록 |
+| `forge skill-tree specialize <soul> <branch>` | 전문화 |
+| `forge skill-tree dashboard` | 전문화 현황 |
+
+### Project DNA
+
+| 명령어 | 설명 |
+|--------|------|
+| `forge dna generate` | DNA 생성 |
+| `forge dna show` | DNA 조회 |
+| `forge dna compare <file>` | DNA 비교 |
+| `forge dna adapt <soul> <file>` | 적응 가이드 |
+
 ---
 
 ## 6. 랭크 시스템
@@ -894,6 +953,25 @@ bash forge.sh worktree status
 
 # 에러 복구
 bash forge.sh recover ryn "JWT 구현" "타입 오류"
+
+# SOUL 기억
+bash forge.sh memory record ryn "JWT 인증" "refresh token 재발급 필요" "jwt,auth"
+bash forge.sh memory dashboard
+
+# 회고
+bash forge.sh retro latest
+
+# 팀 케미
+bash forge.sh chemistry dashboard
+
+# 업적
+bash forge.sh achievement check ryn
+
+# 전문화
+bash forge.sh skill-tree dashboard
+
+# DNA
+bash forge.sh dna show
 ```
 
 ---

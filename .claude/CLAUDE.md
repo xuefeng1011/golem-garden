@@ -69,6 +69,9 @@ Say "setup omc" or run `/oh-my-claudecode:omc-setup`.
 이 프로젝트는 AI 에이전트 페르소나(SOUL) 관리 시스템이다.
 Bash 스크립트 + Markdown 기반으로 Claude Code CLI 위에서 동작한다.
 
+> 핵심 철학과 작업 규약은 `PHILOSOPHY.md`를 참조.
+> "SOUL은 족쇄가 아니라 나침반" — 능력을 제한하지 않고 방향만 잡아준다.
+
 ## 핵심 규칙
 
 <golem_rules>
@@ -101,6 +104,14 @@ lib/            — Bash 라이브러리
   mailbox.sh        — SOUL 간 파일 기반 통신
   session.sh        — 세션 지속성 (생성/재개/상태)
   error-recovery.sh — 3단계 실패 복구 (재시도→위임→에스컬레이션)
+  budget.sh           — 예산 추적 + 수확체감 감지
+  tool-character.sh   — 도구 성격 메타데이터
+  soul-memory.sh      — SOUL별 학습 기억
+  retrospective.sh    — 자동 회고
+  chemistry.sh        — 팀 케미 추적
+  achievement.sh      — 업적/뱃지
+  skill-tree.sh       — 전��화 분기
+  project-dna.sh      — 프로젝트 지문
   rank-system.sh, forge-review.sh, portability.sh, forge-soul.sh, domain-pack.sh, knowledge-sync.sh
 skills/         — OMC 스킬 정의 (forge-init, forge-team, forge-review 등)
 growth-log/     — 글로벌 성장 기록
@@ -135,4 +146,12 @@ forge recover {soul}    3단계 에러 복구
 forge worktree create   SOUL별 격리 worktree 생성
 forge worktree merge    Worktree 변경사항 머지
 forge worktree status   활성 worktree 현황
+forge memory dashboard  SOUL 학습 기억 현황
+forge retro latest      최근 회고 보기
+forge chemistry dashboard 팀 케미 대시보드
+forge achievement dashboard 업적 대시보드
+forge skill-tree dashboard  전문화 현황
+forge dna show          프로젝트 DNA 조회
+forge budget status     예산 상태
+forge tool-char guide   도구 성격 가이드
 ```

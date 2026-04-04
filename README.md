@@ -33,7 +33,7 @@ GolemGarden가 얹는 것:
 │  ~/.claude/golem-garden/                         │
 │  ├── souls/            ← SOUL 페르소나            │
 │  │   (tools, maxTurns, isolation, effort 포함)   │
-│  ├── lib/ (13개 모듈)                             │
+│  ├── lib/ (21개 모듈)                             │
 │  │   ├── soul-parser, growth-log, rank-system   │
 │  │   ├── prompt-builder (캐시 최적화)             │
 │  │   ├── mailbox (SOUL간 통신)                    │
@@ -48,6 +48,12 @@ GolemGarden가 얹는 것:
 │  ├── mailbox/          ← SOUL 간 메시지           │
 │  ├── sessions/         ← 작업 트랜스크립트         │
 │  ├── worktrees/        ← Git worktree 격리        │
+│  ├── memory/           ← SOUL별 학습 기억          │
+│  ├── retrospectives/   ← 자동 회고 보고서          │
+│  ├── chemistry.jsonl   ← 팀 케미 데이터            │
+│  ├── achievements.jsonl← 업적/뱃지                 │
+│  ├── skill-trees.jsonl ← 전문화 분기               │
+│  ├── project-dna.json  ← 프로젝트 지문             │
 │  └── forge-board.md    ← 팀 구성                  │
 │                                                 │
 │  ~/.claude/skills/golem-garden/                   │
@@ -190,6 +196,19 @@ Sage(심사관)가 프로젝트 학습을 검증 후 글로벌 SOUL에 반영.
 - forge dashboard --cost: SOUL별 비용 대시보드
 ```
 
+### 6. 성장 엔진 (GolemGarden만의 차별점)
+
+| 시스템 | 설명 | 명령 |
+|--------|------|------|
+| **SOUL Memory** | 과거 태스크 교훈을 기억, 유사 작업 시 프롬프트 자동 주입 | `forge memory` |
+| **Retrospective** | 빌드 후 자동 회고 (잘된 점/개선점/비용) | `forge retro` |
+| **Chemistry** | SOUL 쌍별 협업 점수 S~F 등급, 최적 팀 구성 | `forge chemistry` |
+| **Achievement** | 15개 뱃지 (First Blood ~ Grandmaster) | `forge achievement` |
+| **Skill Tree** | Senior 승급 시 전문화 브랜치 선택 | `forge skill-tree` |
+| **Project DNA** | 프로젝트 지문 + SOUL 이동 적응도 측정 | `forge dna` |
+| **Budget Tracker** | 토큰/USD 예산 + 수확체감 감지 | `forge budget` |
+| **Tool Character** | 도구 성격 메타데이터, 병렬 안전성 판단 | `forge tool-char` |
+
 ---
 
 ## OMC 연동 매핑
@@ -272,6 +291,18 @@ forge review: Ryn이 작성한 AuthController를 Zen이 리뷰
 - [x] Worktree 격리 (SOUL별 git worktree)
 - [x] 도구 실제 제한 (rank 기반 tools 필드)
 - [x] forge-team 스킬 강화 (세션/메일박스/복구 연동)
+
+#### GolemGarden 고유 기능 — 완료
+- [x] SOUL Memory (학습 기억 + 프롬프트 자동 주입)
+- [x] Retrospective (자동 회고)
+- [x] Chemistry (팀 케미 S~F)
+- [x] Achievement (15개 뱃지)
+- [x] Skill Tree (전문화 분기)
+- [x] Project DNA (프로젝트 지문)
+- [x] Budget Tracker (수확체감 감지)
+- [x] Tool Character (도구 성격 메타데이터)
+- [x] Withholding Pattern (에러 보류 복구)
+- [x] Fork Cache Optimization (byte-identical prefix)
 
 ### Phase 4: TypeScript 전환 — 미착수 (선택)
 - [ ] 핵심 라이브러리 TS + Zod 전환
@@ -534,6 +565,9 @@ forge pack list
 | **리뷰** | 단순 코드 체크 | SOUL 전문성 기반 크로스 리뷰 |
 | **재사용** | 프로젝트마다 처음부터 | SOUL 포터블 (프로젝트 간 이동) |
 | **확장** | 스킬 개별 추가 | 도메인 팩으로 SOUL+스킬 번들 설치 |
+| **성장 기억** | 없음 | SOUL Memory — 과거 실수를 기억하고 반복 안 함 |
+| **팀 케미** | 없음 | Chemistry — 데이터 기반 팀 최적화 |
+| **업적** | 없음 | Achievement — 성장의 가시화 |
 
 **핵심 차별점**: OMC는 "무엇을 할 것인가"에 집중.
 GolemGarden는 "누가, 어떤 성격과 역량으로, 어떤 경험을 쌓아가며 할 것인가"를 추가.
