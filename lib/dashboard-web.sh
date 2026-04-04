@@ -311,7 +311,7 @@ HTMLEOF
   echo "    2. 데이터 갱신:     forge dashboard refresh"
   echo "    3. 브라우저 열어두면 30초마다 자동 갱신"
   echo ""
-  echo "  팁: Stop Hook으로 자동 갱신이 ��정되어 있습니다."
+  echo "  팁: Stop Hook으로 자동 갱신이 설정되어 있습니다."
   echo "       forge build 완료 시 data.json이 자동 갱신됩니다."
 }
 
@@ -344,7 +344,7 @@ dashboard_web_serve() {
   elif command -v python >/dev/null 2>&1; then
     python_cmd="python"
   else
-    echo "[dashboard] ERROR: Python이 없습니다. ��동��로 HTTP 서버를 시작하세요:"
+    echo "[dashboard] ERROR: Python이 없습니다. 수동으로 HTTP 서버를 시작하세요:"
     echo "  cd ${DASHBOARD_DIR} && python -m http.server ${port}"
     return 1
   fi
@@ -360,7 +360,7 @@ dashboard_web_serve() {
   echo ""
   echo "  http://localhost:${port}"
   echo ""
-  echo "  - 30���마다 자동 새로고침"
+  echo "  - 30초마다 자동 새로고침"
   echo "  - forge build 완료 시 자동 데이터 갱신 (Stop Hook)"
   echo "  - 서버 종료: forge dashboard stop"
 
