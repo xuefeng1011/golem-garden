@@ -110,7 +110,7 @@ lib/            — Bash 라이브러리
   retrospective.sh    — 자동 회고
   chemistry.sh        — 팀 케미 추적
   achievement.sh      — 업적/뱃지
-  skill-tree.sh       — 전��화 분기
+  skill-tree.sh       — 전문화 분기
   project-dna.sh      — 프로젝트 지문
   rank-system.sh, forge-review.sh, portability.sh, forge-soul.sh, domain-pack.sh, knowledge-sync.sh
 skills/         — OMC 스킬 정의 (forge-init, forge-team, forge-review 등)
