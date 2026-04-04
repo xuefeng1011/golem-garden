@@ -29,6 +29,8 @@ if [ ! -d "${GOLEM_DIR}" ]; then
   mkdir -p "${GOLEM_DIR}/growth-log"
   mkdir -p "${GOLEM_DIR}/mailbox"
   mkdir -p "${GOLEM_DIR}/sessions"
+  mkdir -p "${GOLEM_DIR}/memory"
+  mkdir -p "${GOLEM_DIR}/retrospectives"
 fi
 
 # 하위 source에서 덮어쓰지 않도록 export
@@ -49,6 +51,12 @@ source "${GOLEM_ROOT}/lib/error-recovery.sh"
 source "${GOLEM_ROOT}/lib/worktree.sh"
 source "${GOLEM_ROOT}/lib/budget.sh"
 source "${GOLEM_ROOT}/lib/tool-character.sh"
+source "${GOLEM_ROOT}/lib/soul-memory.sh"
+source "${GOLEM_ROOT}/lib/retrospective.sh"
+source "${GOLEM_ROOT}/lib/chemistry.sh"
+source "${GOLEM_ROOT}/lib/achievement.sh"
+source "${GOLEM_ROOT}/lib/skill-tree.sh"
+source "${GOLEM_ROOT}/lib/project-dna.sh"
 
 # 도움말
 usage() {
@@ -595,6 +603,206 @@ case "${1:-}" in
         ;;
       *)
         echo "Usage: forge worktree <create|merge|cleanup|status>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  memory)
+    case "${2:-}" in
+      record)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
+          echo "Usage: forge memory record <soul> <task_context> <lesson> [tags]"
+          exit 1
+        fi
+        memory_record "$3" "$4" "$5" "${6:-}"
+        ;;
+      recall)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge memory recall <soul> <keywords>"
+          exit 1
+        fi
+        memory_recall "$3" "$4"
+        ;;
+      list)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge memory list <soul>"
+          exit 1
+        fi
+        memory_list "$3"
+        ;;
+      forget)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge memory forget <soul> <line_number>"
+          exit 1
+        fi
+        memory_forget "$3" "$4"
+        ;;
+      dashboard|"")
+        memory_dashboard
+        ;;
+      *)
+        echo "Usage: forge memory <record|recall|list|forget|dashboard>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  retro)
+    case "${2:-}" in
+      generate)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge retro generate <task> <souls_csv>"
+          exit 1
+        fi
+        retro_generate "$3" "$4"
+        ;;
+      list)
+        retro_list
+        ;;
+      latest)
+        retro_latest
+        ;;
+      trend)
+        retro_trend
+        ;;
+      *)
+        echo "Usage: forge retro <generate|list|latest|trend>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  chemistry)
+    case "${2:-}" in
+      record)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ] || [ -z "${6:-}" ]; then
+          echo "Usage: forge chemistry record <soul1> <soul2> <type> <result> [detail]"
+          exit 1
+        fi
+        chemistry_record "$3" "$4" "$5" "$6" "${7:-}"
+        ;;
+      score)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge chemistry score <soul1> <soul2>"
+          exit 1
+        fi
+        echo "$(chemistry_score "$3" "$4")"
+        ;;
+      best)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge chemistry best <soul>"
+          exit 1
+        fi
+        chemistry_best_partner "$3"
+        ;;
+      matrix)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge chemistry matrix <souls_csv>"
+          exit 1
+        fi
+        chemistry_team_recommend "$3"
+        ;;
+      dashboard|"")
+        chemistry_dashboard
+        ;;
+      *)
+        echo "Usage: forge chemistry <record|score|best|matrix|dashboard>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  achievement|achievements)
+    case "${2:-}" in
+      check)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge achievement check <soul>"
+          exit 1
+        fi
+        achievement_check "$3"
+        ;;
+      list)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge achievement list <soul>"
+          exit 1
+        fi
+        achievement_list "$3"
+        ;;
+      dashboard|"")
+        achievement_dashboard
+        ;;
+      *)
+        echo "Usage: forge achievement <check|list|dashboard>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  skill-tree)
+    case "${2:-}" in
+      branches)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge skill-tree branches <role>"
+          exit 1
+        fi
+        skill_tree_branches "$3"
+        ;;
+      specialize)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge skill-tree specialize <soul> <branch>"
+          exit 1
+        fi
+        skill_tree_specialize "$3" "$4"
+        ;;
+      respec)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge skill-tree respec <soul> <new_branch>"
+          exit 1
+        fi
+        skill_tree_respec "$3" "$4"
+        ;;
+      current)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge skill-tree current <soul>"
+          exit 1
+        fi
+        skill_tree_current "$3"
+        ;;
+      dashboard|"")
+        skill_tree_dashboard
+        ;;
+      *)
+        echo "Usage: forge skill-tree <branches|specialize|respec|current|dashboard>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  dna)
+    case "${2:-}" in
+      generate)
+        dna_generate "${3:-}" "${4:-}" "${5:-}" "${6:-}" "${7:-}"
+        ;;
+      show|"")
+        dna_show
+        ;;
+      compare)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge dna compare <other_dna_file>"
+          exit 1
+        fi
+        dna_compare "$3"
+        ;;
+      adapt)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge dna adapt <soul> <source_dna_file>"
+          exit 1
+        fi
+        dna_adaptation_guide "$3" "$4"
+        ;;
+      *)
+        echo "Usage: forge dna <generate|show|compare|adapt>"
         exit 1
         ;;
     esac

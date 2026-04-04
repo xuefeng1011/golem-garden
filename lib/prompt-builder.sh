@@ -103,6 +103,20 @@ OMC 에이전트: ${omc_agent} (모델: ${SOUL_MODEL})
 이 컨텍스트와 행동 원칙을 준수하여 다음 태스크를 수행하라:
 ${task}
 PROMPT
+
+  # SOUL Memory 자동 주입 (유사 태스크 기억이 있으면)
+  if [ -f "${GOLEM_ROOT}/lib/soul-memory.sh" ]; then
+    source "${GOLEM_ROOT}/lib/soul-memory.sh" 2>/dev/null
+    local mem_block=$(memory_prompt_block "$soul_name" "$task" 2>/dev/null)
+    [ -n "$mem_block" ] && echo "$mem_block"
+  fi
+
+  # Skill Tree 전문화 블록 주입 (전문화되어 있으면)
+  if [ -f "${GOLEM_ROOT}/lib/skill-tree.sh" ]; then
+    source "${GOLEM_ROOT}/lib/skill-tree.sh" 2>/dev/null
+    local st_block=$(skill_tree_prompt_block "$soul_name" 2>/dev/null)
+    [ -n "$st_block" ] && echo "$st_block"
+  fi
 }
 
 # 리뷰어 전용 프롬프트 조립
