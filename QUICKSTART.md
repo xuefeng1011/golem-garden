@@ -117,16 +117,75 @@ Claude Code 안에서:
 
 ## 2. GolemGarden 설치
 
+### 최초 설치
+
 ```bash
-# 리포 클론
-git clone https://github.com/your-org/golem-garden.git
+# 1. 리포 클론
+git clone https://github.com/xuefeng1011/golem-garden.git
 cd golem-garden
 
-# 설치 (SOULs + 스킬을 ~/.claude/에 복사)
+# 2. 설치 (SOULs + 스킬 + 22개 lib + Hook을 ~/.claude/에 복사)
 bash install.sh
+
+# 3. (선택) bash alias 추가 — 터미널에서 forge 명령 직접 쓸 때
+echo 'alias forge="bash ~/.claude/golem-garden/forge.sh"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-설치 후 확인:
+### 업데이트 (새 버전 반영)
+
+GolemGarden이 업데이트되면 `git pull` 후 `install.sh`를 다시 실행합니다.
+기존 growth-log, 업적, 케미, 메모리 등 **데이터는 보존**됩니다 (덮어쓰지 않음).
+
+```bash
+cd /path/to/golem-garden
+
+# 1. 최신 코드 받기
+git pull
+
+# 2. 재설치 (lib/스킬/Hook만 덮어쓰기, 데이터 보존)
+bash install.sh
+
+# 3. 확인
+bash forge.sh status
+```
+
+**install.sh가 하는 것**:
+- `~/.claude/golem-garden/` — forge.sh, lib/*.sh(22개), souls/, domain-packs/, templates/ 복사
+- `~/.claude/skills/golem-garden/` — SKILL.md(메타 라우터), forge-init/team/review/sync 스킬 복사
+- `~/.claude/golem-garden/.claude/hooks/` — Hook 스크립트 5개 복사
+- `growth-log/*.jsonl` — 없는 것만 초기화 (기존 기록 보존)
+
+**install.sh가 건드리지 않는 것**:
+- `growth-log/*.jsonl` (이미 있으면 보존)
+- `achievements.jsonl`, `chemistry.jsonl`, `skill-trees.jsonl`
+- `projects.jsonl` (글로벌 대시보드 프로젝트 등록)
+- `.golem/` (프로젝트별 데이터 전부)
+
+### 대시보드 설정
+
+설치 후 대시보드를 한번 활성화하면, 이후 자동 갱신됩니다.
+
+```bash
+# 프로젝트별 대시보드 (현재 프로젝트의 SOUL 팀 현황)
+forge dashboard serve
+# → http://localhost:9470 자동 열림, 30초마다 auto-refresh
+
+# 글로벌 대시보드 (전체 프로젝트 통합 현황)
+forge dashboard global-serve
+# → http://localhost:9471 자동 열림, 30초마다 auto-refresh
+
+# 이후 forge build 완료 시 Stop Hook이 자동으로 데이터 갱신
+# 브라우저를 열어두기만 하면 최신 상태가 자동 반영됩니다.
+```
+
+| 대시보드 | 포트 | 명령 | 내용 |
+|---------|------|------|------|
+| 프로젝트별 | 9470 | `forge dashboard serve` | 현재 프로젝트 SOUL 팀 상세 |
+| 글로벌 | 9471 | `forge dashboard global-serve` | 전체 프로젝트 통합 현황 |
+
+### 설치 후 확인
+
 ```bash
 bash forge.sh status
 ```
@@ -439,11 +498,11 @@ setup omc
 git clone https://github.com/xuefeng1011/golem-garden.git
 cd golem-garden
 
-# 설치 (SOULs + 스킬을 ~/.claude/에 복사)
+# 설치 (SOULs + 22개 lib + 스킬 + Hook을 ~/.claude/에 복사)
 bash install.sh
 
-# bash alias 추가 (선택, 터미널에서 forge 명령어 직접 쓸 때)
-echo 'alias forge="bash /path/to/golem-garden/forge.sh"' >> ~/.bashrc
+# bash alias 추가 (선택)
+echo 'alias forge="bash ~/.claude/golem-garden/forge.sh"' >> ~/.bashrc
 source ~/.bashrc
 
 # 설치 확인
@@ -451,6 +510,8 @@ forge status
 ```
 
 **여기까지 1회만 하면 됩니다.** 이후 프로젝트마다 아래만 반복.
+
+> **업데이트 시**: `cd golem-garden && git pull && bash install.sh` — 데이터(growth-log, 업적 등)는 보존됩니다.
 
 ### Step 4: 기존 프로젝트에 도입
 
