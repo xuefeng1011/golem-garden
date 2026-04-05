@@ -59,6 +59,7 @@ source "${GOLEM_ROOT}/lib/skill-tree.sh"
 source "${GOLEM_ROOT}/lib/project-dna.sh"
 source "${GOLEM_ROOT}/lib/dashboard-web.sh"
 source "${GOLEM_ROOT}/lib/dashboard-global.sh"
+source "${GOLEM_ROOT}/lib/global-sync.sh"
 
 # 도움말
 usage() {
@@ -343,6 +344,12 @@ case "${1:-}" in
       global-register)
         dashboard_global_register "${3:-}"
         ;;
+      global-sync)
+        global_sync
+        ;;
+      global-sync-status)
+        global_sync_status
+        ;;
       *)
         growth_log_dashboard
         ;;
@@ -556,6 +563,14 @@ case "${1:-}" in
 
   cost-dashboard)
     growth_log_cost_dashboard
+    ;;
+
+  sync-global)
+    global_sync
+    ;;
+
+  sync-global-status)
+    global_sync_status
     ;;
 
   budget)
