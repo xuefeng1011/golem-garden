@@ -35,6 +35,13 @@ dashboard_global_register() {
     return 1
   fi
 
+  # GOLEM_ROOT 자체는 프로젝트로 등록 금지
+  local resolved_root
+  resolved_root=$(cd "$GOLEM_ROOT" 2>/dev/null && pwd || echo "$GOLEM_ROOT")
+  if [ "$project_path" = "$resolved_root" ]; then
+    return 0
+  fi
+
   # 중복 체크
   if [ -f "$PROJECTS_FILE" ] && grep -q "\"path\":\"${project_path}\"" "$PROJECTS_FILE" 2>/dev/null; then
     echo "[global-dashboard] ${project_path}: 이미 등록됨"

@@ -8,10 +8,17 @@ GOLEM_DIR="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}"
 
 DASHBOARD_DIR="${GOLEM_DIR}/dashboard"
 
-# 대시보드가 초기화되어 있을 때만 갱신
+# 프로젝트 대시보드 갱신
 if [ -f "${DASHBOARD_DIR}/index.html" ]; then
   source "${GOLEM_ROOT}/lib/dashboard-web.sh" 2>/dev/null && \
     dashboard_web_refresh >/dev/null 2>&1
+fi
+
+# 글로벌 대시보드 갱신
+GLOBAL_DASHBOARD="${GOLEM_ROOT}/dashboard"
+if [ -f "${GLOBAL_DASHBOARD}/index.html" ]; then
+  source "${GOLEM_ROOT}/lib/dashboard-global.sh" 2>/dev/null && \
+    dashboard_global_refresh >/dev/null 2>&1
 fi
 
 exit 0
