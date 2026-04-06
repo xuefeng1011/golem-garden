@@ -21,6 +21,11 @@ _worktree_check_git() {
 # forge_worktree_create <soul_name> [task_description]
 forge_worktree_create() {
   local soul_name="$1"
+  soul_name=$(basename "$soul_name")
+  if [[ "$soul_name" =~ [^a-zA-Z0-9_-] ]]; then
+    echo "[worktree] ERROR: 잘못된 SOUL 이름: $soul_name" >&2
+    return 1
+  fi
   local task="${2:-work}"
 
   _worktree_check_git || return 1

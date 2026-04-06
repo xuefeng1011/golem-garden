@@ -17,9 +17,15 @@ _sed_i() {
   fi
 }
 
+_json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\r/\\r/g' | awk '{if(NR>1) printf "\\n"; printf "%s",$0}'
+}
+
 # SOUL 파일 검색: .golem/souls/ 우선 → 글로벌 souls/ 폴백
 _resolve_soul_file() {
   local name="$1"
+  name=$(basename "$name" .md)
+  name=$(basename "$name")
   local project_soul="${GOLEM_DIR}/souls/${name}.md"
   local global_soul="${GOLEM_ROOT}/souls/${name}.md"
 

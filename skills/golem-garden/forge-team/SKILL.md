@@ -140,16 +140,35 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
 - 변경사항 없으면 자동 정리
 - 충돌 시 사용자에게 보고
 
-### Step 5: 결과 기록
+### Step 5: 결과 기록 (비용 자동 추적)
 
 각 SOUL의 태스크 완료 후:
 
-1. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {soul_name} "{task}" {result} {files_changed} {tests_passed}` 실행
-   - result: 에이전트가 성공적으로 완료했으면 "success", 실패하면 "fail"
-   - files_changed: 변경된 파일 수 (git diff --stat로 확인)
-   - tests_passed: 통과한 테스트 수 (테스트 실행 결과에서 확인)
+1. **Agent 결과에서 usage 데이터 추출**: Agent 결과 끝에 포함된 `<usage>` 태그에서 값을 파싱한다.
+   ```
+   <usage>total_tokens: 50000, tool_uses: 15, duration_ms: 120000</usage>
+   ```
+   - `total_tokens`: 총 사용 토큰
+   - `duration_ms`: 실행 시간 (밀리초)
 
-2. 랭크 체크 자동 실행 (log-add에 포함됨)
+2. **`log-add-usage`로 비용 포함 기록** (log-add 대신 사용):
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add-usage {soul_name} "{task}" {result} {files_changed} {tests_passed} {model} {total_tokens} {duration_ms}
+   ```
+   - result: "success" 또는 "fail"
+   - files_changed: 변경된 파일 수 (git diff --stat로 확인)
+   - tests_passed: 통과한 테스트 수
+   - model: SOUL의 model 필드 (opus, sonnet, haiku)
+   - total_tokens: Agent usage에서 추출한 값
+   - duration_ms: Agent usage에서 추출한 값
+   - **비용은 자동 계산됨** (모델별 가격 × 토큰 수)
+   - **예산 추적도 자동 실행됨** (budget_record)
+   - **랭크 체크도 자동 실행됨**
+
+   **usage 데이터를 추출할 수 없는 경우** (Agent 실패 등): 기존 `log-add`로 폴백
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {soul_name} "{task}" {result} {files_changed} {tests_passed}
+   ```
 
 3. **메일박스 통지**: SOUL이 Director에게 완료 보고
    ```bash
@@ -206,8 +225,8 @@ AI 실행:
    - Agent(designer, sonnet, Kai 컨텍스트 + 행동 원칙 + 랭크 제약 + tools=[Read,Edit,Grep,Glob] + "로그인 화면 구현")
 4. (Worktree 머지 — novice이므로 해당 없음)
 5. 완료 후:
-   - forge log-add ryn "인증 API" success 8 15
-   - forge log-add kai "로그인 화면" success 3 6
+   - forge log-add-usage ryn "인증 API" success 8 15 sonnet 50000 120000
+   - forge log-add-usage kai "로그인 화면" success 3 6 sonnet 35000 80000
    - mailbox send ryn nex task_done "인증 API 완료"
    - mailbox send kai nex task_done "로그인 화면 완료"
 6. 리뷰 권고 (둘 다 Novice이므로):

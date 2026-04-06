@@ -33,7 +33,7 @@ GolemGarden가 얹는 것:
 │  ~/.claude/golem-garden/                         │
 │  ├── souls/            ← SOUL 페르소나            │
 │  │   (tools, maxTurns, isolation, effort 포함)   │
-│  ├── lib/ (21개 모듈)                             │
+│  ├── lib/ (24개 모듈)                             │
 │  │   ├── soul-parser, growth-log, rank-system   │
 │  │   ├── prompt-builder (캐시 최적화)             │
 │  │   ├── mailbox (SOUL간 통신)                    │
@@ -194,6 +194,7 @@ Sage(심사관)가 프로젝트 학습을 검증 후 글로벌 SOUL에 반영.
 - forge recover: 3단계 실패 복구 (재시도→위임→에스컬레이션)
 - forge worktree: Git worktree 기반 SOUL 격리 실행
 - forge dashboard --cost: SOUL별 비용 대시보드
+- forge log-add-usage: Agent usage 기반 자동 비용 추적
 ```
 
 ### 6. 성장 엔진 (GolemGarden만의 차별점)
@@ -244,11 +245,10 @@ OMC 실행 모드 매핑:
 /plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
 /plugin install oh-my-claudecode
 
-# 2. GolemGarden 스킬 설치
-mkdir -p ~/.claude/skills/golem-garden
-mkdir -p ~/.claude/golem-garden/souls
-mkdir -p ~/.claude/golem-garden/growth-log
-# (GolemGarden 스킬 파일들 복사)
+# 2. GolemGarden 설치
+git clone https://github.com/xuefeng1011/golem-garden.git
+cd golem-garden
+bash install.sh
 ```
 
 ### 사용
@@ -303,6 +303,14 @@ forge review: Ryn이 작성한 AuthController를 Zen이 리뷰
 - [x] Tool Character (도구 성격 메타데이터)
 - [x] Withholding Pattern (에러 보류 복구)
 - [x] Fork Cache Optimization (byte-identical prefix)
+
+### Phase 3.5: 품질 강화 — 완료
+- [x] `_json_escape()` — 모든 JSON 문자열 안전 이스케이프 (newline/tab/quote/backslash)
+- [x] 경로 순회 방지 — `_resolve_soul_file()`, `forge_worktree_create()` 입력 검증
+- [x] 승급 로직 통합 — `rank_should_promote()` 단일 함수 (rank-system + global-sync)
+- [x] Lazy loading — forge.sh 24개 모듈 중 21개 온디맨드 로딩
+- [x] JSONL 요약 캐시 — `.summary` 사이드카로 O(1) 조회
+- [x] 자동 비용 추적 — `log-add-usage` (Agent usage → 모델별 가격 자동 계산)
 
 ### Phase 4: TypeScript 전환 — 미착수 (선택)
 - [ ] 핵심 라이브러리 TS + Zod 전환

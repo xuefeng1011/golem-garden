@@ -124,7 +124,7 @@ Claude Code 안에서:
 git clone https://github.com/xuefeng1011/golem-garden.git
 cd golem-garden
 
-# 2. 설치 (SOULs + 스킬 + 22개 lib + Hook을 ~/.claude/에 복사)
+# 2. 설치 (SOULs + 스킬 + 24개 lib + Hook을 ~/.claude/에 복사)
 bash install.sh
 
 # 3. (선택) bash alias 추가 — 터미널에서 forge 명령 직접 쓸 때
@@ -151,7 +151,7 @@ bash forge.sh status
 ```
 
 **install.sh가 하는 것**:
-- `~/.claude/golem-garden/` — forge.sh, lib/*.sh(22개), souls/, domain-packs/, templates/ 복사
+- `~/.claude/golem-garden/` — forge.sh, lib/*.sh(24개), souls/, domain-packs/, templates/ 복사
 - `~/.claude/skills/golem-garden/` — SKILL.md(메타 라우터), forge-init/team/review/sync 스킬 복사
 - `~/.claude/golem-garden/.claude/hooks/` — Hook 스크립트 5개 복사
 - `growth-log/*.jsonl` — 없는 것만 초기화 (기존 기록 보존)
@@ -275,18 +275,10 @@ You: forge assign ryn: JWT 토큰 갱신 로직 수정
 You: forge build: 마이페이지 기능, kai 리드
 ```
 
-### 4단계: 리뷰 (자동)
+### 4단계: 리뷰
 
-3단계 완료 후 Novice/Junior SOUL이면 **자동으로 리뷰가 트리거**됩니다.
-
-```
-(자동 실행됨 — 사용자가 별도로 칠 필요 없음)
-→ Zen(QA)이 Ryn의 코드 리뷰
-→ 결과: Pass / Fail
-→ growth-log에 자동 기록
-```
-
-수동으로 리뷰를 요청할 수도 있습니다:
+빌드 완료 후 Novice/Junior SOUL이면 **리뷰가 권고**됩니다.
+사용자가 `forge review`로 실행합니다:
 ```
 You: forge review ryn
 You: forge review kai zen          # Kai의 코드를 Zen이 리뷰
@@ -442,11 +434,11 @@ You: forge-init: 기존 Cocos Creator 프로젝트, TypeScript
 | 항목 | 설명 |
 |------|------|
 | **기존 코드 변경** | GolemGarden은 기존 코드를 건드리지 않음 |
-| **추가되는 파일** | `forge-board.md` 1개만 프로젝트 루트에 생성 |
-| **SOUL 파일 위치** | `~/.claude/golem-garden/souls/`에 저장 (프로젝트 밖) |
-| **git 영향** | `forge-board.md`만 추가됨. `.gitignore`에 넣어도 무방 |
+| **추가되는 파일** | `.golem/` 디렉토리 (souls, growth-log, forge-board 등) |
+| **SOUL 파일 위치** | `.golem/souls/`(프로젝트 오버라이드) > `~/.claude/golem-garden/souls/`(글로벌) |
+| **git 영향** | `.golem/` 디렉토리만 추가됨. `.gitignore`에 넣어도 무방 |
 | **팀원과 공유** | `forge-board.md`를 커밋하면 팀원도 같은 팀 구성 사용 가능 |
-| **제거** | `forge-board.md` 삭제하면 끝. 프로젝트에 흔적 없음 |
+| **제거** | `.golem/` 삭제하면 끝. 프로젝트에 흔적 없음 |
 
 ### 한줄 요약
 
@@ -498,7 +490,7 @@ setup omc
 git clone https://github.com/xuefeng1011/golem-garden.git
 cd golem-garden
 
-# 설치 (SOULs + 22개 lib + 스킬 + Hook을 ~/.claude/에 복사)
+# 설치 (SOULs + 24개 lib + 스킬 + Hook을 ~/.claude/에 복사)
 bash install.sh
 
 # bash alias 추가 (선택)

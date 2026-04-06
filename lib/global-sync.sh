@@ -137,21 +137,8 @@ _sync_soul() {
   local current_rank="$SOUL_RANK"
   local new_rank="$current_rank"
 
-  # 합산 기준 랭크 판정
-  case "$current_rank" in
-    novice)
-      [ "$total_tasks" -ge 10 ] && new_rank="junior"
-      ;;
-    junior)
-      [ "$total_tasks" -ge 50 ] && [ "$best_streak" -ge 10 ] && new_rank="senior"
-      ;;
-    senior)
-      [ "$total_tasks" -ge 100 ] && new_rank="lead"
-      ;;
-    lead)
-      [ "$total_tasks" -ge 200 ] && new_rank="master"
-      ;;
-  esac
+  local promoted_rank=$(rank_should_promote "$current_rank" "$total_tasks" "$best_streak")
+  [ -n "$promoted_rank" ] && new_rank="$promoted_rank"
 
   # ─── Step 3: 랭크 변경 시 글로벌 + 프로젝트 역전파 ───
   if [ "$new_rank" != "$current_rank" ]; then
@@ -162,7 +149,8 @@ _sync_soul() {
 
     # 글로벌 growth-log에 승급 이벤트 기록
     local date=$(date +%Y-%m-%d)
-    echo "{\"date\":\"${date}\",\"task\":\"RANK_UP\",\"result\":\"${current_rank}->${new_rank}\",\"trigger\":\"global_sync(tasks=${total_tasks},streak=${best_streak})\"}" >> "$global_log"
+    local trigger=$(_json_escape "global_sync(tasks=${total_tasks},streak=${best_streak})")
+    echo "{\"date\":\"${date}\",\"task\":\"RANK_UP\",\"result\":\"${current_rank}->${new_rank}\",\"trigger\":\"${trigger}\"}" >> "$global_log"
 
     # 프로젝트별 SOUL에도 랭크 역전파
     while IFS= read -r proj_path; do

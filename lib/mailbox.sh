@@ -43,6 +43,7 @@ mailbox_plan_approval() {
   local plan_summary="$2"
   [ ! -d "$MAILBOX_DIR" ] && mailbox_init
   local ts=$(date -u +%Y-%m-%dT%H:%M:%S 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+  plan_summary=$(_json_escape "$plan_summary")
   local entry="{\"id\":\"msg_$(date +%s)_$$\",\"from\":\"${from}\",\"to\":\"user\",\"type\":\"plan_approval\",\"content\":\"${plan_summary}\",\"ts\":\"${ts}\",\"status\":\"pending\"}"
   echo "$entry" >> "${MAILBOX_DIR}/broadcast.jsonl"
   echo "[mailbox] ${from} → user: plan_approval (승인 대기)"
@@ -77,8 +78,7 @@ mailbox_send() {
   local ts=$(date -u +%Y-%m-%dT%H:%M:%S 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
   local inbox="${MAILBOX_DIR}/${to}.jsonl"
 
-  # 특수 문자 이스케이프 (큰따옴표, 백슬래시)
-  content=$(echo "$content" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  content=$(_json_escape "$content")
 
   local entry="{\"id\":\"${msg_id}\",\"from\":\"${from}\",\"to\":\"${to}\",\"type\":\"${msg_type}\",\"content\":\"${content}\",\"ts\":\"${ts}\",\"status\":\"unread\"}"
 
@@ -96,7 +96,7 @@ mailbox_broadcast() {
   local msg_id="msg_$(date +%s)_$$"
   local ts=$(date -u +%Y-%m-%dT%H:%M:%S 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
 
-  content=$(echo "$content" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  content=$(_json_escape "$content")
 
   local entry="{\"id\":\"${msg_id}\",\"from\":\"${from}\",\"to\":\"all\",\"type\":\"broadcast\",\"content\":\"${content}\",\"ts\":\"${ts}\",\"status\":\"unread\"}"
 

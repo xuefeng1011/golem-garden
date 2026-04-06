@@ -3,6 +3,7 @@
 # Usage: source lib/session.sh && session_create "인증 API 구현" "nex,ryn,kai"
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${GOLEM_ROOT}/lib/soul-parser.sh"
 
 # 세션 디렉토리
 SESSION_DIR="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/sessions"
@@ -107,7 +108,7 @@ session_log() {
   fi
 
   local ts=$(_session_ts)
-  detail=$(echo "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  detail=$(_json_escape "$detail")
 
   echo "{\"ts\":\"${ts}\",\"soul\":\"${soul_name}\",\"action\":\"${action}\",\"detail\":\"${detail}\"}" >> "${SESSION_DIR}/${active}.jsonl"
 }

@@ -9,6 +9,19 @@ source "${GOLEM_ROOT}/lib/growth-log.sh"
 # 랭크 정의 (순서대로)
 RANKS=("novice" "junior" "senior" "lead" "master")
 
+rank_should_promote() {
+  local current_rank="$1"
+  local task_count="$2"
+  local streak="$3"
+
+  case "$current_rank" in
+    novice)  [ "$task_count" -ge 10 ] && echo "junior" ;;
+    junior)  [ "$task_count" -ge 50 ] && [ "$streak" -ge 10 ] && echo "senior" ;;
+    senior)  [ "$task_count" -ge 100 ] && echo "lead" ;;
+    lead)    [ "$task_count" -ge 200 ] && echo "master" ;;
+  esac
+}
+
 # 랭크 인덱스 반환
 rank_index() {
   local rank="$1"
@@ -33,46 +46,26 @@ rank_check() {
   local streak=$(growth_log_streak "$soul_name")
   local current_idx=$(rank_index "$current_rank")
 
-  local eligible=""
   local next_rank=""
   local reason=""
 
-  case "$current_rank" in
-    novice)
-      if [ "$task_count" -ge 10 ]; then
-        eligible="yes"
-        next_rank="junior"
-        reason="태스크 ${task_count}건 완료 (≥10)"
-      fi
-      ;;
-    junior)
-      if [ "$task_count" -ge 50 ] && [ "$streak" -ge 10 ]; then
-        eligible="yes"
-        next_rank="senior"
-        reason="태스크 ${task_count}건 (≥50) + 무결함 ${streak}연속 (≥10)"
-      fi
-      ;;
-    senior)
-      if [ "$task_count" -ge 100 ]; then
-        eligible="yes"
-        next_rank="lead"
-        reason="태스크 ${task_count}건 (≥100) + 멘토링 이력"
-      fi
-      ;;
-    lead)
-      if [ "$task_count" -ge 200 ]; then
-        eligible="yes"
-        next_rank="master"
-        reason="태스크 ${task_count}건 (≥200) + 커뮤니티 검증"
-      fi
-      ;;
-    master)
-      echo "[rank] ${soul_name}: 이미 최고 랭크 (Master)"
-      return 0
-      ;;
-  esac
+  if [ "$current_rank" = "master" ]; then
+    echo "[rank] ${soul_name}: 이미 최고 랭크 (Master)"
+    return 0
+  fi
 
-  if [ "$eligible" = "yes" ]; then
+  next_rank=$(rank_should_promote "$current_rank" "$task_count" "$streak")
+
+  if [ -n "$next_rank" ]; then
+    case "$current_rank" in
+      novice) reason="태스크 ${task_count}건 완료 (≥10)" ;;
+      junior) reason="태스크 ${task_count}건 (≥50) + 무결함 ${streak}연속 (≥10)" ;;
+      senior) reason="태스크 ${task_count}건 (≥100) + 멘토링 이력" ;;
+      lead)   reason="태스크 ${task_count}건 (≥200) + 커뮤니티 검증" ;;
+    esac
+  fi
+
+  if [ -n "$next_rank" ]; then
     echo "[rank] ${soul_name}: 승급 가능! ${current_rank} → ${next_rank} (${reason})"
     echo "ELIGIBLE:${next_rank}:${reason}"
   else

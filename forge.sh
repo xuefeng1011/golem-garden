@@ -39,27 +39,16 @@ export GOLEM_DIR GOLEM_PROJECT
 source "${GOLEM_ROOT}/lib/soul-parser.sh"
 source "${GOLEM_ROOT}/lib/growth-log.sh"
 source "${GOLEM_ROOT}/lib/rank-system.sh"
-source "${GOLEM_ROOT}/lib/prompt-builder.sh"
-source "${GOLEM_ROOT}/lib/forge-review.sh"
-source "${GOLEM_ROOT}/lib/portability.sh"
-source "${GOLEM_ROOT}/lib/forge-soul.sh"
-source "${GOLEM_ROOT}/lib/domain-pack.sh"
-source "${GOLEM_ROOT}/lib/knowledge-sync.sh"
-source "${GOLEM_ROOT}/lib/mailbox.sh"
-source "${GOLEM_ROOT}/lib/session.sh"
-source "${GOLEM_ROOT}/lib/error-recovery.sh"
-source "${GOLEM_ROOT}/lib/worktree.sh"
-source "${GOLEM_ROOT}/lib/budget.sh"
-source "${GOLEM_ROOT}/lib/tool-character.sh"
-source "${GOLEM_ROOT}/lib/soul-memory.sh"
-source "${GOLEM_ROOT}/lib/retrospective.sh"
-source "${GOLEM_ROOT}/lib/chemistry.sh"
-source "${GOLEM_ROOT}/lib/achievement.sh"
-source "${GOLEM_ROOT}/lib/skill-tree.sh"
-source "${GOLEM_ROOT}/lib/project-dna.sh"
-source "${GOLEM_ROOT}/lib/dashboard-web.sh"
-source "${GOLEM_ROOT}/lib/dashboard-global.sh"
-source "${GOLEM_ROOT}/lib/global-sync.sh"
+
+# Lazy module loader — sources a module only if not already loaded
+_load() {
+  local mod="$1"
+  local mod_var="_LOADED_${mod//-/_}"
+  mod_var="${mod_var//./_}"
+  eval "[ \"\${${mod_var}:-}\" = 1 ] && return 0"
+  source "${GOLEM_ROOT}/lib/${mod}" || { echo "[ERROR] Failed to load module: ${mod}" >&2; return 1; }
+  eval "${mod_var}=1"
+}
 
 # 도움말
 usage() {
@@ -82,6 +71,8 @@ Commands:
   promote <name>      SOUL 랭크 승급 실행
   log <name>          SOUL 성장 기록 조회
   log-add <name> <task> <result> [files] [tests]
+  log-add-usage <name> <task> <result> <files> <tests> <model> <total_tokens> <duration_ms>
+                      Agent usage 기반 자동 비용 계산 후 기록
                       성장 기록 수동 추가
   dashboard           성장 대시보드
   rank-board          랭크 대시보드
@@ -199,6 +190,7 @@ EOF
 # 메인 라우터
 case "${1:-}" in
   init)
+    _load domain-pack.sh
     echo "=== GolemGarden 프로젝트 초기화 ==="
     echo ""
     echo "이 명령은 Claude Code 대화창에서 실행해야 합니다."
@@ -246,6 +238,7 @@ case "${1:-}" in
     ;;
 
   prompt)
+    _load prompt-builder.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
       echo "Usage: forge prompt <soul_name> <task>"
       exit 1
@@ -254,6 +247,7 @@ case "${1:-}" in
     ;;
 
   prompt-review)
+    _load prompt-builder.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
       echo "Usage: forge prompt-review <reviewer> <worker> <target>"
       exit 1
@@ -262,6 +256,7 @@ case "${1:-}" in
     ;;
 
   prompt-director)
+    _load prompt-builder.sh
     if [ -z "${2:-}" ]; then
       echo "Usage: forge prompt-director <task>"
       exit 1
@@ -306,48 +301,76 @@ case "${1:-}" in
     rank_check "$2"
     ;;
 
+  log-add-usage)
+    # Agent usage 데이터로 자동 비용 계산 후 기록
+    # Usage: forge log-add-usage <soul> <task> <result> <files> <tests> <model> <total_tokens> <duration_ms>
+    if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${7:-}" ]; then
+      echo "Usage: forge log-add-usage <soul> <task> <result> <files> <tests> <model> <total_tokens> <duration_ms>"
+      exit 1
+    fi
+    _load budget.sh
+    _lau_cost_data=$(budget_estimate_cost "${7:-sonnet}" "${8:-0}" "${9:-0}")
+    read -r _lau_tin _lau_tout _lau_cost <<< "$_lau_cost_data"
+    growth_log_append "$2" "$3" "$4" "${5:-0}" "${6:-0}" "" "" "$_lau_tin" "$_lau_tout" 0 "$_lau_cost" "${7:-sonnet}" "${9:-0}"
+    budget_record "$2" "$_lau_tout" "$_lau_cost"
+    rank_check "$2"
+    ;;
+
   dashboard)
     case "${2:-}" in
       --cost|cost)
         growth_log_cost_dashboard
         ;;
       --web|web)
+        _load dashboard-web.sh
         dashboard_web_generate
         ;;
       refresh)
+        _load dashboard-web.sh
         dashboard_web_refresh
         ;;
       serve)
+        _load dashboard-web.sh
         dashboard_web_serve "${3:-9470}"
         ;;
       stop)
+        _load dashboard-web.sh
         dashboard_web_stop
         ;;
       open)
+        _load dashboard-web.sh
         dashboard_web_serve "${3:-9470}"
         ;;
       global)
+        _load dashboard-global.sh
         dashboard_global_generate
         ;;
       global-refresh)
+        _load dashboard-global.sh
         dashboard_global_refresh
         ;;
       global-serve)
+        _load dashboard-global.sh
         dashboard_global_serve "${3:-9471}"
         ;;
       global-stop)
+        _load dashboard-global.sh
         dashboard_global_stop
         ;;
       global-projects)
+        _load dashboard-global.sh
         dashboard_global_projects
         ;;
       global-register)
+        _load dashboard-global.sh
         dashboard_global_register "${3:-}"
         ;;
       global-sync)
+        _load global-sync.sh
         global_sync
         ;;
       global-sync-status)
+        _load global-sync.sh
         global_sync_status
         ;;
       *)
@@ -361,6 +384,8 @@ case "${1:-}" in
     ;;
 
   review)
+    _load forge-review.sh
+    _load prompt-builder.sh
     if [ -z "${2:-}" ]; then
       echo "Usage: forge review <worker> [reviewer] [target]"
       exit 1
@@ -369,6 +394,7 @@ case "${1:-}" in
     ;;
 
   review-record)
+    _load forge-review.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
       echo "Usage: forge review-record <worker> <reviewer> <target> <result> [issues] [severity]"
       exit 1
@@ -377,6 +403,8 @@ case "${1:-}" in
     ;;
 
   review-auto)
+    _load forge-review.sh
+    _load prompt-builder.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
       echo "Usage: forge review-auto <worker> <task>"
       exit 1
@@ -385,10 +413,12 @@ case "${1:-}" in
     ;;
 
   review-status)
+    _load forge-review.sh
     review_status
     ;;
 
   export)
+    _load portability.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
       echo "Usage: forge export <soul_name> <target_dir>"
       exit 1
@@ -397,6 +427,7 @@ case "${1:-}" in
     ;;
 
   import)
+    _load portability.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
       echo "Usage: forge import <source_dir> <soul_name>"
       exit 1
@@ -405,6 +436,7 @@ case "${1:-}" in
     ;;
 
   export-pack)
+    _load portability.sh
     if [ -z "${2:-}" ]; then
       echo "Usage: forge export-pack <pack_name> [target_dir]"
       exit 1
@@ -413,6 +445,7 @@ case "${1:-}" in
     ;;
 
   import-pack)
+    _load portability.sh
     if [ -z "${2:-}" ]; then
       echo "Usage: forge import-pack <pack_dir>"
       exit 1
@@ -421,6 +454,7 @@ case "${1:-}" in
     ;;
 
   sync)
+    _load knowledge-sync.sh
     case "${2:-}" in
       status)
         knowledge_dashboard
@@ -445,6 +479,7 @@ case "${1:-}" in
     ;;
 
   sync-judge)
+    _load knowledge-sync.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
       echo "Usage: forge sync-judge <번호> <promote|hold|reject> [사유]"
       exit 1
@@ -453,6 +488,7 @@ case "${1:-}" in
     ;;
 
   sync-promote)
+    _load knowledge-sync.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
       echo "Usage: forge sync-promote <soul> <learning>"
       exit 1
@@ -461,10 +497,12 @@ case "${1:-}" in
     ;;
 
   portability)
+    _load portability.sh
     portability_status
     ;;
 
   mailbox)
+    _load mailbox.sh
     case "${2:-}" in
       dashboard|"")
         mailbox_dashboard
@@ -511,6 +549,7 @@ case "${1:-}" in
     ;;
 
   session)
+    _load session.sh
     case "${2:-}" in
       create)
         if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
@@ -546,6 +585,7 @@ case "${1:-}" in
     ;;
 
   recover)
+    _load error-recovery.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
       echo "Usage: forge recover <soul> <task> <failure_reason>"
       exit 1
@@ -554,6 +594,7 @@ case "${1:-}" in
     ;;
 
   recover-history)
+    _load error-recovery.sh
     if [ -z "${2:-}" ]; then
       echo "Usage: forge recover-history <soul_name>"
       exit 1
@@ -566,14 +607,17 @@ case "${1:-}" in
     ;;
 
   sync-global)
+    _load global-sync.sh
     global_sync
     ;;
 
   sync-global-status)
+    _load global-sync.sh
     global_sync_status
     ;;
 
   budget)
+    _load budget.sh
     case "${2:-}" in
       init)     budget_init ;;
       reset)    budget_reset ;;
@@ -594,6 +638,7 @@ case "${1:-}" in
     ;;
 
   tool-char)
+    _load tool-character.sh
     case "${2:-}" in
       check)
         if [ -z "${3:-}" ]; then
@@ -626,6 +671,7 @@ case "${1:-}" in
     ;;
 
   worktree)
+    _load worktree.sh
     case "${2:-}" in
       create)
         if [ -z "${3:-}" ]; then
@@ -659,6 +705,7 @@ case "${1:-}" in
     ;;
 
   memory)
+    _load soul-memory.sh
     case "${2:-}" in
       record)
         if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
@@ -699,6 +746,7 @@ case "${1:-}" in
     ;;
 
   retro)
+    _load retrospective.sh
     case "${2:-}" in
       generate)
         if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
@@ -724,6 +772,7 @@ case "${1:-}" in
     ;;
 
   chemistry)
+    _load chemistry.sh
     case "${2:-}" in
       record)
         if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ] || [ -z "${6:-}" ]; then
@@ -764,6 +813,7 @@ case "${1:-}" in
     ;;
 
   achievement|achievements)
+    _load achievement.sh
     case "${2:-}" in
       check)
         if [ -z "${3:-}" ]; then
@@ -790,6 +840,7 @@ case "${1:-}" in
     ;;
 
   skill-tree)
+    _load skill-tree.sh
     case "${2:-}" in
       branches)
         if [ -z "${3:-}" ]; then
@@ -830,6 +881,7 @@ case "${1:-}" in
     ;;
 
   dna)
+    _load project-dna.sh
     case "${2:-}" in
       generate)
         dna_generate "${3:-}" "${4:-}" "${5:-}" "${6:-}" "${7:-}"
@@ -859,6 +911,7 @@ case "${1:-}" in
     ;;
 
   soul-create)
+    _load forge-soul.sh
     if [ -z "${2:-}" ]; then
       echo "Usage: forge soul-create <role> [name] [model]"
       echo "Roles: backend-developer, frontend-developer, devops-engineer, qa-tester, data-analyst, technical-writer, security-auditor"
@@ -868,6 +921,7 @@ case "${1:-}" in
     ;;
 
   soul-custom)
+    _load forge-soul.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
       echo "Usage: forge soul-custom <name> <role> <specialties> [personality] [model]"
       exit 1
@@ -876,14 +930,17 @@ case "${1:-}" in
     ;;
 
   soul-presets)
+    _load forge-soul.sh
     soul_preset_list
     ;;
 
   soul-create-all)
+    _load forge-soul.sh
     soul_create_all_presets
     ;;
 
   pack)
+    _load domain-pack.sh
     case "${2:-}" in
       list)
         pack_list

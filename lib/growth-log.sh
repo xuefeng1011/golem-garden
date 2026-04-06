@@ -3,6 +3,7 @@
 # Usage: source lib/growth-log.sh && growth_log_append ryn "REST API 구현" success 5 12
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${GOLEM_ROOT}/lib/soul-parser.sh"
 # 프로젝트별 .golem/growth-log/ 사용, 없으면 글로벌 폴백
 GROWTH_DIR="${GOLEM_DIR:-${GOLEM_ROOT}}/growth-log"
 
@@ -29,26 +30,27 @@ growth_log_append() {
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
   local date=$(date +%Y-%m-%d)
 
+  local task_display="$task"
+  task=$(_json_escape "$task")
+  reviewer=$(_json_escape "$reviewer")
+  review_result=$(_json_escape "$review_result")
+  model=$(_json_escape "$model")
+
   local entry="{\"date\":\"${date}\",\"task\":\"${task}\",\"result\":\"${result}\",\"files_changed\":${files_changed},\"tests_passed\":${tests_passed}"
 
   if [ -n "$reviewer" ]; then
-    entry="${entry},\"reviewer\":\"${reviewer}\",\"review_result\":\"${review_result}\"}"
+    entry="${entry},\"reviewer\":\"${reviewer}\",\"review_result\":\"${review_result}\""
   fi
 
-  # 비용 필드 추가 (tokens_in > 0일 때만)
   if [ "$tokens_in" -gt 0 ] 2>/dev/null; then
     entry="${entry},\"tokens_in\":${tokens_in},\"tokens_out\":${tokens_out},\"tokens_cache\":${tokens_cache},\"cost_usd\":${cost_usd},\"model\":\"${model}\",\"duration_ms\":${duration_ms}"
   fi
 
-  # reviewer 없고 cost도 없으면 이미 } 닫힘, 아니면 닫기
-  # entry 끝에 } 없으면 추가
-  case "$entry" in
-    *"}")  ;;  # 이미 닫힘
-    *)     entry="${entry}}" ;;
-  esac
+  entry="${entry}}"
 
   echo "$entry" >> "$log_file"
-  echo "[growth-log] ${soul_name}: ${task} → ${result}"
+  _growth_log_update_summary "$soul_name"
+  echo "[growth-log] ${soul_name}: ${task_display} → ${result}"
 }
 
 # 랭크 승급 이벤트 기록
@@ -60,15 +62,75 @@ growth_log_rank_up() {
 
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
   local date=$(date +%Y-%m-%d)
+  trigger=$(_json_escape "$trigger")
 
   echo "{\"date\":\"${date}\",\"task\":\"RANK_UP\",\"result\":\"${from_rank}→${to_rank}\",\"trigger\":\"${trigger}\"}" >> "$log_file"
+  _growth_log_update_summary "$soul_name"
   echo "[growth-log] ${soul_name}: RANK UP! ${from_rank} → ${to_rank} (${trigger})"
+}
+
+_growth_log_update_summary() {
+  local soul_name="$1"
+  local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
+  local summary_file="${GROWTH_DIR}/${soul_name}.summary"
+
+  [ ! -f "$log_file" ] && return
+
+  local task_count=$(grep '"result":"success"' "$log_file" 2>/dev/null | grep -v '"task":"forge-init"' | grep -v '"task":"RANK_UP"' | grep -v '"task":"pack-install' | grep -v '"task":"forge-soul-create"' | wc -l | tr -d ' \r')
+  task_count=${task_count:-0}
+
+  local total=$(grep '"task":' "$log_file" 2>/dev/null | grep -v '"task":"RANK_UP"' | grep -v '"task":"forge-init"' | grep -v '"task":"pack-install' | grep -v '"task":"forge-soul-create"' | wc -l | tr -d ' \r')
+  total=${total:-0}
+  local success_rate=100
+  if [ "$total" -gt 0 ]; then
+    success_rate=$(( (task_count * 100) / total ))
+  fi
+
+  local streak=0
+  local reversed
+  if command -v tac >/dev/null 2>&1; then
+    reversed=$(tac "$log_file")
+  else
+    reversed=$(tail -r "$log_file" 2>/dev/null || sed -n '1!G;h;$p' "$log_file")
+  fi
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    echo "$line" | grep -q '"task":"RANK_UP"' && continue
+    echo "$line" | grep -q '"task":"forge-init"' && continue
+    echo "$line" | grep -q '"task":"pack-install' && continue
+    if echo "$line" | grep -q '"result":"success"'; then
+      streak=$((streak + 1))
+    else
+      break
+    fi
+  done <<< "$reversed"
+
+  local total_cost=$(grep -o '"cost_usd":[0-9.]*' "$log_file" 2>/dev/null | cut -d: -f2 | awk '{s+=$1} END {printf "%.3f", s+0}' || echo "0.000")
+
+  local last_task=$(tail -1 "$log_file" | grep -o '"task":"[^"]*"' | head -1 | sed 's/"task":"//;s/"//')
+  local last_date=$(tail -1 "$log_file" | grep -o '"date":"[^"]*"' | head -1 | sed 's/"date":"//;s/"//')
+
+  cat > "$summary_file" <<EOF
+task_count=${task_count}
+success_count=${task_count}
+success_rate=${success_rate}
+streak=${streak}
+total_cost=${total_cost}
+last_task=${last_task}
+last_date=${last_date}
+EOF
 }
 
 # 태스크 완료 횟수 카운트 (forge-init, RANK_UP 제외)
 growth_log_task_count() {
   local soul_name="$1"
+  local summary_file="${GROWTH_DIR}/${soul_name}.summary"
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
+
+  if [ -f "$summary_file" ] && [ -f "$log_file" ] && [ "$summary_file" -nt "$log_file" ]; then
+    grep '^task_count=' "$summary_file" | cut -d= -f2
+    return
+  fi
 
   if [ ! -f "$log_file" ]; then
     echo "0"
@@ -81,8 +143,14 @@ growth_log_task_count() {
 # 연속 무결함 카운트 (최근 연속으로 issues_found=0 또는 review_result=pass)
 growth_log_streak() {
   local soul_name="$1"
+  local summary_file="${GROWTH_DIR}/${soul_name}.summary"
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
   local streak=0
+
+  if [ -f "$summary_file" ] && [ -f "$log_file" ] && [ "$summary_file" -nt "$log_file" ]; then
+    grep '^streak=' "$summary_file" | cut -d= -f2
+    return
+  fi
 
   if [ ! -f "$log_file" ]; then
     echo "0"
@@ -119,7 +187,13 @@ growth_log_streak() {
 # 성공률 계산 (%)
 growth_log_success_rate() {
   local soul_name="$1"
+  local summary_file="${GROWTH_DIR}/${soul_name}.summary"
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
+
+  if [ -f "$summary_file" ] && [ -f "$log_file" ] && [ "$summary_file" -nt "$log_file" ]; then
+    grep '^success_rate=' "$summary_file" | cut -d= -f2
+    return
+  fi
 
   if [ ! -f "$log_file" ]; then
     echo "0"
@@ -173,7 +247,14 @@ _format_k() {
 # SOUL의 총 비용 문자열 반환 ($X.XX)
 _growth_log_total_cost() {
   local soul_name="$1"
+  local summary_file="${GROWTH_DIR}/${soul_name}.summary"
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
+
+  if [ -f "$summary_file" ] && [ -f "$log_file" ] && [ "$summary_file" -nt "$log_file" ]; then
+    grep '^total_cost=' "$summary_file" | cut -d= -f2
+    return
+  fi
+
   if [ ! -f "$log_file" ]; then
     echo "0.000"
     return

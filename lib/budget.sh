@@ -170,3 +170,34 @@ budget_reset() {
   [ -f "$budget_file" ] && rm -f "$budget_file"
   budget_init
 }
+
+# 모델별 비용 추정 (Agent usage → tokens_in, tokens_out, cost_usd)
+# Agent 결과는 total_tokens만 제공하므로 입출력 비율 추정 (80:20)
+# budget_estimate_cost <model> <total_tokens> <duration_ms>
+# 출력: tokens_in tokens_out cost_usd
+budget_estimate_cost() {
+  local model="$1"
+  local total_tokens="${2:-0}"
+  local duration_ms="${3:-0}"
+
+  [ "$total_tokens" -eq 0 ] 2>/dev/null && { echo "0 0 0.000"; return; }
+
+  # 입출력 비율 추정: 80% input, 20% output
+  local tokens_in=$(( total_tokens * 80 / 100 ))
+  local tokens_out=$(( total_tokens * 20 / 100 ))
+
+  # 모델별 가격 ($/1M tokens) — 2025 기준 근사치
+  # input_price / output_price
+  local in_price out_price
+  case "$model" in
+    opus)   in_price=15;  out_price=75 ;;
+    sonnet) in_price=3;   out_price=15 ;;
+    haiku)  in_price="0.25"; out_price="1.25" ;;
+    *)      in_price=3;   out_price=15 ;;  # 기본: sonnet
+  esac
+
+  # cost = (tokens_in * in_price + tokens_out * out_price) / 1_000_000
+  local cost_usd=$(awk "BEGIN {printf \"%.3f\", ($tokens_in * $in_price + $tokens_out * $out_price) / 1000000}")
+
+  echo "${tokens_in} ${tokens_out} ${cost_usd}"
+}
