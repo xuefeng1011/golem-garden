@@ -57,6 +57,19 @@ if [ -d "$SCRIPT_DIR/.claude/hooks" ]; then
   cp "$SCRIPT_DIR/.claude/hooks/"*.sh "$GOLEM_HOME/.claude/hooks/" 2>/dev/null || true
 fi
 
+# 5.6. 글로벌 Stop hook 등록 (모든 프로젝트에서 대시보드 자동 갱신)
+GLOBAL_SETTINGS="$HOME/.claude/settings.json"
+if [ -f "$GLOBAL_SETTINGS" ]; then
+  HOOK_CMD="bash \$HOME/.claude/golem-garden/.claude/hooks/auto-dashboard-refresh.sh"
+  if ! grep -q "auto-dashboard-refresh" "$GLOBAL_SETTINGS" 2>/dev/null; then
+    echo "  글로벌 Stop hook 등록이 필요합니다."
+    echo "  ~/.claude/settings.json에 다음을 추가하세요:"
+    echo "  hooks.Stop: $HOOK_CMD"
+  else
+    echo "  글로벌 Stop hook: 이미 등록됨"
+  fi
+fi
+
 # 6. growth-log 초기화
 echo "[6/6] Growth log 초기화..."
 for soul_file in "$GOLEM_HOME/souls/"*.md; do

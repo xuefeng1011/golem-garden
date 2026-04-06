@@ -36,9 +36,12 @@ dashboard_global_register() {
   fi
 
   # GOLEM_ROOT 자체는 프로젝트로 등록 금지
+  # Windows(MSYS2) 경로 정규화: /c/Users/... vs C:/Users/... 차이 대응
   local resolved_root
   resolved_root=$(cd "$GOLEM_ROOT" 2>/dev/null && pwd || echo "$GOLEM_ROOT")
-  if [ "$project_path" = "$resolved_root" ]; then
+  local norm_path=$(echo "$project_path" | sed 's|^/\([a-zA-Z]\)/|\1:/|')
+  local norm_root=$(echo "$resolved_root" | sed 's|^/\([a-zA-Z]\)/|\1:/|')
+  if [ "$project_path" = "$resolved_root" ] || [ "$norm_path" = "$norm_root" ]; then
     return 0
   fi
 
@@ -201,7 +204,7 @@ _global_collect_projects() {
 
     # 등록일
     local reg_date=""
-    [ -f "$PROJECTS_FILE" ] && reg_date=$(grep "\"path\":\"${proj_path}\"" "$PROJECTS_FILE" | grep -o '"registered":"[^"]*"' | sed 's/"registered":"//;s/"//')
+    [ -f "$PROJECTS_FILE" ] && reg_date=$(grep "\"path\":\"${proj_path}\"" "$PROJECTS_FILE" | head -1 | grep -o '"registered":"[^"]*"' | sed 's/"registered":"//;s/"//')
 
     [ "$first" = true ] && first=false || echo ","
     echo "  {\"name\":\"${proj_name}\",\"path\":\"${proj_path}\",\"souls\":${soul_count},\"cost\":\"${proj_cost}\",\"sessions\":${sess_count},\"frameworks\":\"${dna_fws}\",\"registered\":\"${reg_date}\"}"
@@ -219,10 +222,8 @@ dashboard_global_refresh() {
 
   local generated=$(date +"%Y-%m-%d %H:%M:%S")
 
-  # 현재 프로젝트 자동 등록
-  if [ -n "${GOLEM_PROJECT:-}" ] && [ -d "${GOLEM_PROJECT}/.golem" ]; then
-    dashboard_global_register "$GOLEM_PROJECT" >/dev/null 2>&1
-  fi
+  # 프로젝트 자동 등록은 Stop hook(auto-dashboard-refresh.sh)에서 처리
+  # refresh는 데이터 갱신만 수행
 
   local souls_json=$(_global_collect_souls)
   local projects_json=$(_global_collect_projects)
