@@ -30,6 +30,7 @@ mkdir -p "$SKILLS_HOME/forge-init"
 mkdir -p "$SKILLS_HOME/forge-team"
 mkdir -p "$SKILLS_HOME/forge-review"
 mkdir -p "$SKILLS_HOME/forge-sync"
+mkdir -p "$SKILLS_HOME/forge-soul"
 mkdir -p "$GOLEM_HOME/.claude/hooks"
 
 # 3. SOUL 파일 복사 (글로벌 원본만, .golem/은 제외)
@@ -50,6 +51,7 @@ cp "$SCRIPT_DIR/skills/golem-garden/forge-init/SKILL.md" "$SKILLS_HOME/forge-ini
 cp "$SCRIPT_DIR/skills/golem-garden/forge-team/SKILL.md" "$SKILLS_HOME/forge-team/SKILL.md"
 cp "$SCRIPT_DIR/skills/golem-garden/forge-review/SKILL.md" "$SKILLS_HOME/forge-review/SKILL.md"
 cp "$SCRIPT_DIR/skills/golem-garden/forge-sync/SKILL.md" "$SKILLS_HOME/forge-sync/SKILL.md" 2>/dev/null || true
+cp "$SCRIPT_DIR/skills/golem-garden/forge-soul/SKILL.md" "$SKILLS_HOME/forge-soul/SKILL.md" 2>/dev/null || true
 
 # 5.5. Hook 파일 복사
 echo "[5/6] Hook 설치..."

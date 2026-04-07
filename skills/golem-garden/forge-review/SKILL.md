@@ -1,7 +1,7 @@
 ---
 name: forge-review
 description: GolemGarden 크로스 리뷰. 다른 SOUL의 관점에서 코드를 리뷰한다.
-trigger: forge review
+trigger: forge review, forge 리뷰, 포지 리뷰, forge 검토, forge 코드리뷰, 리뷰해줘, 코드 리뷰해줘, 코드리뷰
 ---
 
 # forge-review — 크로스 리뷰 실행 스킬
@@ -141,5 +141,20 @@ AI 실행:
 5. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record ryn zen "전체 변경사항" pass 0 none
 6. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh rank ryn → "novice 유지 (tasks=5, streak=3)"
 
-응답: "리뷰 완료! Zen이 Ryn의 코드를 리뷰 → Pass (이슈 0건). 무결함 3연속!"
+응답: "리뷰 완료! Zen이 Ryn의 코드를 리뷰 → Pass (이슈 0건). 무결함 3연속!
+
+---
+💡 다음 작업:
+  • `forge sync` — 지식 승격 심사
+  • `forge rank ryn` — 랭크 확인
+  • `forge build: {작업}` — 다음 빌드"
 ```
+
+## ⚠️ 필수: 연관 작업 안내
+
+**리뷰 결과 보고 마지막에 반드시 연관 작업 안내를 포함한다.**
+
+| 리뷰 결과 | 안내 내용 |
+|-----------|----------|
+| **pass** | `forge sync` — 지식 승격 / `forge rank {soul}` — 랭크 확인 / `forge build: {작업}` — 다음 작업 |
+| **fail** | `forge assign {worker}: 리뷰 피드백 반영` — 수정 / `forge review {worker}` — 재리뷰 |

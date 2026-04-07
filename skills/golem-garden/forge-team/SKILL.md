@@ -1,7 +1,7 @@
 ---
 name: forge-team
 description: GolemGarden 팀 단위 작업 실행. SOUL 컨텍스트를 OMC 에이전트에 주입하고 실행한다.
-trigger: forge build, forge quick, forge save, forge assign
+trigger: forge build, forge quick, forge save, forge assign, forge 빌드, 포지 빌드, forge 퀵, 포지 퀵, forge 간단, forge 빠르게
 ---
 
 # forge-team — 팀 실행 스킬
@@ -235,6 +235,19 @@ AI 실행:
 7. 세션 종료 + 결과 보고
 
 응답: "완료! Ryn: 인증 API (8파일, 15테스트), Kai: 로그인 화면 (3파일, 6테스트)
-       리뷰 권고: forge review ryn / forge review kai
-       세션: 2026-04-02_사용자-인증-api-+-로그인-화면 (completed)"
+       세션: 2026-04-02_사용자-인증-api-+-로그인-화면 (completed)
+
+---
+💡 다음 작업:
+  • `forge review ryn` / `forge review kai` — 코드 리뷰
+  • `forge dashboard --cost` — 비용 확인
+  • `forge status` — 전체 현황"
 ```
+
+## ⚠️ 필수: 연관 작업 안내
+
+**빌드 결과 보고(Step 7) 마지막에 반드시 연관 작업 안내를 포함한다.**
+이 규칙은 forge build, forge quick, forge assign 모두에 적용된다:
+- 리뷰 대상이 있으면 `forge review {soul}`을 첫 번째로
+- `forge dashboard --cost` — 비용 확인
+- `forge status` — 전체 현황

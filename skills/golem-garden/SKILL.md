@@ -258,3 +258,52 @@ forge.sh는 `~/.claude/golem-garden/forge.sh` 에 설치되어 있다.
 - `revew`, `rivew` → `review`로 인식
 - `statsu`, `stauts` → `status`로 인식
 - 의도를 파악할 수 없으면 "혹시 forge build를 말씀하신 건가요?" 식으로 되물어본다
+
+## ⚠️ 필수 출력 규칙: 연관 작업 안내 (CRITICAL)
+
+**모든 forge 명령 실행 후, 반드시 결과 마지막에 연관 작업 안내를 표시한다.**
+이 규칙은 서브스킬(forge-init, forge-team, forge-review, forge-sync, forge-soul)과 직접 실행 명령 모두에 적용된다.
+**생략하지 않는다. 조건부가 아니라 무조건이다.**
+
+### 연관 작업 안내 맵
+
+아래 표에 따라 실행된 명령의 다음 추천 작업을 안내한다:
+
+| 실행된 명령 | 연관 작업 안내 |
+|------------|--------------|
+| `forge-init` | `forge build: {작업}` — 팀 빌드 시작 / `forge status` — 팀 현황 확인 |
+| `forge build` | `forge review {soul}` — 코드 리뷰 / `forge status` — 결과 확인 / `forge dashboard --cost` — 비용 확인 |
+| `forge quick` | `forge review` — 코드 리뷰 / `forge build: {작업}` — 팀 빌드로 확장 |
+| `forge assign` | `forge review {soul}` — 코드 리뷰 / `forge mailbox inbox {soul}` — 메일 확인 |
+| `forge review` | `forge assign {soul}: 리뷰 피드백 반영` — 수정 (fail 시) / `forge sync` — 지식 승격 / `forge rank {soul}` — 랭크 확인 |
+| `forge sync` | `forge status` — 전체 현황 / `forge build: {작업}` — 다음 작업 |
+| `forge status` | `forge build: {작업}` — 빌드 시작 / `forge review` — 리뷰 / `forge dashboard --cost` — 비용 |
+| `forge rank` | `forge build: {작업}` — 경험치 쌓기 / `forge review {soul}` — 리뷰로 승급 촉진 |
+| `forge souls` | `forge build: {작업}` — 빌드 시작 / `forge soul-create` — 새 SOUL 추가 |
+| `forge soul-create` | `forge-init` — 팀 구성에 추가 / `forge assign {soul}: {작업}` — 바로 작업 배정 |
+| `forge dashboard` | `forge build: {작업}` — 다음 작업 / `forge sync` — 지식 정리 |
+| `forge dashboard --cost` | `forge budget status` — 예산 상세 / `forge build: {작업}` — 다음 작업 |
+| `forge pack install` | `forge-init` — 팀 초기화 / `forge status` — 설치 확인 |
+| `forge mailbox` | `forge build: {작업}` — 작업 진행 / `forge status` — 현황 확인 |
+| `forge session` | `forge build: {작업}` — 작업 재개 / `forge status` — 현황 |
+| `forge recover` | `forge assign {soul}: {작업}` — 재시도 / `forge status` — 현황 |
+| `forge worktree` | `forge build: {작업}` — 빌드 / `forge worktree status` — 현황 |
+| `forge soul` (인터뷰 생성) | `forge assign {soul}: {작업}` — 바로 작업 배정 / `forge-init` — 팀 재구성 |
+| `forge soul-create` (스크립트 생성) | `forge-init` — 팀 구성에 추가 / `forge status` — 현황 확인 |
+
+### 안내 출력 형식
+
+결과 보고 마지막에 다음 형식으로 표시:
+
+```
+---
+💡 다음 작업:
+  • `forge review ryn` — 코드 리뷰
+  • `forge dashboard --cost` — 비용 확인
+  • `forge status` — 전체 현황
+```
+
+- 항목은 2~3개 추천 (상황에 맞는 것 우선)
+- 현재 상태에 따라 가장 유용한 순서로 정렬
+- forge build 완료 후 리뷰 대상이 있으면 리뷰를 첫 번째로
+- 에러/실패 시 recover나 재시도를 첫 번째로

@@ -1,7 +1,7 @@
 ---
 name: forge-init
 description: GolemGarden 프로젝트 초기화. OMC 심층 분석 후 최적의 SOUL 팀을 구성한다.
-trigger: forge-init, forge init
+trigger: forge-init, forge init, forge 초기화, 포지 init, 포지 초기화, forge 시작, 포지 시작, forge 셋업, forge setup team, forge 팀 구성, forge 팀구성
 ---
 
 # forge-init — 프로젝트 초기화 실행 스킬
@@ -258,6 +258,13 @@ analyzer: OMC explore + architect
 - `.golem/` 디렉토리 구조
 - 다음 단계 안내: `forge build: {작업}` 으로 팀 빌드 시작
 
+## ⚠️ 필수: 연관 작업 안내
+
+**init 완료 보고 마지막에 반드시 연관 작업 안내를 포함한다:**
+- `forge build: {작업}` — 팀 빌드 시작
+- `forge status` — 팀 현황 확인
+- `forge dashboard --cost` — 비용 대시보드
+
 ---
 
 ## 예시 실행 흐름
@@ -289,7 +296,12 @@ AI 실행:
 응답: "분석 완료 & 팀 구성!
  - Nex(Director), Ryn(Backend), Kai(Frontend), Zen(QA), Bolt(DevOps)
  - 기술부채: JPA N+1 위험 3건 → Ryn 컨텍스트에 반영
- - `forge build: 작업내용` 으로 시작하세요"
+ - `forge build: 작업내용` 으로 시작하세요
+
+---
+💡 다음 작업:
+  • `forge build: {작업}` — 팀 빌드 시작
+  • `forge status` — 팀 현황 확인"
 ```
 
 ### 예시 B: 기술스택을 직접 알려준 경우

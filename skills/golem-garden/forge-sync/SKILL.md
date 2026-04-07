@@ -135,8 +135,21 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send sage {s
  ⚠️ 보류 1건:
    - Ryn: 'P6Spy 드라이버 3.x에서 타임아웃 이슈' → 추가 검증 필요
  ❌ 기각 1건:
-   - Bolt: '포트 8443으로 변경' → 프로젝트 전용 설정"
+   - Bolt: '포트 8443으로 변경' → 프로젝트 전용 설정
+
+---
+💡 다음 작업:
+  • `forge status` — 전체 현황
+  • `forge build: {작업}` — 다음 빌드
+  • `forge sync status` — 지식 대시보드"
 ```
+
+## ⚠️ 필수: 연관 작업 안내
+
+**sync 결과 보고 마지막에 반드시 연관 작업 안내를 포함한다:**
+- `forge status` — 전체 현황 확인
+- `forge build: {작업}` — 다음 작업 시작
+- `forge sync status` — 지식 승격 대시보드
 
 ## 학습 자동 기록 규칙 (forge-team 완료 시)
 
