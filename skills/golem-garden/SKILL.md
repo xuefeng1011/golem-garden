@@ -1,6 +1,6 @@
 ---
 name: golem-garden
-description: GolemGarden 메인 라우터. "forge"로 시작하는 모든 명령을 처리한다.
+description: GolemGarden 메인 라우터. "forge", "포지", "forje" 및 SOUL 관련 명령(빌드/리뷰/상태/초기화/랭크 등)을 처리한다.
 trigger: forge, 포지, forje, foge
 ---
 

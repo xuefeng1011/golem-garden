@@ -72,6 +72,42 @@ if [ -f "$GLOBAL_SETTINGS" ]; then
   fi
 fi
 
+# 5.7. 글로벌 CLAUDE.md에 GolemGarden 규칙 등록
+GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
+GOLEM_MARKER="<!-- GOLEM:START -->"
+GOLEM_END_MARKER="<!-- GOLEM:END -->"
+
+if [ -f "$GLOBAL_CLAUDE" ]; then
+  if grep -q "$GOLEM_MARKER" "$GLOBAL_CLAUDE" 2>/dev/null; then
+    # 기존 블록 교체 (sed로 GOLEM:START~GOLEM:END 사이 내용 교체)
+    # 임시 파일로 처리 (sed -i 미사용)
+    awk -v start="$GOLEM_MARKER" -v end="$GOLEM_END_MARKER" '
+      $0 ~ start { skip=1; next }
+      $0 ~ end { skip=0; next }
+      !skip { print }
+    ' "$GLOBAL_CLAUDE" > "${GLOBAL_CLAUDE}.tmp"
+    mv "${GLOBAL_CLAUDE}.tmp" "$GLOBAL_CLAUDE"
+  fi
+  # 블록 추가 (파일 끝에)
+  cat >> "$GLOBAL_CLAUDE" <<'GOLEMEOF'
+
+<!-- GOLEM:START -->
+# GolemGarden — 글로벌 규칙
+
+<golem_rules>
+- `forge`, `포지`, `forje` 키워드 또는 SOUL 관련 명령(빌드/리뷰/상태/초기화/랭크 등) 입력 시 반드시 `golem-garden` 스킬을 사용하라
+- SOUL 파일(`souls/*.md`)은 직접 Edit/Write 하지 마라 — `forge soul-create` 또는 `forge-init`을 사용
+- growth-log(`growth-log/*.jsonl`)은 직접 수정하지 마라 — `forge.sh log-add`로만 기록
+- mailbox(`mailbox/*.jsonl`)은 직접 수정하지 마라 — `forge mailbox` 명령 사용
+- 모든 `forge.sh` 호출 시 반드시 `GOLEM_PROJECT="$(pwd)"` 환경변수를 전달하라
+</golem_rules>
+<!-- GOLEM:END -->
+GOLEMEOF
+  echo "  글로벌 CLAUDE.md: GolemGarden 규칙 등록 완료"
+else
+  echo "  [WARN] ~/.claude/CLAUDE.md 없음 — GolemGarden 규칙 미등록"
+fi
+
 # 6. growth-log 초기화
 echo "[6/6] Growth log 초기화..."
 for soul_file in "$GOLEM_HOME/souls/"*.md; do
