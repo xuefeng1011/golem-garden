@@ -113,7 +113,9 @@ _global_collect_souls() {
         local p_tasks=$(growth_log_task_count "$SOUL_NAME")
         local p_cost=$(_growth_log_total_cost "$SOUL_NAME" 2>/dev/null || echo "0.000")
 
-        if [ "$p_tasks" -gt 0 ] 2>/dev/null; then
+        # forge-init만 있어도 프로젝트에 등록된 SOUL이면 포함 (태스크 0이어도)
+        local p_total_lines=$(wc -l < "$proj_log" 2>/dev/null | tr -d ' \r')
+        if [ "$p_tasks" -gt 0 ] 2>/dev/null || [ "$p_total_lines" -gt 0 ] 2>/dev/null; then
           project_count=$((project_count + 1))
           total_project_tasks=$((total_project_tasks + p_tasks))
           total_project_cost=$(echo "$total_project_cost $p_cost" | awk '{printf "%.3f", $1+$2}')

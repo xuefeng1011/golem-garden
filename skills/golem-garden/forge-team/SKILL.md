@@ -54,8 +54,16 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
    - 프롬프트에 가용 SOUL 목록(tools/maxTurns/isolation 포함) + 태스크 포함
    - `.golem/analysis.md` 아키텍처 소견이 있으면 추가 컨텍스트로 주입
    - Director가 서브태스크 분배 결과를 반환 (각 SOUL별 isolation 모드 포함)
-4. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
-5. **메일박스 통지**: Director가 각 SOUL에게 task_assign 메시지 전송
+4. **Director 비용 기록**: Agent 결과에서 `<usage>` 태그의 `total_tokens`, `duration_ms`를 추출하여 기록
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add-usage nex "{task} 분배" success 0 0 opus {total_tokens} {duration_ms}
+   ```
+   - usage 추출 불가 시 `log-add`로 폴백:
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add nex "{task} 분배" success 0 0
+   ```
+5. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
+6. **메일박스 통지**: Director가 각 SOUL에게 task_assign 메시지 전송
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send nex {soul} task_assign "{subtask}"
    ```
@@ -169,6 +177,8 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {soul_name} "{task}" {result} {files_changed} {tests_passed}
    ```
+
+   **⚠️ 비용 기록 필수 원칙**: 모든 Agent 호출(Director 분배, Worker 실행, 리뷰)은 반드시 `log-add-usage`로 비용을 기록한다. `log-add`(비용 없음)는 usage 추출 불가 시에만 폴백으로 사용한다.
 
 3. **메일박스 통지**: SOUL이 Director에게 완료 보고
    ```bash

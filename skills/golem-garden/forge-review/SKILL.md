@@ -83,13 +83,24 @@ Agent(
 - Agent 응답에 result/issues_found/severity 형식이 없을 시: Agent 원문 응답을 보여주고 사용자에게 pass/fail 수동 판정 요청
 - 리뷰 대상 파일이 없을 시 (git diff 비어있음): "변경 사항 없음. 리뷰 건너뜀" 안내
 
-### Step 4: 리뷰 결과 기록
+### Step 4: 리뷰 결과 기록 (비용 포함)
 
 리뷰 에이전트의 결과를 파싱하여:
 
 ```bash
 GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record {worker} {reviewer} "{target}" {result} {issues_found} {severity}
 ```
+
+**리뷰어 SOUL의 비용도 반드시 기록한다** (누락 금지):
+1. Agent 결과에서 `<usage>` 태그의 `total_tokens`, `duration_ms`를 추출
+2. `log-add-usage`로 리뷰어 비용 기록:
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add-usage {reviewer} "{worker} 코드 리뷰" success 0 0 {reviewer_model} {total_tokens} {duration_ms}
+   ```
+   - usage 추출 불가 시 `log-add`로 폴백:
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {reviewer} "{worker} 코드 리뷰" success 0 0
+   ```
 
 ### Step 5: 이슈 수정 (fail인 경우)
 
