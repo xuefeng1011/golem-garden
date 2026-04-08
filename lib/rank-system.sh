@@ -9,6 +9,60 @@ source "${GOLEM_ROOT}/lib/growth-log.sh"
 # 랭크 정의 (순서대로)
 RANKS=("novice" "junior" "senior" "lead" "master")
 
+# 전체 프로젝트 합산 태스크 수 (글로벌 대시보드와 동일 로직)
+_rank_total_task_count() {
+  local soul_name="$1"
+  local saved_growth="$GROWTH_DIR"
+  local total=0
+
+  # 1) 글로벌 growth-log (서브셸로 GROWTH_DIR 오염 방지)
+  local g=$(GROWTH_DIR="${GOLEM_ROOT}/growth-log" growth_log_task_count "$soul_name")
+  total=$((total + g))
+
+  # 2) 등록된 프로젝트별 .golem/growth-log
+  local projects_file="${GOLEM_ROOT}/projects.jsonl"
+  if [ -f "$projects_file" ]; then
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      local proj_path=$(echo "$line" | grep -o '"path":"[^"]*"' | sed 's/"path":"//;s/"//')
+      [ -z "$proj_path" ] && continue
+      local proj_growth="${proj_path}/.golem/growth-log"
+      if [ -f "${proj_growth}/${soul_name}.jsonl" ]; then
+        local p=$(GROWTH_DIR="$proj_growth" growth_log_task_count "$soul_name")
+        total=$((total + p))
+      fi
+    done < "$projects_file"
+  fi
+  echo "$total"
+}
+
+# 전체 프로젝트 합산 streak
+_rank_total_streak() {
+  local soul_name="$1"
+  local saved_growth="$GROWTH_DIR"
+  local max_streak=0
+
+  # 글로벌 (서브셸로 GROWTH_DIR 오염 방지)
+  local s=$(GROWTH_DIR="${GOLEM_ROOT}/growth-log" growth_log_streak "$soul_name")
+  [ "$s" -gt "$max_streak" ] 2>/dev/null && max_streak=$s
+
+  # 프로젝트별
+  local projects_file="${GOLEM_ROOT}/projects.jsonl"
+  if [ -f "$projects_file" ]; then
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      local proj_path=$(echo "$line" | grep -o '"path":"[^"]*"' | sed 's/"path":"//;s/"//')
+      [ -z "$proj_path" ] && continue
+      local proj_growth="${proj_path}/.golem/growth-log"
+      if [ -f "${proj_growth}/${soul_name}.jsonl" ]; then
+        s=$(GROWTH_DIR="$proj_growth" growth_log_streak "$soul_name")
+        [ "$s" -gt "$max_streak" ] 2>/dev/null && max_streak=$s
+      fi
+    done < "$projects_file"
+  fi
+  echo "$max_streak"
+}
+
 rank_should_promote() {
   local current_rank="$1"
   local task_count="$2"
@@ -42,8 +96,8 @@ rank_check() {
 
   soul_parse "$soul_file"
   local current_rank="$SOUL_RANK"
-  local task_count=$(growth_log_task_count "$soul_name")
-  local streak=$(growth_log_streak "$soul_name")
+  local task_count=$(_rank_total_task_count "$soul_name")
+  local streak=$(_rank_total_streak "$soul_name")
   local current_idx=$(rank_index "$current_rank")
 
   local next_rank=""
@@ -58,10 +112,10 @@ rank_check() {
 
   if [ -n "$next_rank" ]; then
     case "$current_rank" in
-      novice) reason="태스크 ${task_count}건 완료 (≥10)" ;;
-      junior) reason="태스크 ${task_count}건 (≥50) + 무결함 ${streak}연속 (≥10)" ;;
-      senior) reason="태스크 ${task_count}건 (≥100) + 멘토링 이력" ;;
-      lead)   reason="태스크 ${task_count}건 (≥200) + 커뮤니티 검증" ;;
+      novice) reason="전체 프로젝트 태스크 ${task_count}건 완료 (≥10)" ;;
+      junior) reason="전체 프로젝트 태스크 ${task_count}건 (≥50) + 무결함 ${streak}연속 (≥10)" ;;
+      senior) reason="전체 프로젝트 태스크 ${task_count}건 (≥100) + 멘토링 이력" ;;
+      lead)   reason="전체 프로젝트 태스크 ${task_count}건 (≥200) + 커뮤니티 검증" ;;
     esac
   fi
 
@@ -91,7 +145,7 @@ rank_promote() {
   local reason=$(echo "$check_result" | cut -d: -f3-)
 
   # SOUL.md에서 rank 필드 업데이트
-  _sed_i "s/^rank: ${current_rank}/rank: ${next_rank}/" "$soul_file"
+  _sed_i "s/^rank:[[:space:]]*.*/rank: ${next_rank}/" "$soul_file"
 
   # growth-log에 승급 이벤트 기록
   growth_log_rank_up "$soul_name" "$current_rank" "$next_rank" "$reason"
@@ -131,8 +185,8 @@ rank_dashboard() {
   while IFS= read -r soul_file; do
     [ -f "$soul_file" ] || continue
     soul_parse "$soul_file"
-    local tasks=$(growth_log_task_count "$SOUL_NAME")
-    local streak=$(growth_log_streak "$SOUL_NAME")
+    local tasks=$(_rank_total_task_count "$SOUL_NAME")
+    local streak=$(_rank_total_streak "$SOUL_NAME")
     local check=$(rank_check "$SOUL_NAME" 2>/dev/null | grep "^ELIGIBLE:" | cut -d: -f2)
     local next="${check:-—}"
 

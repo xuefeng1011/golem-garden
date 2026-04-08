@@ -30,10 +30,17 @@ RESULT="${GOLEM_RESULT:-success}"
 source "${GOLEM_ROOT}/lib/growth-log.sh"
 growth_log_append "$GOLEM_SOUL_NAME" "$GOLEM_TASK" "$RESULT" "$FILES_CHANGED" 0
 
-# 랭크 체크
+# 자동 승급 (rank_promote 내부에서 eligibility 검증)
 source "${GOLEM_ROOT}/lib/rank-system.sh"
-rank_check "$GOLEM_SOUL_NAME" 2>/dev/null | grep -q "^ELIGIBLE:" && {
-  echo "[hook] ${GOLEM_SOUL_NAME} 랭크 승급 가능! forge promote ${GOLEM_SOUL_NAME}으로 승급하세요."
-}
+LOCK="/tmp/golem-promote-${GOLEM_SOUL_NAME}.lock"
+if command -v flock >/dev/null 2>&1; then
+  (
+    flock -n 200 || exit 0
+    PROMOTE_OUTPUT=$(rank_promote "$GOLEM_SOUL_NAME" 2>&1) && echo "[hook] ${PROMOTE_OUTPUT}"
+  ) 200>"$LOCK"
+else
+  # Windows/Git Bash: flock 미지원 — 잠금 없이 직접 실행
+  PROMOTE_OUTPUT=$(rank_promote "$GOLEM_SOUL_NAME" 2>&1) && echo "[hook] ${PROMOTE_OUTPUT}"
+fi
 
 exit 0

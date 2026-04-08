@@ -2,3 +2,7 @@
 {"date":"2026-03-30","task":"REST API 설계","result":"success","files_changed":5,"tests_passed":12}
 {"date":"2026-03-30","task":"AuthController 리뷰","result":"pass","files_changed":0,"tests_passed":0,"reviewer":"nex","review_result":"pass"}
 {"date":"2026-03-30","task":"EXPORT","result":"exported to /tmp/test-project","files_changed":0,"tests_passed":0}
+{"date":"2026-04-01","task":"forge-init","result":"success","files_changed":0,"tests_passed":0}
+{"date":"2026-04-01","task":"DB query module","result":"success","files_changed":1,"tests_passed":0}
+{"date":"2026-04-01","task":"캡쳐 지정 초 컬럼 추가","result":"success","files_changed":1,"tests_passed":0}
+{"date":"2026-04-08","task":"RANK_UP","result":"novice→junior","trigger":"전체 프로젝트 태스크 15건 완료 (≥10)"}
