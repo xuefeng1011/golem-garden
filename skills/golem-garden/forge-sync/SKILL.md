@@ -1,7 +1,7 @@
 ---
 name: forge-sync
 description: 지식 승격 시스템. 프로젝트 학습을 Sage(심사관)가 검증 후 글로벌에 반영.
-trigger: forge sync, forge 동기화, 지식 승격, knowledge sync
+trigger: forge sync, forge 동기화, 포지 동기화, 포지 sync, 지식 승격, knowledge sync
 ---
 
 # forge-sync — 지식 승격 시스템

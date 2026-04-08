@@ -79,17 +79,26 @@ GOLEM_END_MARKER="<!-- GOLEM:END -->"
 
 if [ -f "$GLOBAL_CLAUDE" ]; then
   if grep -q "$GOLEM_MARKER" "$GLOBAL_CLAUDE" 2>/dev/null; then
-    # 기존 블록 교체 (sed로 GOLEM:START~GOLEM:END 사이 내용 교체)
-    # 임시 파일로 처리 (sed -i 미사용)
+    # 기존 블록 제거 (awk로 GOLEM:START~GOLEM:END 사이 + 후행 빈줄 제거)
+    # END 마커 미발견 시 에러 종료하여 내용 손실 방지
+    CLAUDE_TMP=$(mktemp "${GLOBAL_CLAUDE}.XXXXXX")
     awk -v start="$GOLEM_MARKER" -v end="$GOLEM_END_MARKER" '
       $0 ~ start { skip=1; next }
-      $0 ~ end { skip=0; next }
-      !skip { print }
-    ' "$GLOBAL_CLAUDE" > "${GLOBAL_CLAUDE}.tmp"
-    mv "${GLOBAL_CLAUDE}.tmp" "$GLOBAL_CLAUDE"
+      $0 ~ end   { skip=0; skip_blank=1; next }
+      skip_blank && /^[[:space:]]*$/ { skip_blank=0; next }
+      !skip { skip_blank=0; print }
+      END { if (skip) { print "ERROR: GOLEM:END not found" > "/dev/stderr"; exit 1 } }
+    ' "$GLOBAL_CLAUDE" > "$CLAUDE_TMP"
+    if [ $? -eq 0 ]; then
+      mv "$CLAUDE_TMP" "$GLOBAL_CLAUDE"
+    else
+      rm -f "$CLAUDE_TMP"
+      echo "  [ERROR] GOLEM 블록 손상 — 기존 블록 유지, 새 블록 추가 건너뜀"
+    fi
   fi
   # 블록 추가 (파일 끝에)
-  cat >> "$GLOBAL_CLAUDE" <<'GOLEMEOF'
+  if ! grep -q "$GOLEM_MARKER" "$GLOBAL_CLAUDE" 2>/dev/null; then
+    cat >> "$GLOBAL_CLAUDE" <<'GOLEMEOF'
 
 <!-- GOLEM:START -->
 # GolemGarden — 글로벌 규칙
@@ -103,7 +112,10 @@ if [ -f "$GLOBAL_CLAUDE" ]; then
 </golem_rules>
 <!-- GOLEM:END -->
 GOLEMEOF
-  echo "  글로벌 CLAUDE.md: GolemGarden 규칙 등록 완료"
+    echo "  글로벌 CLAUDE.md: GolemGarden 규칙 등록 완료"
+  else
+    echo "  글로벌 CLAUDE.md: GolemGarden 규칙 이미 등록됨"
+  fi
 else
   echo "  [WARN] ~/.claude/CLAUDE.md 없음 — GolemGarden 규칙 미등록"
 fi
