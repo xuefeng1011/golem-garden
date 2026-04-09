@@ -197,6 +197,16 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
 2. 리뷰가 필요한 경우, **결과 보고에 리뷰 권고 사항만 포함**한다
 3. **리뷰 실행은 사용자가 `forge review`로 별도 요청해야 한다** (자동 실행 금지)
 
+### Step 6.5: forge-board.md 자동 업데이트
+
+**Step 5의 `log-add` / `log-add-usage` 호출 시 forge-board.md가 자동 업데이트된다.**
+별도 호출 불필요 — forge.sh 내부에서 `board_add_task`가 자동 실행됨.
+
+업데이트되는 항목:
+- **태스크 히스토리**: 각 SOUL의 작업 결과 + 비용이 자동 누적
+- **updated 타임스탬프**: 매 업데이트 시 자동 갱신
+- **랭크 변동**: `rank_promote` 시 팀 구성 테이블의 Rank 컬럼 자동 반영
+
 ### Step 7: 세션 종료 + 결과 보고 (빌드 종료 시그널)
 
 **이 단계를 출력하면 forge-build가 완전히 종료된다. 추가 forge 명령을 자동으로 실행하지 않는다.**

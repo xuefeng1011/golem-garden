@@ -151,6 +151,11 @@ review_record() {
   echo "{\"date\":\"${date}\",\"task\":\"${target} 리뷰 (reviewer)\",\"result\":\"success\",\"issues_found\":${issues_found},\"severity\":\"${severity}\"}" >> "$reviewer_log"
   echo "[review] 리뷰 결과 기록 완료: ${worker_name}←${reviewer_name}, ${result} (이슈 ${issues_found}건)"
 
+  # forge-board 태스크 히스토리에 리뷰 결과 기록
+  if type board_add_task &>/dev/null; then
+    board_add_task "$(date +%Y-%m-%d)" "${target} 리뷰" "${reviewer_name}" "${result}" "→${worker_name}, 이슈 ${issues_found}건"
+  fi
+
   # 랭크 승급 체크
   echo ""
   rank_check "$worker_name"

@@ -273,6 +273,7 @@ case "${1:-}" in
     ;;
 
   promote)
+    _load forge-board.sh
     if [ -z "${2:-}" ]; then
       echo "Usage: forge promote <soul_name>"
       exit 1
@@ -297,6 +298,9 @@ case "${1:-}" in
       exit 1
     fi
     growth_log_append "$2" "$3" "$4" "${5:-0}" "${6:-0}"
+    # forge-board 태스크 히스토리 업데이트
+    _load forge-board.sh
+    board_add_task "$(date +%Y-%m-%d)" "$3" "$2" "$4"
     # 자동 랭크 체크
     rank_check "$2"
     ;;
@@ -313,6 +317,9 @@ case "${1:-}" in
     read -r _lau_tin _lau_tout _lau_cost <<< "$_lau_cost_data"
     growth_log_append "$2" "$3" "$4" "${5:-0}" "${6:-0}" "" "" "$_lau_tin" "$_lau_tout" 0 "$_lau_cost" "${7:-sonnet}" "${9:-0}"
     budget_record "$2" "$_lau_tout" "$_lau_cost"
+    # forge-board 태스크 히스토리 업데이트
+    _load forge-board.sh
+    board_add_task "$(date +%Y-%m-%d)" "$3" "$2" "$4" "\$${_lau_cost}"
     rank_check "$2"
     ;;
 
@@ -395,6 +402,7 @@ case "${1:-}" in
 
   review-record)
     _load forge-review.sh
+    _load forge-board.sh
     if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
       echo "Usage: forge review-record <worker> <reviewer> <target> <result> [issues] [severity]"
       exit 1

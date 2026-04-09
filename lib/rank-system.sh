@@ -150,6 +150,12 @@ rank_promote() {
   # growth-log에 승급 이벤트 기록
   growth_log_rank_up "$soul_name" "$current_rank" "$next_rank" "$reason"
 
+  # forge-board 랭크 반영
+  if type board_update_rank &>/dev/null; then
+    board_update_rank "$soul_name" "$next_rank"
+    board_add_task "$(date +%Y-%m-%d)" "랭크 승급: ${current_rank}→${next_rank}" "$soul_name" "success" "$reason"
+  fi
+
   echo "[rank] ${soul_name}: 승급 완료! ${current_rank} → ${next_rank}"
 }
 

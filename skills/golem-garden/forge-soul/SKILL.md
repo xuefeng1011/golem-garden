@@ -218,6 +218,10 @@ SOUL의 캐릭터성을 부여하여 팀원처럼 느끼게 한다.
 #### 3-4. forge-board 업데이트
 
 `.golem/forge-board.md`가 있으면 새 SOUL을 팀 구성 테이블에 추가.
+`lib/forge-board.sh`의 `board_add_soul`이 자동 처리:
+```bash
+GOLEM_PROJECT="$(pwd)" bash -c 'source ~/.claude/golem-garden/lib/soul-parser.sh && source ~/.claude/golem-garden/lib/forge-board.sh && board_add_soul "{name}" "{role}" "{omc_agent}" "{model}" "novice" "active"'
+```
 
 ## 예시 실행 흐름
 
