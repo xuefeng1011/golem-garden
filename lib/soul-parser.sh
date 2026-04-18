@@ -21,11 +21,30 @@ _json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\r/\\r/g' | awk '{if(NR>1) printf "\\n"; printf "%s",$0}'
 }
 
+# SOUL 이름 검증 — 경로 순회 및 명령 주입 방지
+# 허용: 영문 소대문자, 숫자, 하이픈, 언더스코어
+_validate_soul_name() {
+  local name="$1"
+  if [ -z "$name" ] || [ "$name" = "." ] || [ "$name" = ".." ]; then
+    echo "[ERROR] 잘못된 SOUL 이름: '${name}'" >&2
+    return 1
+  fi
+  if echo "$name" | grep -q '[^a-zA-Z0-9_-]'; then
+    echo "[ERROR] SOUL 이름에 허용되지 않는 문자: '${name}'" >&2
+    return 1
+  fi
+  return 0
+}
+
 # SOUL 파일 검색: .golem/souls/ 우선 → 글로벌 souls/ 폴백
 _resolve_soul_file() {
   local name="$1"
   name=$(basename "$name" .md)
   name=$(basename "$name")
+
+  # 경로 순회 검증
+  _validate_soul_name "$name" || return 1
+
   local project_soul="${GOLEM_DIR}/souls/${name}.md"
   local global_soul="${GOLEM_ROOT}/souls/${name}.md"
 
@@ -135,6 +154,57 @@ soul_parse() {
 
   # personality는 프롬프트에 주입하지 않음 (사용자 메모용)
   SOUL_PERSONALITY=$(soul_get_field "$soul_file" "personality")
+}
+
+# ── 글로벌 변수 오염 방지 래퍼 ──
+# soul_parse는 전역 SOUL_NAME 등을 덮어씀.
+# 루프에서 반복 호출 시 이전 값이 손실되는 문제를 방지하려면:
+#
+# 방법 1: soul_save/soul_restore — 현재 상태를 스택에 저장/복원
+# 방법 2: soul_get — 특정 필드만 읽기 (파싱 없이)
+#
+# 사용 예시:
+#   soul_save
+#   soul_parse "$other_file"   # 전역 변수 덮어써짐
+#   local other_name="$SOUL_NAME"
+#   soul_restore                # 원래 값 복원
+
+# 구분자: ASCII 0x01 (SOH) — 필드 값에 절대 나타나지 않는 non-printing 문자
+_SOUL_SEP=$'\x01'
+_SOUL_SAVED_STATE=""
+
+soul_save() {
+  # 현재 전역 변수를 저장 (단일 레벨 — 이중 save 시 경고)
+  if [ -n "$_SOUL_SAVED_STATE" ]; then
+    echo "[WARN] soul_save: 이전 저장이 복원되지 않았음 — 덮어씁니다" >&2
+  fi
+  _SOUL_SAVED_STATE="${SOUL_NAME}${_SOUL_SEP}${SOUL_ROLE}${_SOUL_SEP}${SOUL_RANK}${_SOUL_SEP}${SOUL_MODEL}${_SOUL_SEP}${SOUL_TOOLS}${_SOUL_SEP}${SOUL_MAX_TURNS}${_SOUL_SEP}${SOUL_ISOLATION}${_SOUL_SEP}${SOUL_EFFORT}${_SOUL_SEP}${SOUL_SPECIALTY}${_SOUL_SEP}${SOUL_CREATED}${_SOUL_SEP}${SOUL_PERSONALITY}${_SOUL_SEP}${SOUL_DISALLOWED_TOOLS}${_SOUL_SEP}${SOUL_IS_COORDINATOR}"
+}
+
+soul_restore() {
+  # 저장된 상태에서 전역 변수 복원
+  if [ -z "$_SOUL_SAVED_STATE" ]; then
+    echo "[WARN] soul_restore: 저장된 상태 없음" >&2
+    return 1
+  fi
+  IFS="$_SOUL_SEP" read -r SOUL_NAME SOUL_ROLE SOUL_RANK SOUL_MODEL SOUL_TOOLS SOUL_MAX_TURNS SOUL_ISOLATION SOUL_EFFORT SOUL_SPECIALTY SOUL_CREATED SOUL_PERSONALITY SOUL_DISALLOWED_TOOLS SOUL_IS_COORDINATOR <<< "$_SOUL_SAVED_STATE"
+  _SOUL_SAVED_STATE=""
+}
+
+# 단일 필드 조회 (soul_parse 없이, 전역 변수 오염 없음)
+# soul_get <soul_name_or_file> <field>
+# 예: local name=$(soul_get ryn name)
+soul_get() {
+  local target="$1"
+  local field="$2"
+
+  local soul_file="$target"
+  if [ ! -f "$soul_file" ]; then
+    soul_file=$(_resolve_soul_file "$target")
+  fi
+  [ -z "$soul_file" ] || [ ! -f "$soul_file" ] && return 1
+
+  soul_get_field "$soul_file" "$field"
 }
 
 # SOUL role → OMC agent 매핑

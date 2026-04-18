@@ -436,6 +436,7 @@ error_log() {
   local log_file="${GROWTH_DIR:-${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/growth-log}/${soul_name}.jsonl"
   local date=$(date +%Y-%m-%d)
 
+  task=$(_json_escape "$task")
   echo "{\"date\":\"${date}\",\"task\":\"${task}\",\"result\":\"recovery_${outcome}\",\"recovery_stage\":\"${stage}\"}" >> "$log_file"
   echo "[recovery] 기록: ${soul_name} — ${task} → ${stage}:${outcome}"
 }

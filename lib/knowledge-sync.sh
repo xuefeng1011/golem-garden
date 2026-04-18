@@ -3,6 +3,7 @@
 # Usage: source lib/knowledge-sync.sh
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${GOLEM_ROOT}/lib/soul-parser.sh"
 GOLEM_DIR="${GOLEM_DIR:-${GOLEM_ROOT}}"
 SYNC_DIR="${GOLEM_DIR}/sync"
 PENDING_FILE="${SYNC_DIR}/pending.jsonl"
@@ -26,6 +27,8 @@ knowledge_record() {
   _init_sync
 
   local date=$(date +%Y-%m-%d)
+  learning=$(_json_escape "$learning")
+  source_task=$(_json_escape "$source_task")
   local entry="{\"date\":\"${date}\",\"soul\":\"${soul_name}\",\"learning\":\"${learning}\",\"scope\":\"${scope}\",\"confidence\":\"${confidence}\",\"source_task\":\"${source_task}\",\"status\":\"pending\"}"
 
   echo "$entry" >> "$PENDING_FILE"
@@ -85,6 +88,9 @@ knowledge_judge() {
   local learning=$(echo "$line" | grep -o '"learning":"[^"]*"' | sed 's/"learning":"//;s/"//')
 
   # 히스토리에 기록
+  # learning은 JSONL에서 추출된 값이므로 이미 이스케이프 상태 — 재이스케이프 하지 않음
+  # reason만 사용자 입력이므로 이스케이프
+  reason=$(_json_escape "$reason")
   echo "{\"date\":\"${date}\",\"soul\":\"${soul}\",\"learning\":\"${learning}\",\"verdict\":\"${verdict}\",\"reason\":\"${reason}\"}" >> "$HISTORY_FILE"
 
   # pending에서 제거

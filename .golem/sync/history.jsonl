@@ -3,3 +3,6 @@
 {"date":"2026-04-18","soul":"ryn","learning":"sed 치환값에 []문자 포함 시 구분자 /→| 변경 필요. 정규식 패턴이 아닌 치환값에서도 []가 해석됨","verdict":"promote","reason":"POSIX sed 공통 지식 — 모든 SOUL 적용 가능"}
 {"date":"2026-04-18","soul":"ryn","learning":"tac는 macOS/BSD에 없음. awk로 역순 폴백: awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}'","verdict":"promote","reason":"Bash 공통 함정 — pipe 서브셸 패턴"}
 {"date":"2026-04-18","soul":"ryn","learning":"pipe(|) 서브셸에서 변수 증가는 부모에 전파 안됨. process substitution(< <(...))으로 해결","verdict":"promote","reason":"Bash 공통 함정 — pipe 서브셸 변수 스코프"}
+{"date":"2026-04-19","soul":"ryn","learning":"JSONL에 사용자 입력을 쓸 때 반드시 _json_escape 통과. 개행/탭/따옴표가 레코드를 분리함","verdict":"promote","reason":"보안 필수 — JSONL 인젝션 방지 공통 규칙"}
+{"date":"2026-04-19","soul":"ryn","learning":"soul_save/restore에서 구분자는 필드 값에 절대 나타나지 않는 문자 사용. ASCII 0x01(SOH) 권장. 파이프(|)는 자유텍스트에 등장 가능","verdict":"promote","reason":"Bash 직렬화 공통 패턴 — 모든 구분자 선택에 적용"}
+{"date":"2026-04-19","soul":"ryn","learning":"_resolve_soul_file 등 파일 경로를 조립하는 함수에서 basename+정규식 검증([^a-zA-Z0-9_-]) 필수. 경로순회(../)와 명령주입(;rm)을 동시에 차단","verdict":"promote","reason":"보안 필수 — 경로 순회/명령 주입 동시 차단"}

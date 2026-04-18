@@ -31,7 +31,7 @@ chemistry_record() {
     pair="${soul2}:${soul1}"
   fi
 
-  detail=$(echo "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  detail=$(_json_escape "$detail")
   echo "{\"date\":\"${date}\",\"pair\":\"${pair}\",\"type\":\"${interaction}\",\"result\":\"${result}\",\"detail\":\"${detail}\"}" >> "$CHEMISTRY_FILE"
   echo "[chemistry] ${pair}: ${interaction} → ${result}"
 }
