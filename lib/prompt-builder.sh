@@ -42,7 +42,7 @@ prompt_build() {
 
   # 새 frontmatter 필드 (기본값은 soul_parse에서 설정됨)
   local tools="${SOUL_TOOLS:-Read, Edit, Grep, Glob}"
-  local max_turns="${SOUL_MAX_TURNS:-20}"
+  local max_turns="${SOUL_MAX_TURNS:-15}"
   local isolation="${SOUL_ISOLATION:-none}"
 
   # 랭크 기반 권한 제약
@@ -298,7 +298,7 @@ prompt_build_fork_suffix() {
   local principles=$(_extract_section "$soul_file" "행동 원칙")
 
   local tools="${SOUL_TOOLS:-Read, Edit, Grep, Glob}"
-  local max_turns="${SOUL_MAX_TURNS:-20}"
+  local max_turns="${SOUL_MAX_TURNS:-15}"
   local isolation="${SOUL_ISOLATION:-none}"
 
   local rank_constraint=""

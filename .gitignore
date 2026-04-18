@@ -1,0 +1,5 @@
+# Build output
+dist/
+
+# Budget state (session-specific)
+.golem/budget-state.json

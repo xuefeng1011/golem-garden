@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://golem-garden.dev/soul-spec/v1.0/soul.schema.json",
+  "title": "SOUL Spec v1.0",
+  "description": "Schema for GolemGarden SOUL frontmatter — persistent AI agent persona with measurable growth.",
+  "type": "object",
+  "required": ["name", "role", "rank", "specialty", "created"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Unique identifier. Must match filename (without .md). First letter may be capitalized.",
+      "pattern": "^[A-Za-z]([a-z0-9-]{0,30}[a-z0-9])?$",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "role": {
+      "type": "string",
+      "description": "Professional role determining specialization branches and agent mapping.",
+      "anyOf": [
+        {
+          "enum": [
+            "director",
+            "backend-developer",
+            "frontend-developer",
+            "qa-tester",
+            "devops-engineer",
+            "data-analyst",
+            "technical-writer",
+            "security-auditor",
+            "knowledge-auditor",
+            "game-logic-developer",
+            "game-designer"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$",
+          "description": "Custom roles are allowed. Unknown roles map to executor by default."
+        }
+      ]
+    },
+    "rank": {
+      "type": "string",
+      "description": "Current experience level. Determines default tools, maxTurns, and isolation.",
+      "enum": ["novice", "junior", "senior", "lead", "master"]
+    },
+    "specialty": {
+      "type": "array",
+      "description": "Domain expertise keywords for task matching.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true
+    },
+    "personality": {
+      "type": "string",
+      "description": "Human-readable personality description. NOT injected into prompts.",
+      "maxLength": 500
+    },
+    "model": {
+      "type": "string",
+      "description": "Preferred LLM model tier.",
+      "default": "sonnet",
+      "anyOf": [
+        { "enum": ["haiku", "sonnet", "opus"] },
+        {
+          "type": "string",
+          "description": "Provider-specific model ID (e.g., gpt-4o, gemini-2.5-pro)."
+        }
+      ]
+    },
+    "tools": {
+      "type": "array",
+      "description": "Allowed tools. If omitted, derived from rank. Director role overrides this.",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "maxTurns": {
+      "type": "integer",
+      "description": "Maximum conversation turns per task.",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "isolation": {
+      "type": "string",
+      "description": "Execution isolation mode.",
+      "enum": ["none", "worktree"],
+      "default": "none"
+    },
+    "effort": {
+      "type": "string",
+      "description": "Reasoning effort level.",
+      "enum": ["low", "medium", "high"]
+    },
+    "created": {
+      "type": "string",
+      "description": "ISO 8601 date of SOUL creation.",
+      "format": "date"
+    }
+  },
+  "$defs": {
+    "rank_defaults": {
+      "description": "INFORMATIONAL ONLY — not enforced by schema validation. Default values derived from rank when frontmatter fields are omitted. Implementations should apply these defaults at runtime.",
+      "type": "object",
+      "properties": {
+        "novice": {
+          "tools": ["Read", "Edit", "Grep", "Glob"],
+          "maxTurns": 15,
+          "isolation": "none"
+        },
+        "junior": {
+          "tools": ["Read", "Edit", "Write", "Bash", "Grep", "Glob"],
+          "maxTurns": 25,
+          "isolation": "none"
+        },
+        "senior": {
+          "tools": ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent", "WebFetch"],
+          "maxTurns": 40,
+          "isolation": "worktree"
+        },
+        "lead": {
+          "tools": ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent", "WebFetch", "SendMessage"],
+          "maxTurns": 60,
+          "isolation": "worktree"
+        },
+        "master": {
+          "tools": ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent", "WebFetch", "SendMessage", "TaskCreate"],
+          "maxTurns": 80,
+          "isolation": "worktree"
+        }
+      }
+    },
+    "growth_log_entry": {
+      "description": "One completed task record in growth-log/{name}.jsonl",
+      "type": "object",
+      "required": ["date", "soul", "task", "result"],
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "soul": { "type": "string" },
+        "task": { "type": "string" },
+        "result": { "enum": ["success", "fail"] },
+        "files_changed": { "type": "integer", "minimum": 0 },
+        "tests_passed": { "type": "integer", "minimum": 0 },
+        "tokens_in": { "type": "integer", "minimum": 0 },
+        "tokens_out": { "type": "integer", "minimum": 0 },
+        "tokens_cache": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "model": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "reviewer": { "type": "string" },
+        "review_result": { "enum": ["pass", "fail", "skip"] }
+      }
+    },
+    "chemistry_entry": {
+      "description": "Pairwise collaboration record in chemistry.jsonl",
+      "type": "object",
+      "required": ["date", "pair", "type", "result"],
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "pair": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+:[a-z0-9-]+$",
+          "description": "Alphabetically sorted SOUL pair (e.g., ryn:zen)"
+        },
+        "type": { "enum": ["review", "collab", "dependency", "conflict"] },
+        "result": { "enum": ["positive", "negative", "neutral"] },
+        "detail": { "type": "string" }
+      }
+    },
+    "achievement_entry": {
+      "description": "Achievement badge record in achievements.jsonl",
+      "type": "object",
+      "required": ["date", "soul", "id", "name", "desc"],
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "soul": { "type": "string" },
+        "id": {
+          "enum": [
+            "first_blood", "streak_5", "streak_10", "streak_20",
+            "tasks_10", "tasks_50", "tasks_100", "tasks_200",
+            "perfect_rate",
+            "reviewer_5", "reviewer_20", "reviewed_10",
+            "rank_junior", "rank_senior", "rank_master"
+          ]
+        },
+        "name": { "type": "string" },
+        "desc": { "type": "string" }
+      }
+    },
+    "skill_tree_entry": {
+      "description": "Specialization branch record in skill-trees.jsonl",
+      "type": "object",
+      "required": ["date", "soul", "role", "branch"],
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "soul": { "type": "string" },
+        "role": { "type": "string" },
+        "branch": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "memory_entry": {
+      "description": "Episodic learning record in memory/{name}.jsonl",
+      "type": "object",
+      "required": ["date", "task", "lesson", "tags"],
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "task": { "type": "string" },
+        "lesson": { "type": "string" },
+        "tags": { "type": "string", "description": "Comma-separated keywords" },
+        "ts": { "type": "string", "format": "date-time" }
+      }
+    },
+    "mailbox_message": {
+      "description": "Inter-SOUL message in mailbox/{name}.jsonl",
+      "type": "object",
+      "required": ["id", "from", "to", "type", "content", "timestamp", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "type": {
+          "enum": ["task_assign", "task_done", "review_request", "shutdown_request", "budget_warning", "escalation"]
+        },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "enum": ["pending", "read", "acked"] }
+      }
+    },
+    "budget_state": {
+      "description": "Session budget tracking in budget-state.json",
+      "type": "object",
+      "required": ["token_budget", "dollar_budget", "tokens_used", "dollars_spent", "turns", "status", "started"],
+      "properties": {
+        "token_budget": { "type": "integer", "default": 500000 },
+        "dollar_budget": { "type": "number", "default": 10.00 },
+        "tokens_used": { "type": "integer", "minimum": 0 },
+        "dollars_spent": { "type": "number", "minimum": 0 },
+        "turns": { "type": "integer", "minimum": 0 },
+        "stagnant_turns": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["ok", "warning", "exceeded", "stagnating"] },
+        "started": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

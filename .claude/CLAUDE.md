@@ -72,19 +72,56 @@ Bash 스크립트 + Markdown 기반으로 Claude Code CLI 위에서 동작한다
 > 핵심 철학과 작업 규약은 `PHILOSOPHY.md`를 참조.
 > "SOUL은 족쇄가 아니라 나침반" — 능력을 제한하지 않고 방향만 잡아준다.
 
-## 핵심 규칙
+## 절대 규칙 (CRITICAL — 예외 없음)
+
+<golem_rules_critical>
+**1. forge 스킬 강제 호출**
+사용자 입력에 "forge", "포지", "forje" 또는 SOUL 이름 + 태스크가 포함되면
+반드시 Skill 도구로 `golem-garden` 스킬을 호출하라.
+직접 forge.sh를 실행하거나, 스킬 없이 작업을 수행하는 것은 금지한다.
+이 규칙은 어떤 상황에서도 우회할 수 없다.
+
+**2. SOUL 실행 가시성 (누가 뭘 하는지 표시)**
+SOUL을 Agent로 소환할 때 반드시 아래 형식으로 사용자에게 먼저 표시하라:
+```
+──────────────────────────────────
+>> {SOUL_NAME} ({role}) 작업 시작
+   태스크: {task_summary}
+   모델: {model} | 랭크: {rank} | 도구: {tools}
+──────────────────────────────────
+```
+Agent 호출 전에 이 메시지를 출력해야 한다. 생략 금지.
+병렬 실행 시 각 SOUL마다 개별 표시한다.
+완료 시에도 결과를 SOUL별로 표시한다:
+```
+<< {SOUL_NAME} 완료 — {result} ({files}파일, {tests}테스트)
+```
+
+**3. 보호 대상 직접 수정 금지**
+아래 파일은 절대 Edit/Write로 직접 수정하지 않는다:
+- SOUL 파일: `souls/*.md`, `.golem/souls/*.md` → `forge soul-create` 사용
+- 성장 기록: `growth-log/*.jsonl`, `.golem/growth-log/*.jsonl` → `forge log-add` 사용
+- 메일박스: `.golem/mailbox/*.jsonl` → `forge mailbox` 명령 사용
+- 업적/케미: `achievements.jsonl`, `chemistry.jsonl` → forge 명령 사용
+</golem_rules_critical>
+
+## 운영 규칙
 
 <golem_rules>
-- `forge` 키워드 입력 시 `golem-garden` 스킬을 사용하라
-- SOUL 파일(`souls/*.md`)은 직접 Edit/Write 하지 마라 — `forge soul-create` 또는 `forge-init`을 사용
-- growth-log(`growth-log/*.jsonl`)은 직접 수정하지 마라 — `forge.sh log-add`로만 기록
-- mailbox(`mailbox/*.jsonl`)은 직접 수정하지 마라 — `forge mailbox` 명령 사용
 - 모든 `forge.sh` 호출 시 반드시 `GOLEM_PROJECT="$(pwd)"` 환경변수를 전달하라
 - `.golem/souls/` 오버라이드가 `souls/` 글로벌보다 우선 적용됨
 - SOUL 소환 시 `tools` frontmatter를 OMC agent `allowed_tools`로 전달
 - Novice SOUL은 `maxTurns` 제한 적용 (기본 15턴)
 - Director(Nex)는 코드를 직접 작성하지 않음 — 반드시 SOUL에 위임
+- Novice/Junior SOUL은 병렬 쓰기 금지 — 파일 충돌 위험
 </golem_rules>
+
+## 자동 보호 훅 (settings.json)
+
+아래 훅이 자동으로 동작하며, 위 규칙을 시스템 레벨에서 강제한다:
+- **PreToolUse(Edit/Write)**: growth-log, mailbox JSONL 직접 수정 시도 → 차단
+- **PostToolUse(Edit)**: Novice SOUL의 멀티파일 수정 → 경고
+- **Stop**: 세션 종료 시 성장 기록 자동 저장 + 대시보드 자동 갱신
 
 ## 디렉토리 구조
 
@@ -154,4 +191,6 @@ forge skill-tree dashboard  전문화 현황
 forge dna show          프로젝트 DNA 조회
 forge budget status     예산 상태
 forge tool-char guide   도구 성격 가이드
+forge skill-export --all  SOUL → Agent Skill 내보내기 (agentskills.io 호환)
+forge skill-import <dir>  Agent Skill → SOUL 임포트
 ```

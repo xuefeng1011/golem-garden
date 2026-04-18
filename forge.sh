@@ -175,6 +175,13 @@ Portability:
                       SOUL 팩 가져오기
   portability         포터빌리티 상태 대시보드
 
+Agent Skills (agentskills.io):
+  skill-export <name>   SOUL → Agent Skill 변환
+  skill-export --all    전체 SOUL을 Agent Skills로 내보내기
+  skill-import <dir>    Agent Skill → SOUL 임포트
+  skill-import <parent> --all
+                        디렉토리 내 전체 Agent Skills 임포트
+
 Examples:
   forge status
   forge prompt ryn "인증 API 구현"
@@ -979,6 +986,32 @@ case "${1:-}" in
         exit 1
         ;;
     esac
+    ;;
+
+  skill-export)
+    _load soul-to-skill.sh
+    if [ -z "${2:-}" ]; then
+      echo "Usage: forge skill-export <soul_name|--all> [output-dir]"
+      exit 1
+    fi
+    if [ "$2" = "--all" ]; then
+      soul_to_skill_main "--all" "${3:-${GOLEM_ROOT}/dist/skills}"
+    else
+      soul_to_skill_main "$2" "${3:-${GOLEM_ROOT}/dist/skills}"
+    fi
+    ;;
+
+  skill-import)
+    _load skill-to-soul.sh
+    if [ -z "${2:-}" ]; then
+      echo "Usage: forge skill-import <skill-dir> [--all] [output-dir]"
+      exit 1
+    fi
+    if [ "${3:-}" = "--all" ]; then
+      skill_to_soul_main "$2" "--all" "${4:-${GOLEM_DIR}/souls}"
+    else
+      skill_to_soul_main "$2" "${3:-${GOLEM_DIR}/souls}"
+    fi
     ;;
 
   help|--help|-h)

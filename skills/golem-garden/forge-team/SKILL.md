@@ -81,6 +81,17 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
 
 각 배정된 SOUL에 대해:
 
+0. **SOUL 실행 가시성 (필수 — 생략 금지)**:
+   Agent 호출 **전에** 반드시 아래 형식으로 사용자에게 표시한다:
+   ```
+   ──────────────────────────────────
+   >> {SOUL_NAME} ({role}) 작업 시작
+      태스크: {task_summary}
+      모델: {model} | 랭크: {rank} | 도구: {tools}
+   ──────────────────────────────────
+   ```
+   병렬 실행 시 각 SOUL마다 개별 표시. 이 메시지 없이 Agent를 호출하지 마라.
+
 1. **세션 업데이트**: SOUL 상태를 "working"으로 변경
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session log {soul_name} task_start "{task}"
@@ -92,12 +103,17 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
 
 | SOUL Role | Agent subagent_type | model |
 |-----------|-------------------|-------|
-| director | oh-my-claudecode:architect | opus |
-| backend-developer | oh-my-claudecode:executor | sonnet |
-| frontend-developer | oh-my-claudecode:designer | sonnet |
-| qa-tester | oh-my-claudecode:test-engineer | haiku |
-| devops-engineer | oh-my-claudecode:executor | sonnet |
-| security-auditor | oh-my-claudecode:security-reviewer | opus |
+| director | architect | opus |
+| backend-developer | executor | sonnet |
+| frontend-developer | designer | sonnet |
+| qa-tester | test-engineer | haiku |
+| devops-engineer | executor | sonnet |
+| data-analyst | scientist | sonnet |
+| technical-writer | writer | haiku |
+| security-auditor | security-reviewer | opus |
+| knowledge-auditor | executor | sonnet |
+| game-logic-developer | executor | sonnet |
+| game-designer | planner | sonnet |
 
 4. **Worktree 격리** (SOUL의 isolation=worktree일 때):
    - ultrapilot 모드에서 SOUL의 `isolation` 필드가 `worktree`이면:
@@ -216,8 +232,11 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session end completed
    ```
 
-2. 사용자에게 요약 보고:
-   - 각 SOUL별 태스크 결과
+2. 사용자에게 SOUL별 완료 결과를 표시한다 (필수):
+   ```
+   << {SOUL_NAME} 완료 — {result} ({files}파일, {tests}테스트, ${cost})
+   ```
+   각 SOUL마다 개별 표시 후 전체 요약:
    - 변경된 파일 목록
    - 테스트 결과
    - 랭크 변동 사항
@@ -240,9 +259,18 @@ AI 실행:
 2. Director(Nex)에게 분배 의뢰 → "Backend API → Ryn, Frontend UI → Kai"
    - mailbox send nex ryn task_assign "인증 API 구현"
    - mailbox send nex kai task_assign "로그인 화면 구현"
-3. 병렬 실행:
-   - Agent(executor, sonnet, Ryn 컨텍스트 + 행동 원칙 + 랭크 제약 + tools=[Read,Edit,Grep,Glob] + "인증 API 구현")
-   - Agent(designer, sonnet, Kai 컨텍스트 + 행동 원칙 + 랭크 제약 + tools=[Read,Edit,Grep,Glob] + "로그인 화면 구현")
+3. SOUL 실행 가시성 표시 + 병렬 실행:
+   ──────────────────────────────────
+   >> Ryn (backend-developer) 작업 시작
+      태스크: 인증 API 구현
+      모델: sonnet | 랭크: junior | 도구: Read, Edit, Grep, Glob
+   ──────────────────────────────────
+   >> Kai (frontend-developer) 작업 시작
+      태스크: 로그인 화면 구현
+      모델: sonnet | 랭크: novice | 도구: Read, Edit, Grep, Glob
+   ──────────────────────────────────
+   - Agent(executor, sonnet, Ryn 프롬프트 + "인증 API 구현")
+   - Agent(designer, sonnet, Kai 프롬프트 + "로그인 화면 구현")
 4. (Worktree 머지 — novice이므로 해당 없음)
 5. 완료 후:
    - forge log-add-usage ryn "인증 API" success 8 15 sonnet 50000 120000
@@ -254,8 +282,10 @@ AI 실행:
    - ⛔ 자동 리뷰 실행하지 않음
 7. 세션 종료 + 결과 보고
 
-응답: "완료! Ryn: 인증 API (8파일, 15테스트), Kai: 로그인 화면 (3파일, 6테스트)
-       세션: 2026-04-02_사용자-인증-api-+-로그인-화면 (completed)
+응답:
+   << Ryn 완료 — success (8파일, 15테스트, $0.045)
+   << Kai 완료 — success (3파일, 6테스트, $0.028)
+   세션: 2026-04-02_사용자-인증-api-+-로그인-화면 (completed)
 
 ---
 💡 다음 작업:
