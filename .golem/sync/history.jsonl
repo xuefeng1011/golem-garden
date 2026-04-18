@@ -1,2 +1,5 @@
 {"date":"2026-04-01","soul":"ryn","learning":"포트 8443으로 변경","verdict":"reject","reason":"프로젝트 전용 설정"}
 {"date":"2026-04-01","soul":"ryn","learning":"JPA @BatchSize(100)이 N+1 해결 최적","verdict":"promote","reason":""}
+{"date":"2026-04-18","soul":"ryn","learning":"sed 치환값에 []문자 포함 시 구분자 /→| 변경 필요. 정규식 패턴이 아닌 치환값에서도 []가 해석됨","verdict":"promote","reason":"POSIX sed 공통 지식 — 모든 SOUL 적용 가능"}
+{"date":"2026-04-18","soul":"ryn","learning":"tac는 macOS/BSD에 없음. awk로 역순 폴백: awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}'","verdict":"promote","reason":"Bash 공통 함정 — pipe 서브셸 패턴"}
+{"date":"2026-04-18","soul":"ryn","learning":"pipe(|) 서브셸에서 변수 증가는 부모에 전파 안됨. process substitution(< <(...))으로 해결","verdict":"promote","reason":"Bash 공통 함정 — pipe 서브셸 변수 스코프"}

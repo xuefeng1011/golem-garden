@@ -166,6 +166,7 @@ domain-packs/   — 프리셋 팀 번들 (fullstack, gamedev, trading)
 ## forge 명령 체계
 
 ```
+forge overview (ov)     통합 대시보드 — 팀/성과/비용/활동 한눈에
 forge-init              프로젝트 초기화 (OMC 분석 → SOUL 팀 구성)
 forge build: {task}     팀 빌드 (Director 분배 → 병렬 실행)
 forge quick: {task}     단독 빌드 (최적 SOUL 1개)
@@ -191,6 +192,8 @@ forge skill-tree dashboard  전문화 현황
 forge dna show          프로젝트 DNA 조회
 forge budget status     예산 상태
 forge tool-char guide   도구 성격 가이드
+forge insights            팀 전체 인사이트 (성과 패턴 분석)
+forge insights {soul}     SOUL별 성과 분석 (추세, 비용 효율, 학습 영역)
 forge skill-export --all  SOUL → Agent Skill 내보내기 (agentskills.io 호환)
 forge skill-import <dir>  Agent Skill → SOUL 임포트
 ```

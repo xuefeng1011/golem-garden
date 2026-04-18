@@ -64,6 +64,7 @@ Project Init:
   init trading        트레이딩 팩 바로 설치
 
 Commands:
+  overview (ov)       통합 대시보드 — 팀 전체를 한눈에
   status              팀 상태 + SOUL 랭크 확인
   souls               등록된 SOUL 목록
   prompt <name> <task> SOUL 프롬프트 생성 (디버그용)
@@ -174,6 +175,10 @@ Portability:
   import-pack <pack_dir>
                       SOUL 팩 가져오기
   portability         포터빌리티 상태 대시보드
+
+Insights (성과 분석):
+  insights              팀 전체 인사이트
+  insights <soul>       SOUL별 성과 패턴 분석
 
 Agent Skills (agentskills.io):
   skill-export <name>   SOUL → Agent Skill 변환
@@ -308,8 +313,11 @@ case "${1:-}" in
     # forge-board 태스크 히스토리 업데이트
     _load forge-board.sh
     board_add_task "$(date +%Y-%m-%d)" "$3" "$2" "$4"
-    # 자동 랭크 체크
-    rank_check "$2"
+    # 자동 승급 시도 (조건 충족 시 실행, 미충족 시 현황 보고)
+    rank_promote "$2" 2>/dev/null || rank_check "$2"
+    # 자동 업적 체크
+    _load achievement.sh
+    achievement_check "$2"
     ;;
 
   log-add-usage)
@@ -327,7 +335,10 @@ case "${1:-}" in
     # forge-board 태스크 히스토리 업데이트
     _load forge-board.sh
     board_add_task "$(date +%Y-%m-%d)" "$3" "$2" "$4" "\$${_lau_cost}"
-    rank_check "$2"
+    # 자동 승급 시도 + 업적 체크
+    rank_promote "$2" 2>/dev/null || rank_check "$2"
+    _load achievement.sh
+    achievement_check "$2"
     ;;
 
   dashboard)
@@ -986,6 +997,16 @@ case "${1:-}" in
         exit 1
         ;;
     esac
+    ;;
+
+  overview|ov)
+    _load dashboard-unified.sh
+    dashboard_unified
+    ;;
+
+  insights)
+    _load insights.sh
+    insights_main "${2:-team}"
     ;;
 
   skill-export)

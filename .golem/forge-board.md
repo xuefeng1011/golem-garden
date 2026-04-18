@@ -2,7 +2,7 @@
 project: golem-garden
 type: CLI 도구 / AI 에이전트 오케스트레이션 시스템
 created: 2026-04-06
-updated: 2026-04-07
+updated: 2026-04-18
 ---
 
 # Forge Board
@@ -12,7 +12,7 @@ updated: 2026-04-07
 | SOUL | 역할 | OMC Agent | 모델 | Rank | 상태 |
 |------|------|-----------|------|------|------|
 | Nex | Director | architect | opus | junior | active |
-| Ryn | Backend (Bash) | executor | sonnet | novice | active |
+| Ryn | Backend (Bash) | executor | sonnet | junior | active |
 | Zen | QA Tester | test-engineer | haiku | novice | active |
 | Bolt | DevOps | executor | sonnet | novice | active |
 
@@ -55,3 +55,5 @@ updated: 2026-04-07
 | 2026-04-06 | 크로스 리뷰 | Zen | pass | HIGH 2건 즉시 수정 |
 | 2026-04-07 | 자동 비용 추적 | Ryn | success | log-add-usage + budget_estimate_cost |
 | 2026-04-07 | MD 파일 정비 | Ryn | success | README/QUICKSTART/PHILOSOPHY 동기화 |
+| 2026-04-18 | 자동승급 시스템 점검 | ryn | success |  |
+| 2026-04-18 | 랭크 승급: novice→junior | ryn | success | 전체 프로젝트 태스크 11건 완료 (≥10) |

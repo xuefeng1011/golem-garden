@@ -187,7 +187,8 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
    - duration_ms: Agent usage에서 추출한 값
    - **비용은 자동 계산됨** (모델별 가격 × 토큰 수)
    - **예산 추적도 자동 실행됨** (budget_record)
-   - **랭크 체크도 자동 실행됨**
+   - **자동 승급 실행됨** (조건 충족 시 rank + tools + maxTurns + isolation 모두 갱신)
+   - **업적 자동 체크됨** (새 뱃지 달성 시 자동 기록)
 
    **usage 데이터를 추출할 수 없는 경우** (Agent 실패 등): 기존 `log-add`로 폴백
    ```bash
@@ -196,12 +197,34 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
 
    **⚠️ 비용 기록 필수 원칙**: 모든 Agent 호출(Director 분배, Worker 실행, 리뷰)은 반드시 `log-add-usage`로 비용을 기록한다. `log-add`(비용 없음)는 usage 추출 불가 시에만 폴백으로 사용한다.
 
-3. **메일박스 통지**: SOUL이 Director에게 완료 보고
+3. **자동 학습 추출 (lesson-extractor)**:
+   Agent 결과를 분석하여 의미 있는 학습만 자동 기록한다.
+   
+   **추출 기준** (아래 중 하나라도 해당하면 기록):
+   - 버그 패턴: 근본 원인 + 해결법 발견
+   - 성능 개선: 측정 가능한 기법
+   - 프레임워크 함정: 문서에 없는 주의사항
+   - 아키텍처 결정: 트레이드오프 수반한 선택
+   - 실패 교훈: 회피 패턴 발견
+   - 새로운 기법: 처음 사용한 도구/패턴
+   
+   **건너뛰는 경우**: 단순 CRUD, 설정 변경, 타이포 수정, 일반 상식
+   
+   학습이 있으면:
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh memory record {soul_name} "{task}" "{lesson}" "{tags}"
+   ```
+   - lesson: 한 줄, 100자 이내, 구체적 기술 내용
+   - tags: 쉼표 구분 검색 키워드 3-5개 (예: "jwt,auth,refresh-token")
+   - 한 태스크에서 최대 2개 학습까지
+   - 실패 태스크도 추출 (실패 원인 자체가 학습)
+
+4. **메일박스 통지**: SOUL이 Director에게 완료 보고
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send {soul_name} nex task_done "{task} 완료"
    ```
 
-4. **세션 업데이트**: SOUL 상태를 "done"으로 변경
+5. **세션 업데이트**: SOUL 상태를 "done"으로 변경
 
 ### Step 6: 자동 리뷰 트리거 (선택적)
 

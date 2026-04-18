@@ -16,47 +16,132 @@ GOLEM_MAX_RETRY="${GOLEM_MAX_RETRY:-2}"
 # 복구 불가능한 에러만 모델에 보고하여 컨텍스트 오염을 방지.
 # ─────────────────────────────────────────────────────────
 
-# 에러를 보류(withhold)할지 판단
+# ─────────────────────────────────────────────────────────
+# 에러 분류 체계 (13가지 — Hermes Agent 패턴 적용)
+#
+# 각 분류에 복구 힌트(recovery hint)가 포함되어 있어
+# 복구 루프가 재분석 없이 바로 행동할 수 있다.
+#
+# 힌트 필드:
+#   retryable        — 재시도 가능 여부 (yes/no)
+#   should_compress  — 컨텍스트 압축 필요 (yes/no)
+#   should_rotate    — 크레덴셜 교체 필요 (yes/no)
+#   should_fallback  — 대체 SOUL/모델 전환 (yes/no)
+#   should_decompose — 태스크 분해 필요 (yes/no)
+# ─────────────────────────────────────────────────────────
+
+# 에러 분류 + 복구 힌트 반환
+# error_classify <error_type> <error_message>
+# 출력: classification|action|retryable|compress|rotate|fallback|decompose
+# 주의: 출력 필드는 항상 하드코딩된 값이며, 입력(error_msg)에서 파생되지 않음.
+#       따라서 error_msg에 '|' 문자가 포함되어도 필드 위치가 깨지지 않음.
+error_classify() {
+  local error_type="$1"
+  local error_msg="$2"
+
+  case "$error_type" in
+    # ── 1. 자동 복구 가능 (withhold → 재시도) ──
+    timeout)
+      echo "timeout|backoff_retry|yes|no|no|no|no" ;;
+    rate_limit)
+      echo "rate_limit|backoff_rotate|yes|no|yes|no|no" ;;
+    transient|server_error)
+      echo "server_error|backoff_retry|yes|no|no|no|no" ;;
+    overloaded)
+      echo "overloaded|backoff_retry|yes|no|no|yes|no" ;;
+    file_not_found)
+      echo "file_not_found|search_retry|yes|no|no|no|no" ;;
+    lock_conflict)
+      echo "lock_conflict|wait_retry|yes|no|no|no|no" ;;
+    permission)
+      echo "permission|fallback_readonly|yes|no|no|no|no" ;;
+
+    # ── 2. 컨텍스트/페이로드 문제 (압축 후 재시도) ──
+    context_overflow)
+      echo "context_overflow|compress_retry|yes|yes|no|no|no" ;;
+    payload_too_large)
+      echo "payload_too_large|compress_retry|yes|yes|no|no|no" ;;
+
+    # ── 3. 모델/인증 문제 (폴백) ──
+    model_not_found)
+      echo "model_not_found|model_fallback|no|no|no|yes|no" ;;
+    auth|auth_permanent)
+      echo "auth|abort_or_rotate|no|no|yes|no|no" ;;
+    billing)
+      echo "billing|rotate_credential|no|no|yes|no|no" ;;
+
+    # ── 4. 코드/로직 문제 (모델 개입 필요) ──
+    syntax_error)
+      echo "syntax_error|model_fix|no|no|no|no|no" ;;
+    logic_error)
+      echo "logic_error|model_fix|no|no|no|no|no" ;;
+    type_error)
+      echo "type_error|model_fix|no|no|no|no|no" ;;
+    test_failure)
+      echo "test_failure|model_analyze|no|no|no|no|no" ;;
+    dependency)
+      echo "dependency|model_resolve|no|no|no|no|no" ;;
+
+    # ── 5. 태스크 복잡도 문제 (분해 필요) ──
+    too_complex)
+      echo "too_complex|decompose|no|no|no|no|yes" ;;
+    max_turns_exceeded)
+      echo "max_turns_exceeded|decompose|no|yes|no|no|yes" ;;
+
+    # ── 6. 알 수 없는 에러 → 메시지 내용으로 분류 ──
+    *)
+      _error_classify_by_message "$error_msg"
+      ;;
+  esac
+}
+
+# 메시지 내용 기반 에러 분류 (fallback)
+_error_classify_by_message() {
+  local msg="$1"
+
+  # 컨텍스트 오버플로우 패턴
+  if echo "$msg" | grep -qi "context.*length\|too many tokens\|max.*context\|token limit"; then
+    echo "context_overflow|compress_retry|yes|yes|no|no|no"
+  # 일시적 에러 패턴
+  elif echo "$msg" | grep -qi "timeout\|ECONNRESET\|ETIMEDOUT\|429\|503\|retry\|overloaded"; then
+    echo "transient|backoff_retry|yes|no|no|no|no"
+  # 인증 에러 패턴
+  elif echo "$msg" | grep -qi "401\|403\|unauthorized\|forbidden\|invalid.*key\|expired.*token"; then
+    echo "auth|abort_or_rotate|no|no|yes|no|no"
+  # 모델 없음 패턴
+  elif echo "$msg" | grep -qi "model.*not.*found\|not.*available\|does not exist"; then
+    echo "model_not_found|model_fallback|no|no|no|yes|no"
+  # 코드 에러 패턴
+  elif echo "$msg" | grep -qi "SyntaxError\|TypeError\|ReferenceError\|undefined is not\|cannot read"; then
+    echo "syntax_error|model_fix|no|no|no|no|no"
+  # 복잡도 패턴
+  elif echo "$msg" | grep -qi "too complex\|exceeded.*turn\|max.*turn"; then
+    echo "max_turns_exceeded|decompose|no|yes|no|no|yes"
+  else
+    echo "unknown|backoff_retry|yes|no|no|no|no"
+  fi
+}
+
+# 에러를 보류(withhold)할지 판단 (기존 호환 — error_classify 기반으로 재구현)
 # error_should_withhold <error_type> <error_message>
 # 반환: withhold (보류 → 자동 복구) | report (모델에 보고)
 error_should_withhold() {
   local error_type="$1"
   local error_msg="$2"
 
-  case "$error_type" in
-    # === 자동 복구 가능한 에러 (보류) ===
-    timeout)         echo "withhold" ;;  # 네트워크 타임아웃 → 재시도
-    rate_limit)      echo "withhold" ;;  # API 한도 → 대기 후 재시도
-    transient)       echo "withhold" ;;  # 일시적 오류 → 재시도
-    file_not_found)                       # 파일 경로 → 검색 후 재시도
-      echo "withhold" ;;
-    permission)                           # 권한 → 다른 방법 시도
-      echo "withhold" ;;
-    lock_conflict)   echo "withhold" ;;  # 파일 잠금 → 대기 후 재시도
+  local classification
+  classification=$(error_classify "$error_type" "$error_msg")
+  local retryable=$(echo "$classification" | cut -d'|' -f3)
 
-    # === 모델 개입 필요한 에러 (보고) ===
-    syntax_error)    echo "report" ;;    # 코드 구문 오류 → 모델이 수정해야
-    logic_error)     echo "report" ;;    # 로직 오류 → 모델이 판단해야
-    test_failure)    echo "report" ;;    # 테스트 실패 → 모델이 분석해야
-    type_error)      echo "report" ;;    # 타입 오류 → 모델이 수정해야
-    dependency)      echo "report" ;;    # 의존성 문제 → 모델이 해결해야
-
-    # === 알 수 없는 에러 → 메시지 내용으로 추가 판단 ===
-    *)
-      # 일시적 에러 패턴 감지
-      if echo "$error_msg" | grep -qi "timeout\|ECONNRESET\|ETIMEDOUT\|429\|503\|retry"; then
-        echo "withhold"
-      # 구문/로직 에러 패턴
-      elif echo "$error_msg" | grep -qi "SyntaxError\|TypeError\|ReferenceError\|undefined is not\|cannot read"; then
-        echo "report"
-      else
-        echo "report"  # 기본: 보수적으로 보고
-      fi
-      ;;
-  esac
+  if [ "$retryable" = "yes" ]; then
+    echo "withhold"
+  else
+    echo "report"
+  fi
 }
 
 # Withholding 자동 복구 시도 (모델에 보고하기 전)
+# error_classify의 복구 힌트를 활용하여 행동 결정
 # error_withhold_recover <soul_name> <error_type> <error_message> <attempt>
 # 반환: 0=복구 성공, 1=복구 실패(모델에 보고 필요)
 error_withhold_recover() {
@@ -65,34 +150,59 @@ error_withhold_recover() {
   local error_msg="$3"
   local attempt="${4:-1}"
 
-  echo "[recovery:withhold] ${soul_name}: ${error_type} 에러 보류 — 자동 복구 시도 (${attempt}/2)"
+  local classification
+  classification=$(error_classify "$error_type" "$error_msg")
+  local action=$(echo "$classification" | cut -d'|' -f2)
+  local retryable=$(echo "$classification" | cut -d'|' -f3)
+  local should_compress=$(echo "$classification" | cut -d'|' -f4)
+  local should_fallback=$(echo "$classification" | cut -d'|' -f6)
+  local should_decompose=$(echo "$classification" | cut -d'|' -f7)
 
-  case "$error_type" in
-    timeout|rate_limit|transient)
-      # 대기 후 재시도 시그널
+  echo "[recovery:withhold] ${soul_name}: ${error_type} → ${action} (attempt ${attempt}/${GOLEM_MAX_RETRY})"
+
+  # 재시도 불가 → 즉시 보고
+  if [ "$retryable" != "yes" ]; then
+    echo "[recovery:withhold] 자동 복구 불가 (${action}) — 모델에 보고"
+    return 1
+  fi
+
+  case "$action" in
+    backoff_retry)
       local wait_sec=$((attempt * 3))
-      echo "[recovery:withhold] ${wait_sec}초 대기 후 재시도 권고"
+      echo "[recovery:withhold] ${wait_sec}초 대기 후 재시도"
       echo "WITHHOLD_RETRY:${wait_sec}"
       return 0
       ;;
-    file_not_found)
-      echo "[recovery:withhold] 파일 검색으로 대체 경로 탐색 권고"
+    backoff_rotate)
+      local wait_sec=$((attempt * 5))
+      echo "[recovery:withhold] ${wait_sec}초 대기 + 크레덴셜 로테이션 권고"
+      echo "WITHHOLD_RETRY:${wait_sec}"
+      return 0
+      ;;
+    compress_retry)
+      echo "[recovery:withhold] 컨텍스트 압축 후 재시도 권고"
+      echo "WITHHOLD_COMPRESS"
+      return 0
+      ;;
+    search_retry)
+      echo "[recovery:withhold] 파일 검색으로 대체 경로 탐색"
       echo "WITHHOLD_SEARCH"
       return 0
       ;;
-    lock_conflict)
-      echo "[recovery:withhold] 2초 대기 후 재시도 권고"
+    wait_retry)
+      echo "[recovery:withhold] 2초 대기 후 재시도"
       echo "WITHHOLD_RETRY:2"
       return 0
       ;;
-    permission)
-      echo "[recovery:withhold] 읽기 전용 모드로 폴백 권고"
+    fallback_readonly)
+      echo "[recovery:withhold] 읽기 전용 모드로 폴백"
       echo "WITHHOLD_FALLBACK:readonly"
       return 0
       ;;
     *)
-      echo "[recovery:withhold] 자동 복구 불가 — 모델에 보고"
-      return 1
+      echo "[recovery:withhold] 알 수 없는 액션: ${action} — 백오프 재시도"
+      echo "WITHHOLD_RETRY:$((attempt * 3))"
+      return 0
       ;;
   esac
 }

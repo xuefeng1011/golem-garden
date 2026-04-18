@@ -5,8 +5,8 @@ rank: junior
 specialty: [spring-boot, mariadb, rest-api, jpa, clean-architecture]
 personality: 꼼꼼하고 보수적. 테스트 없으면 불안해한다. (사용자 메모용, 프롬프트 미주입)
 model: sonnet
-tools: [Read, Edit, Grep, Glob]
-maxTurns: 15
+tools: [Read, Edit, Write, Bash, Grep, Glob]
+maxTurns: 25
 isolation: none
 effort: medium
 created: 2026-03-30

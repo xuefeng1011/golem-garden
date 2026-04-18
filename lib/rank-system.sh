@@ -19,6 +19,17 @@ _rank_total_task_count() {
   local g=$(GROWTH_DIR="${GOLEM_ROOT}/growth-log" growth_log_task_count "$soul_name")
   total=$((total + g))
 
+  # 1.5) 현재 프로젝트 .golem/growth-log (GOLEM_PROJECT 환경변수 기반)
+  if [ -n "${GOLEM_PROJECT:-}" ]; then
+    local current_growth="${GOLEM_PROJECT}/.golem/growth-log"
+    if [ -d "$current_growth" ] && [ "$current_growth" != "${GOLEM_ROOT}/growth-log" ]; then
+      if [ -f "${current_growth}/${soul_name}.jsonl" ]; then
+        local cg=$(GROWTH_DIR="$current_growth" growth_log_task_count "$soul_name")
+        total=$((total + cg))
+      fi
+    fi
+  fi
+
   # 2) 등록된 프로젝트별 .golem/growth-log
   local projects_file="${GOLEM_ROOT}/projects.jsonl"
   if [ -f "$projects_file" ]; then
@@ -27,6 +38,9 @@ _rank_total_task_count() {
       local proj_path=$(echo "$line" | grep -o '"path":"[^"]*"' | sed 's/"path":"//;s/"//')
       [ -z "$proj_path" ] && continue
       local proj_growth="${proj_path}/.golem/growth-log"
+      # 글로벌/현재 프로젝트와 중복 방지
+      [ "$proj_growth" = "${GOLEM_ROOT}/growth-log" ] && continue
+      [ -n "${GOLEM_PROJECT:-}" ] && [ "$proj_growth" = "${GOLEM_PROJECT}/.golem/growth-log" ] && continue
       if [ -f "${proj_growth}/${soul_name}.jsonl" ]; then
         local p=$(GROWTH_DIR="$proj_growth" growth_log_task_count "$soul_name")
         total=$((total + p))
@@ -46,6 +60,17 @@ _rank_total_streak() {
   local s=$(GROWTH_DIR="${GOLEM_ROOT}/growth-log" growth_log_streak "$soul_name")
   [ "$s" -gt "$max_streak" ] 2>/dev/null && max_streak=$s
 
+  # 현재 프로젝트 (GOLEM_PROJECT 환경변수 기반)
+  if [ -n "${GOLEM_PROJECT:-}" ]; then
+    local current_growth="${GOLEM_PROJECT}/.golem/growth-log"
+    if [ -d "$current_growth" ] && [ "$current_growth" != "${GOLEM_ROOT}/growth-log" ]; then
+      if [ -f "${current_growth}/${soul_name}.jsonl" ]; then
+        s=$(GROWTH_DIR="$current_growth" growth_log_streak "$soul_name")
+        [ "$s" -gt "$max_streak" ] 2>/dev/null && max_streak=$s
+      fi
+    fi
+  fi
+
   # 프로젝트별
   local projects_file="${GOLEM_ROOT}/projects.jsonl"
   if [ -f "$projects_file" ]; then
@@ -54,6 +79,9 @@ _rank_total_streak() {
       local proj_path=$(echo "$line" | grep -o '"path":"[^"]*"' | sed 's/"path":"//;s/"//')
       [ -z "$proj_path" ] && continue
       local proj_growth="${proj_path}/.golem/growth-log"
+      # 글로벌/현재 프로젝트와 중복 방지
+      [ "$proj_growth" = "${GOLEM_ROOT}/growth-log" ] && continue
+      [ -n "${GOLEM_PROJECT:-}" ] && [ "$proj_growth" = "${GOLEM_PROJECT}/.golem/growth-log" ] && continue
       if [ -f "${proj_growth}/${soul_name}.jsonl" ]; then
         s=$(GROWTH_DIR="$proj_growth" growth_log_streak "$soul_name")
         [ "$s" -gt "$max_streak" ] 2>/dev/null && max_streak=$s
@@ -147,8 +175,49 @@ rank_promote() {
   # SOUL.md에서 rank 필드 업데이트
   _sed_i "s/^rank:[[:space:]]*.*/rank: ${next_rank}/" "$soul_file"
 
+  # 승급에 따른 tools/maxTurns/isolation 자동 갱신 (Director 제외)
+  if [ "$SOUL_ROLE" != "director" ]; then
+    local new_tools new_turns new_isolation
+    case "$next_rank" in
+      junior)
+        new_tools="[Read, Edit, Write, Bash, Grep, Glob]"
+        new_turns=25
+        new_isolation="none"
+        ;;
+      senior)
+        new_tools="[Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch]"
+        new_turns=40
+        new_isolation="worktree"
+        ;;
+      lead)
+        new_tools="[Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch, SendMessage]"
+        new_turns=60
+        new_isolation="worktree"
+        ;;
+      master)
+        new_tools="[Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch, SendMessage, TaskCreate]"
+        new_turns=80
+        new_isolation="worktree"
+        ;;
+    esac
+    if [ -n "${new_tools:-}" ]; then
+      # sed 치환값에 [] 포함 → 구분자 | 사용 (tools 이름에 |가 없는 것이 전제)
+      if echo "$new_tools" | grep -q '|'; then
+        echo "[rank] WARNING: tools value contains '|', sed separator unsafe" >&2
+      fi
+      _sed_i "s|^tools:.*|tools: ${new_tools}|" "$soul_file"
+      _sed_i "s|^maxTurns:.*|maxTurns: ${new_turns}|" "$soul_file"
+      _sed_i "s|^isolation:.*|isolation: ${new_isolation}|" "$soul_file"
+      echo "[rank] ${soul_name}: tools=${new_tools}, maxTurns=${new_turns}, isolation=${new_isolation}"
+    fi
+  fi
+
   # growth-log에 승급 이벤트 기록
   growth_log_rank_up "$soul_name" "$current_rank" "$next_rank" "$reason"
+
+  # 성장 기록 요약에 승급 기록 추가
+  local today=$(date +%Y-%m-%d)
+  printf "\n- %s: %s → %s 승급 (%s)" "$today" "$current_rank" "$next_rank" "$reason" >> "$soul_file"
 
   # forge-board 랭크 반영
   if type board_update_rank &>/dev/null; then
@@ -156,7 +225,7 @@ rank_promote() {
     board_add_task "$(date +%Y-%m-%d)" "랭크 승급: ${current_rank}→${next_rank}" "$soul_name" "success" "$reason"
   fi
 
-  echo "[rank] ${soul_name}: 승급 완료! ${current_rank} → ${next_rank}"
+  echo "[rank] ${soul_name}: 승급 완료! ${current_rank} → ${next_rank} (tools/maxTurns/isolation 자동 갱신)"
 }
 
 # SOUL의 현재 권한 범위 확인

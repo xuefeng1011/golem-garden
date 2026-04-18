@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GolemGarden — Global Dashboard</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#c9d1d9;--dim:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;--orange:#d18616;--cyan:#39d2c0}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Mono','Cascadia Code','Consolas',monospace;background:var(--bg);color:var(--text);padding:16px 20px;max-width:1200px;margin:0 auto;font-size:13px;line-height:1.5}
+a{color:var(--accent);text-decoration:none}
+
+/* Header */
+.hdr{display:flex;align-items:baseline;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);margin-bottom:16px}
+.hdr h1{font-size:20px;color:var(--accent);font-weight:600}
+.hdr .tag{font-size:10px;background:var(--purple);color:#fff;padding:1px 6px;border-radius:6px}
+.hdr .ts{margin-left:auto;color:var(--dim);font-size:11px}
+
+/* Summary bar */
+.sum{display:flex;gap:24px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:6px;margin-bottom:16px;flex-wrap:wrap}
+.sum-item{text-align:center}
+.sum-item .v{font-size:22px;font-weight:700;color:var(--accent)}
+.sum-item .v.cost{color:var(--green)}
+.sum-item .l{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+
+/* Two column layout */
+.cols{display:grid;grid-template-columns:1fr 320px;gap:16px;margin-bottom:16px}
+@media(max-width:800px){.cols{grid-template-columns:1fr}}
+
+/* Soul table */
+.tbl{background:var(--card);border:1px solid var(--border);border-radius:6px;overflow-x:auto}
+.tbl h2{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;padding:10px 12px;border-bottom:1px solid var(--border);margin:0}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;color:var(--dim);font-weight:400;padding:6px 10px;border-bottom:1px solid var(--border)}
+td{padding:6px 10px;border-bottom:1px solid #21262d;font-size:12px}
+tr.active{background:#161b22}
+tr.inactive td{color:var(--dim);font-style:italic}
+tr:hover{background:#1c2129}
+.name{font-weight:600;color:var(--accent)}
+.rank-badge{font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600}
+.rk-novice{background:#1a2e1a;color:var(--green);border:1px solid #2a4a2a}
+.rk-junior{background:#2e2a1a;color:var(--yellow);border:1px solid #4a3e2a}
+.rk-senior{background:#2a1a2e;color:var(--purple);border:1px solid #3e2a4a}
+.rk-lead{background:#2e1a1a;color:var(--orange);border:1px solid #4a2a2a}
+.rk-master{background:#1a1a2e;color:var(--red);border:1px solid #2a2a4a}
+.trend-up{color:var(--green)}
+.trend-down{color:var(--red)}
+.trend-flat{color:var(--dim)}
+.bar{height:4px;background:var(--border);border-radius:2px;width:60px;display:inline-block;vertical-align:middle}
+.bar-fill{height:100%;border-radius:2px}
+.model-op{color:var(--red)}
+.model-so{color:var(--accent)}
+.model-ha{color:var(--green)}
+
+/* Side panel */
+.side .panel{background:var(--card);border:1px solid var(--border);border-radius:6px;margin-bottom:12px;overflow:hidden}
+.side .panel h2{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;padding:10px 12px;border-bottom:1px solid var(--border);margin:0}
+.side .panel-body{padding:10px 12px;font-size:12px}
+.timeline-item{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #21262d}
+.timeline-item:last-child{border:none}
+.tl-date{color:var(--dim);white-space:nowrap;font-size:11px}
+.tl-soul{color:var(--accent);font-weight:600;min-width:50px}
+.tl-icon{width:14px;text-align:center}
+.tl-icon.ok{color:var(--green)}
+.tl-icon.fail{color:var(--red)}
+.tl-icon.rank{color:var(--yellow)}
+.tl-task{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alert-item{padding:6px 0;border-bottom:1px solid #21262d;color:var(--yellow)}
+.alert-item:last-child{border:none}
+.proj-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #21262d}
+.proj-row:last-child{border:none}
+.proj-name{color:var(--accent);font-weight:600}
+.proj-meta{color:var(--dim)}
+
+.footer{text-align:center;padding:16px;color:var(--dim);font-size:11px;border-top:1px solid var(--border);margin-top:16px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>GolemGarden</h1>
+  <span class="tag">GLOBAL</span>
+  <span class="ts" id="tsInfo">Loading...</span>
+</div>
+
+<div class="sum" id="sumBar"></div>
+
+<div class="cols">
+  <div class="main">
+    <div class="tbl">
+      <h2>SOUL Team</h2>
+      <table>
+        <thead><tr>
+          <th>SOUL</th><th>Role</th><th>Rank</th><th>Md</th>
+          <th style="text-align:right">Tasks</th>
+          <th style="text-align:right">Rate</th>
+          <th style="text-align:center">Trend</th>
+          <th style="text-align:right">Cost</th>
+          <th>Progress</th>
+        </tr></thead>
+        <tbody id="soulTable"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="side">
+    <div class="panel"><h2>Recent Activity</h2><div class="panel-body" id="timeline"></div></div>
+    <div class="panel"><h2>Projects</h2><div class="panel-body" id="projList"></div></div>
+    <div class="panel" id="alertPanel" style="display:none"><h2>Alerts</h2><div class="panel-body" id="alerts"></div></div>
+  </div>
+</div>
+
+<div class="footer">GolemGarden Global Dashboard &middot; Auto-refresh 30s &middot; <span id="genTime"></span></div>
+
+<script>
+const REFRESH = 30000;
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const ROLE_SHORT = {
+  'director':'Dir','backend-developer':'Back','frontend-developer':'Front',
+  'qa-tester':'QA','devops-engineer':'DevOps','data-analyst':'Data',
+  'technical-writer':'Writer','security-auditor':'Security','knowledge-auditor':'Auditor',
+  'game-logic-developer':'GameDev','game-designer':'GameDesign'
+};
+const MODEL_CLASS = {'opus':'model-op','sonnet':'model-so','haiku':'model-ha'};
+const MODEL_SHORT = {'opus':'Op','sonnet':'So','haiku':'Ha'};
+
+function render(D) {
+  document.getElementById('genTime').textContent = D.generated;
+  document.getElementById('tsInfo').textContent = new Date().toLocaleTimeString() + ' (auto-refresh)';
+
+  // Summary
+  const active = D.souls.filter(s => s.totalTasks > 0).length;
+  const totalTasks = D.souls.reduce((a,s) => a + s.totalTasks, 0);
+  const totalCost = D.souls.reduce((a,s) => a + parseFloat(s.totalCost), 0).toFixed(3);
+  const totalSuccess = D.souls.reduce((a,s) => a + Math.round(s.totalTasks * s.rate / 100), 0);
+  const avgRate = totalTasks > 0 ? Math.round(totalSuccess * 100 / totalTasks) : 0;
+  const totalAch = D.souls.reduce((a,s) => a + s.achievements, 0);
+
+  document.getElementById('sumBar').innerHTML = `
+    <div class="sum-item"><div class="v">${D.soulCount}</div><div class="l">SOULs (${active} active)</div></div>
+    <div class="sum-item"><div class="v">${totalTasks}</div><div class="l">Tasks</div></div>
+    <div class="sum-item"><div class="v">${avgRate}%</div><div class="l">Success Rate</div></div>
+    <div class="sum-item"><div class="v cost">$${totalCost}</div><div class="l">Total Cost</div></div>
+    <div class="sum-item"><div class="v">${D.projectCount}</div><div class="l">Projects</div></div>
+    <div class="sum-item"><div class="v">${totalAch}</div><div class="l">Achievements</div></div>`;
+
+  // Soul table — active first, sorted by tasks desc
+  const sorted = [...D.souls].sort((a,b) => b.totalTasks - a.totalTasks);
+  if (sorted.length === 0) {
+    document.getElementById('soulTable').innerHTML = '<tr><td colspan="9" style="color:var(--dim);text-align:center;padding:20px">No SOULs registered. Run forge-init to start.</td></tr>';
+  } else
+  document.getElementById('soulTable').innerHTML = sorted.map(s => {
+    const isActive = s.totalTasks > 0;
+    const role = ROLE_SHORT[s.role] || s.role.substring(0,6);
+    const mdCls = MODEL_CLASS[s.model] || '';
+    const mdShort = MODEL_SHORT[s.model] || s.model;
+    const rk = s.rank;
+    const pct = s.progress || 0;
+    const barColor = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--accent)';
+    const nextLabel = rk === 'master' ? 'MAX' : (pct + '% ' + (s.nextRank||''));
+    // Trend: compare with streak
+    let trend = '<span class="trend-flat">=</span>';
+    if (s.streak >= 3) trend = '<span class="trend-up">^</span>';
+    else if (s.rate < 60 && s.totalTasks >= 3) trend = '<span class="trend-down">v</span>';
+
+    return `<tr class="${isActive ? 'active' : 'inactive'}">
+      <td class="name">${esc(s.name)}</td>
+      <td>${esc(role)}</td>
+      <td><span class="rank-badge rk-${rk}">${rk.charAt(0).toUpperCase()}</span></td>
+      <td><span class="${mdCls}">${mdShort}</span></td>
+      <td style="text-align:right">${isActive ? s.totalTasks : '-'}</td>
+      <td style="text-align:right">${isActive ? s.rate + '%' : '-'}</td>
+      <td style="text-align:center">${isActive ? trend : ''}</td>
+      <td style="text-align:right">${parseFloat(s.totalCost) > 0 ? '$' + s.totalCost : '-'}</td>
+      <td><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div> <span style="font-size:10px;color:var(--dim)">${nextLabel}</span></td>
+    </tr>`;
+  }).join('');
+
+  // Timeline — build from projectStats
+  const events = [];
+  sorted.filter(s => s.totalTasks > 0).forEach(s => {
+    if (s.projectStats) {
+      s.projectStats.forEach(p => {
+        events.push({soul: s.name, project: p.name, tasks: p.tasks, cost: p.cost, rank: s.rank});
+      });
+    }
+  });
+  // Show top active SOULs as timeline entries
+  const timelineHtml = sorted.filter(s => s.totalTasks > 0).slice(0, 8).map(s => {
+    const icon = s.rate >= 80 ? '<span class="tl-icon ok">+</span>' : '<span class="tl-icon fail">!</span>';
+    const lastProj = s.projectStats && s.projectStats.length > 0 ? s.projectStats[0].name : '-';
+    return `<div class="timeline-item">
+      <span class="tl-soul">${esc(s.name)}</span>
+      ${icon}
+      <span class="tl-task">${s.totalTasks}tasks, ${s.rate}%, $${s.totalCost} @ ${lastProj}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('timeline').innerHTML = timelineHtml || '<div style="color:var(--dim)">No activity yet</div>';
+
+  // Projects
+  document.getElementById('projList').innerHTML = D.projects.length > 0
+    ? D.projects.map(p => `<div class="proj-row">
+        <span class="proj-name">${esc(p.name)}</span>
+        <span class="proj-meta">${p.souls} SOULs &middot; $${p.cost}</span>
+      </div>`).join('')
+    : '<div style="color:var(--dim)">No projects registered</div>';
+
+  // Alerts
+  const alerts = [];
+  sorted.forEach(s => {
+    if (s.progress >= 80 && s.rank !== 'master') alerts.push(`${esc(s.name)}: 승급 임박 (${esc(s.rank)} -> ${esc(s.nextRank||'')}, ${s.progress}%)`);
+    if (s.rate < 50 && s.totalTasks >= 3) alerts.push(`${esc(s.name)}: 성공률 저조 (${s.rate}%) — 태스크 난이도 확인`);
+  });
+  document.getElementById('alertPanel').style.display = alerts.length > 0 ? '' : 'none';
+  if (alerts.length > 0) {
+    document.getElementById('alerts').innerHTML = alerts.map(a => `<div class="alert-item">>> ${a}</div>`).join('');
+  }
+}
+
+async function loadData() {
+  try {
+    const r = await fetch('data.json?t=' + Date.now());
+    if (!r.ok) throw new Error();
+    render(await r.json());
+  } catch(e) {
+    document.getElementById('tsInfo').textContent = 'Refresh failed — reload manually';
+  }
+}
+loadData();
+setInterval(loadData, REFRESH);
+</script>
+</body>
+</html>
