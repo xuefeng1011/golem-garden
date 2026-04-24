@@ -1,0 +1,23 @@
+[project]
+name = "golem-gateway"
+version = "0.1.0"
+description = "GolemGarden read-only gateway — Phase 1 skeleton"
+readme = "README.md"
+authors = [
+    { name = "곰곰이야", email = "xuefeng1011@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.136.1",
+    "pydantic>=2.13.3",
+    "python-frontmatter>=1.1.0",
+    "sse-starlette>=2.0",
+    "uvicorn[standard]>=0.46.0",
+]
+
+[project.scripts]
+golem-gateway = "golem_gateway.main:cli"
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"

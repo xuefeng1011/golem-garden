@@ -1,0 +1,64 @@
+"""FastAPI application entry point."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from golem_gateway.api_runs import router as runs_router
+from golem_gateway.api_souls import router as souls_router
+from golem_gateway.config import CORS_ORIGINS, HOST, PORT
+from golem_gateway.session_manager import SessionManager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Create the SessionManager at startup; shut it down on exit."""
+    app.state.session_manager = SessionManager()
+    try:
+        yield
+    finally:
+        await app.state.session_manager.shutdown()
+
+
+app = FastAPI(
+    title="GolemGarden Gateway",
+    version="0.2.0",
+    description="Gateway for SOUL metadata and Claude Code subprocess bridge.",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+app.include_router(souls_router)
+app.include_router(runs_router)
+
+
+@app.get("/health", tags=["system"])
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+def cli() -> None:
+    """Console-script entry point for `golem-gateway`."""
+    import uvicorn
+
+    uvicorn.run(
+        "golem_gateway.main:app",
+        host=HOST,
+        port=PORT,
+        reload=False,
+    )
+
+
+if __name__ == "__main__":
+    cli()
