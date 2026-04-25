@@ -445,6 +445,12 @@ export default {
     hasEnv: 'Has .env',
     hasSoulMd: 'Has soul.md',
     noProfiles: 'No profiles found. Create one to get started.',
+    cleanupSessions: 'Clean up sessions',
+    cleanupTitle: 'Clean up orphaned sessions',
+    cleanupConfirm: 'Delete orphaned claude session files not registered in the Gateway? (Only unregistered sessions will be removed)',
+    cleanupSuccess: '{count} session(s) cleaned up',
+    cleanupEmpty: 'Nothing to clean up',
+    cleanupFailed: 'Cleanup failed',
   },
 
   // Logs

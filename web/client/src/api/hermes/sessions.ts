@@ -109,6 +109,21 @@ export async function renameSession(_id: string, _title: string): Promise<boolea
   return false
 }
 
+export async function cleanupOrphanedSessions(
+  projectId?: string | null,
+): Promise<{ deleted: number }> {
+  const pid = projectId ?? getProjectId()
+  if (!pid) return { deleted: 0 }
+  const res = await fetch(
+    `${getBaseUrlValue()}/v1/projects/${pid}/sessions/cleanup`,
+    { method: 'POST' },
+  )
+  if (!res.ok) {
+    throw new Error(`Cleanup failed: ${res.status}`)
+  }
+  return res.json() as Promise<{ deleted: number }>
+}
+
 // ── Stub-only exports (no Gateway backing) ────────────────────────────────
 // These were part of the old Hermes API. Kept as no-ops so any remaining
 // import sites don't break.

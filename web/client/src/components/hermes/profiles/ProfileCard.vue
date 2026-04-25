@@ -5,6 +5,7 @@ import type { HermesProfile, HermesProfileDetail } from '@/api/hermes/profiles'
 import type { ProjectOverview, ActiveSoul } from '@/api/hermes/overview'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { useI18n } from 'vue-i18n'
+import { cleanupOrphanedSessions } from '@/api/hermes/sessions'
 
 const props = defineProps<{
   profile: HermesProfile
@@ -23,6 +24,7 @@ const expanded = ref(false)
 const detailLoading = ref(false)
 const exporting = ref(false)
 const switching = ref(false)
+const cleaning = ref(false)
 const detail = ref<HermesProfileDetail | null>(null)
 
 const isDefault = computed(() => props.profile.name === 'default')
@@ -115,6 +117,30 @@ async function handleExport() {
   } finally {
     exporting.value = false
   }
+}
+
+function handleCleanup() {
+  dialog.warning({
+    title: t('profiles.cleanupTitle'),
+    content: t('profiles.cleanupConfirm'),
+    positiveText: t('common.ok'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      cleaning.value = true
+      try {
+        const result = await cleanupOrphanedSessions(props.profile.id)
+        if (result.deleted === 0) {
+          message.info(t('profiles.cleanupEmpty'))
+        } else {
+          message.success(t('profiles.cleanupSuccess', { count: result.deleted }))
+        }
+      } catch (err: any) {
+        message.error(err?.message ?? t('profiles.cleanupFailed'))
+      } finally {
+        cleaning.value = false
+      }
+    },
+  })
 }
 </script>
 
@@ -250,6 +276,15 @@ async function handleExport() {
       </NButton>
       <NButton size="tiny" quaternary :loading="exporting" @click="handleExport">
         {{ t('profiles.export') }}
+      </NButton>
+      <NButton
+        v-if="profile.active && profile.id"
+        size="tiny"
+        quaternary
+        :loading="cleaning"
+        @click="handleCleanup"
+      >
+        {{ t('profiles.cleanupSessions') }}
       </NButton>
     </div>
   </div>

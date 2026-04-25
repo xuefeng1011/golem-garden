@@ -447,6 +447,12 @@ export default {
     hasEnv: '.env 있음',
     hasSoulMd: 'soul.md 있음',
     noProfiles: '프로젝트가 없습니다. 새로 만들어 시작하세요.',
+    cleanupSessions: '세션 정리',
+    cleanupTitle: '고아 세션 정리',
+    cleanupConfirm: 'Gateway에 등록되지 않은 claude 세션 파일을 삭제할까요? (미등록 세션만 삭제됩니다)',
+    cleanupSuccess: '{count}개 정리됨',
+    cleanupEmpty: '정리할 항목 없음',
+    cleanupFailed: '세션 정리 실패',
   },
 
   // 로그

@@ -53,6 +53,9 @@ const { t } = useI18n()
       <span class="session-item-meta">
         <span v-if="session.model" class="session-item-model">{{ session.model }}</span>
         <span class="session-item-time">{{ formatTimestampMs(session.createdAt) }}</span>
+        <span v-if="session.messageCount && session.messageCount > 0" class="session-item-msg-count">
+          {{ session.messageCount }}
+        </span>
       </span>
     </div>
     <NPopconfirm v-if="canDelete" @positive-click="emit('delete')">
