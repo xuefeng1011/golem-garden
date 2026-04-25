@@ -44,6 +44,15 @@ cp "$SCRIPT_DIR/forge.sh" "$GOLEM_HOME/forge.sh"
 cp "$SCRIPT_DIR/lib/"*.sh "$GOLEM_HOME/lib/" 2>/dev/null || true
 cp -r "$SCRIPT_DIR/domain-packs/"* "$GOLEM_HOME/domain-packs/" 2>/dev/null || true
 
+# 4.5. CRLF → LF 정규화 (Git for Windows bash compatibility)
+echo "[3.5/6] Line ending 정규화 (CRLF → LF)..."
+if command -v tr &>/dev/null; then
+  while IFS= read -r -d '' f; do
+    tr -d '\r' < "$f" > "${f}.lf" && mv "${f}.lf" "$f"
+  done < <(find "$GOLEM_HOME" -type f -name "*.sh" -print0)
+  echo "  완료: $GOLEM_HOME 내 .sh 파일 CRLF 정규화"
+fi
+
 # 5. 스킬 파일 복사
 echo "[4/6] 스킬 설치..."
 cp "$SCRIPT_DIR/skills/golem-garden/SKILL.md" "$SKILLS_HOME/SKILL.md"

@@ -4,6 +4,7 @@ import {
   NTabs,
   NTabPane,
   NSpin,
+  NAlert,
 } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "@/stores/hermes/settings";
@@ -29,6 +30,13 @@ onMounted(() => {
     </header>
 
     <div class="settings-content">
+      <NAlert type="info" :show-icon="false" style="margin-bottom: 16px">
+        <template #header>설정 동작 상태</template>
+        <ul style="margin: 4px 0 0 0; padding-left: 20px; font-size: 13px; line-height: 1.6">
+          <li><strong>Display</strong> — 테마/언어 변경 즉시 반영 ✓</li>
+          <li><strong>Agent / Memory / Session / Privacy / Models</strong> — UI 표시만, 저장은 미구현 (추후 phase)</li>
+        </ul>
+      </NAlert>
       <NSpin
         :show="settingsStore.loading || settingsStore.saving"
         size="large"

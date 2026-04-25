@@ -7,13 +7,24 @@ import SettingRow from './SettingRow.vue'
 
 const settingsStore = useSettingsStore()
 const message = useMessage()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { mode, setMode } = useTheme()
 
 const themeOptions = [
   { label: t('settings.display.themeLight'), value: 'light' },
   { label: t('settings.display.themeDark'), value: 'dark' },
   { label: t('settings.display.themeSystem'), value: 'system' },
+]
+
+const languageOptions = [
+  { label: 'English', value: 'en' },
+  { label: '한국어', value: 'ko' },
+  { label: '中文', value: 'zh' },
+  { label: '日本語', value: 'ja' },
+  { label: 'Français', value: 'fr' },
+  { label: 'Español', value: 'es' },
+  { label: 'Deutsch', value: 'de' },
+  { label: 'Português', value: 'pt' },
 ]
 
 async function save(values: Record<string, any>) {
@@ -30,12 +41,20 @@ function handleThemeChange(val: string) {
   setMode(m)
   save({ skin: m })
 }
+
+function handleLanguageChange(val: string) {
+  locale.value = val
+  localStorage.setItem('hermes_locale', val)
+}
 </script>
 
 <template>
   <section class="settings-section">
     <SettingRow :label="t('settings.display.theme')" :hint="t('settings.display.themeHint')">
       <NSelect :value="mode" :options="themeOptions" size="small" :consistent-menu-width="false" class="input-sm" @update:value="handleThemeChange" />
+    </SettingRow>
+    <SettingRow label="언어 / Language" hint="UI 언어를 즉시 전환합니다">
+      <NSelect :value="locale" :options="languageOptions" size="small" :consistent-menu-width="false" class="input-sm" @update:value="handleLanguageChange" />
     </SettingRow>
     <SettingRow :label="t('settings.display.streaming')" :hint="t('settings.display.streamingHint')">
       <NSwitch :value="settingsStore.display.streaming" @update:value="v => save({ streaming: v })" />
