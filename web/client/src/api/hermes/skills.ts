@@ -26,6 +26,15 @@ export async function fetchSkill(projectId: string, skillId: string): Promise<Sk
   )
 }
 
+export async function fetchGlobalSkills(): Promise<Skill[]> {
+  const res = await request<Skill[] | { skills: Skill[] }>('/v1/skills/global')
+  return Array.isArray(res) ? res : res.skills ?? []
+}
+
+export async function fetchGlobalSkill(skillId: string): Promise<SkillDetail> {
+  return request<SkillDetail>(`/v1/skills/global/${encodeURIComponent(skillId)}`)
+}
+
 // ── Legacy stub types (kept so existing imports don't break) ──────────────────
 
 export interface SkillInfo {

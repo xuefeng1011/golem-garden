@@ -306,12 +306,13 @@ export default {
 
   // 스킬
   skills: {
-    title: '스킬',
+    title: '에이전트 스킬',
     searchPlaceholder: '스킬 검색...',
     noMatch: '검색과 일치하는 스킬이 없습니다',
     noSkills: '이 프로젝트에 등록된 스킬이 없습니다',
     noProject: '프로젝트를 먼저 선택하세요',
     empty: '이 프로젝트에 등록된 스킬이 없습니다',
+    globalEmpty: '글로벌 스킬이 없습니다',
     loadFailed: '스킬을 불러오지 못했습니다',
     hasScripts: '스크립트 있음',
     selectPrompt: '스킬을 선택하면 상세 내용이 표시됩니다',
@@ -319,6 +320,8 @@ export default {
     attachedFiles: '첨부 파일',
     fileLoadFailed: '파일을 불러오지 못했습니다',
     toggleFailed: '스킬 상태를 전환하지 못했습니다',
+    projectTab: '프로젝트',
+    globalTab: '글로벌',
   },
 
   // 메모리

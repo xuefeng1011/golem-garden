@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { NSpin, NButton } from 'naive-ui'
+import { NSpin, NButton, NTabs, NTabPane } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useProfilesStore } from '@/stores/hermes/profiles'
-import { fetchSkills, fetchSkill } from '@/api/hermes/skills'
+import { fetchSkills, fetchSkill, fetchGlobalSkills, fetchGlobalSkill } from '@/api/hermes/skills'
 import type { Skill, SkillDetail } from '@/api/hermes/skills'
 import SkillList from '@/components/hermes/skills/SkillList.vue'
 import SkillDetailComp from '@/components/hermes/skills/SkillDetail.vue'
@@ -11,9 +11,18 @@ import SkillDetailComp from '@/components/hermes/skills/SkillDetail.vue'
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
 
-const skills = ref<Skill[]>([])
-const loading = ref(false)
-const error = ref(false)
+type TabKey = 'project' | 'global'
+
+const activeTab = ref<TabKey>('project')
+
+const projectSkills = ref<Skill[]>([])
+const globalSkills = ref<Skill[]>([])
+
+const projectLoading = ref(false)
+const globalLoading = ref(false)
+const projectError = ref(false)
+const globalError = ref(false)
+
 const searchQuery = ref('')
 const selectedSkill = ref<SkillDetail | null>(null)
 const detailLoading = ref(false)
@@ -29,44 +38,71 @@ onMounted(() => {
   mobileQuery = window.matchMedia('(max-width: 768px)')
   handleMobileChange(mobileQuery)
   mobileQuery.addEventListener('change', handleMobileChange)
-  if (profilesStore.activeProfile?.id) {
-    loadSkills(profilesStore.activeProfile.id)
-  }
+
+  const projectId = profilesStore.activeProfile?.id
+  Promise.all([
+    projectId ? loadProjectSkills(projectId) : Promise.resolve(),
+    loadGlobalSkills(),
+  ])
 })
 
 watch(
   () => profilesStore.activeProfile?.id,
   (id) => {
     selectedSkill.value = null
+    if (activeTab.value === 'project') {
+      // reset selection when project changes
+    }
     if (id) {
-      loadSkills(id)
+      loadProjectSkills(id)
     } else {
-      skills.value = []
+      projectSkills.value = []
     }
   },
 )
 
-async function loadSkills(projectId: string) {
-  loading.value = true
-  error.value = false
+watch(activeTab, () => {
+  selectedSkill.value = null
+})
+
+async function loadProjectSkills(projectId: string) {
+  projectLoading.value = true
+  projectError.value = false
   try {
-    skills.value = await fetchSkills(projectId)
+    projectSkills.value = await fetchSkills(projectId)
   } catch {
-    error.value = true
-    skills.value = []
+    projectError.value = true
+    projectSkills.value = []
   } finally {
-    loading.value = false
+    projectLoading.value = false
+  }
+}
+
+async function loadGlobalSkills() {
+  globalLoading.value = true
+  globalError.value = false
+  try {
+    globalSkills.value = await fetchGlobalSkills()
+  } catch {
+    globalError.value = true
+    globalSkills.value = []
+  } finally {
+    globalLoading.value = false
   }
 }
 
 async function handleSelect(skill: Skill) {
-  const projectId = profilesStore.activeProfile?.id
-  if (!projectId) return
   detailLoading.value = true
   selectedSkill.value = null
   if (window.innerWidth <= 768) showSidebar.value = false
   try {
-    selectedSkill.value = await fetchSkill(projectId, skill.id)
+    if (activeTab.value === 'project') {
+      const projectId = profilesStore.activeProfile?.id
+      if (!projectId) return
+      selectedSkill.value = await fetchSkill(projectId, skill.id)
+    } else {
+      selectedSkill.value = await fetchGlobalSkill(skill.id)
+    }
   } catch {
     // leave selectedSkill null — empty detail shown
   } finally {
@@ -74,9 +110,13 @@ async function handleSelect(skill: Skill) {
   }
 }
 
-function retry() {
+function retryProject() {
   const id = profilesStore.activeProfile?.id
-  if (id) loadSkills(id)
+  if (id) loadProjectSkills(id)
+}
+
+function retryGlobal() {
+  loadGlobalSkills()
 }
 </script>
 
@@ -101,52 +141,100 @@ function retry() {
     </header>
 
     <div class="skills-content">
-      <!-- No active project -->
-      <div v-if="!profilesStore.activeProfile" class="empty-state">
-        {{ t('skills.noProject') }}
-      </div>
-
-      <NSpin v-else :show="loading">
-        <!-- Error state -->
-        <div v-if="error" class="empty-state">
-          <span>{{ t('skills.loadFailed') }}</span>
-          <NButton size="small" style="margin-top: 8px;" @click="retry">
-            {{ t('common.retry') }}
-          </NButton>
-        </div>
-
-        <!-- Empty project -->
-        <div v-else-if="!loading && skills.length === 0" class="empty-state">
-          {{ t('skills.empty') }}
-        </div>
-
-        <!-- Skills layout -->
-        <div v-else class="skills-layout">
-          <div class="mobile-backdrop" :class="{ active: showSidebar }" @click="showSidebar = false" />
-
-          <div v-if="showSidebar" class="skills-sidebar">
-            <SkillList
-              :skills="skills"
-              :selected-skill-id="selectedSkill?.id ?? null"
-              :search-query="searchQuery"
-              @select="handleSelect"
-            />
+      <NTabs v-model:value="activeTab" type="line" class="skills-tabs">
+        <NTabPane
+          name="project"
+          :tab="`${t('skills.projectTab')} (${projectSkills.length})`"
+        >
+          <!-- No active project -->
+          <div v-if="!profilesStore.activeProfile" class="empty-state">
+            {{ t('skills.noProject') }}
           </div>
 
-          <div class="skills-main">
-            <div v-if="detailLoading" class="detail-loading">{{ t('common.loading') }}</div>
-            <SkillDetailComp v-else-if="selectedSkill" :skill="selectedSkill" />
-            <div v-else class="empty-detail">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2">
-                <polygon points="12 2 2 7 12 12 22 7 12 2" />
-                <polyline points="2 17 12 22 22 17" />
-                <polyline points="2 12 12 17 22 12" />
-              </svg>
-              <span>{{ t('skills.selectPrompt') }}</span>
+          <NSpin v-else :show="projectLoading">
+            <div v-if="projectError" class="empty-state">
+              <span>{{ t('skills.loadFailed') }}</span>
+              <NButton size="small" style="margin-top: 8px;" @click="retryProject">
+                {{ t('common.retry') }}
+              </NButton>
             </div>
-          </div>
-        </div>
-      </NSpin>
+
+            <div v-else-if="!projectLoading && projectSkills.length === 0" class="empty-state">
+              {{ t('skills.empty') }}
+            </div>
+
+            <div v-else class="skills-layout">
+              <div class="mobile-backdrop" :class="{ active: showSidebar }" @click="showSidebar = false" />
+
+              <div v-if="showSidebar" class="skills-sidebar">
+                <SkillList
+                  :skills="projectSkills"
+                  :selected-skill-id="selectedSkill?.id ?? null"
+                  :search-query="searchQuery"
+                  @select="handleSelect"
+                />
+              </div>
+
+              <div class="skills-main">
+                <div v-if="detailLoading" class="detail-loading">{{ t('common.loading') }}</div>
+                <SkillDetailComp v-else-if="selectedSkill" :skill="selectedSkill" />
+                <div v-else class="empty-detail">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                    <polyline points="2 17 12 22 22 17" />
+                    <polyline points="2 12 12 17 22 12" />
+                  </svg>
+                  <span>{{ t('skills.selectPrompt') }}</span>
+                </div>
+              </div>
+            </div>
+          </NSpin>
+        </NTabPane>
+
+        <NTabPane
+          name="global"
+          :tab="`${t('skills.globalTab')} (${globalSkills.length})`"
+        >
+          <NSpin :show="globalLoading">
+            <div v-if="globalError" class="empty-state">
+              <span>{{ t('skills.loadFailed') }}</span>
+              <NButton size="small" style="margin-top: 8px;" @click="retryGlobal">
+                {{ t('common.retry') }}
+              </NButton>
+            </div>
+
+            <div v-else-if="!globalLoading && globalSkills.length === 0" class="empty-state">
+              {{ t('skills.globalEmpty') }}
+            </div>
+
+            <div v-else class="skills-layout">
+              <div class="mobile-backdrop" :class="{ active: showSidebar }" @click="showSidebar = false" />
+
+              <div v-if="showSidebar" class="skills-sidebar">
+                <SkillList
+                  :skills="globalSkills"
+                  :selected-skill-id="selectedSkill?.id ?? null"
+                  :search-query="searchQuery"
+                  @select="handleSelect"
+                />
+              </div>
+
+              <div class="skills-main">
+                <div v-if="detailLoading" class="detail-loading">{{ t('common.loading') }}</div>
+                <SkillDetailComp v-else-if="selectedSkill" :skill="selectedSkill" />
+                <div v-else class="empty-detail">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                    <polyline points="2 17 12 22 22 17" />
+                    <polyline points="2 12 12 17 22 12" />
+                  </svg>
+                  <span>{{ t('skills.selectPrompt') }}</span>
+                </div>
+              </div>
+            </div>
+          </NSpin>
+        </NTabPane>
+      </NTabs>
     </div>
   </div>
 </template>
@@ -165,6 +253,28 @@ function retry() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.skills-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  :deep(.n-tabs-pane-wrapper) {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.n-tab-pane) {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+  }
 }
 
 .empty-state {

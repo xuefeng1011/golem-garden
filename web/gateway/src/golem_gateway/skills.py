@@ -150,3 +150,81 @@ def get_skill_by_id(project_path: Path, skill_id: str) -> Optional[SkillDetail]:
             continue
         return _parse_skill_file(candidate, candidate.parent)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Global (user-level) skills — ~/.claude/skills/
+# ---------------------------------------------------------------------------
+
+_global_scan_cache: Optional[tuple[float, list[SkillDetail]]] = None
+
+
+def _global_dir_mtime_fingerprint(base: Path) -> float:
+    """Max mtime across ~/.claude/skills/ entries — changes invalidate cache."""
+    if not base.is_dir():
+        return 0.0
+    mtimes: list[float] = [base.stat().st_mtime]
+    for skill_dir in base.iterdir():
+        try:
+            mtimes.append(skill_dir.stat().st_mtime)
+        except OSError:
+            pass
+        skill_md = skill_dir / "SKILL.md"
+        if skill_md.is_file():
+            try:
+                mtimes.append(skill_md.stat().st_mtime)
+            except OSError:
+                pass
+    return max(mtimes)
+
+
+def scan_global_skills() -> list[SkillDetail]:
+    """Scan ~/.claude/skills/ — user-level (global) skills.
+
+    Mirrors scan_skills(project_path) but rooted at the user's home
+    .claude/skills/ instead of a project root.
+    Results are mtime-cached; invalidated when any entry mtime changes.
+    """
+    global _global_scan_cache
+
+    base = Path.home() / ".claude" / "skills"
+    if not base.is_dir():
+        return []
+
+    fingerprint = _global_dir_mtime_fingerprint(base)
+    if _global_scan_cache is not None and _global_scan_cache[0] == fingerprint:
+        return _global_scan_cache[1]
+
+    seen: dict[str, SkillDetail] = {}
+    for skill_dir in sorted(base.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        soul_id_stem = skill_dir.name
+        if not _VALID_SKILL_ID.match(soul_id_stem):
+            continue
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        parsed = _parse_skill_file(skill_md, skill_dir)
+        if parsed is not None:
+            seen[soul_id_stem] = parsed
+
+    result = list(seen.values())
+    _global_scan_cache = (fingerprint, result)
+    return result
+
+
+def get_global_skill_by_id(skill_id: str) -> Optional[SkillDetail]:
+    """Return a single global SkillDetail from ~/.claude/skills/, or None."""
+    if not _VALID_SKILL_ID.match(skill_id):
+        return None
+    base = (Path.home() / ".claude" / "skills").resolve()
+    candidate = base / skill_id / "SKILL.md"
+    if not candidate.is_file():
+        return None
+    try:
+        if candidate.resolve().parent.parent != base:
+            return None
+    except OSError:
+        return None
+    return _parse_skill_file(candidate, candidate.parent)

@@ -6,6 +6,7 @@ import { useMessage } from "naive-ui";
 import { useProfilesStore } from "@/stores/hermes/profiles";
 import { useChatStore } from "@/stores/hermes/chat";
 import MarkdownRenderer from "./MarkdownRenderer.vue";
+import SoulHandoffCard from "./SoulHandoffCard.vue";
 import {
   copyTextToClipboard,
   handleCodeBlockCopyClick,
@@ -138,6 +139,19 @@ async function handleToolDetailClick(event: MouseEvent): Promise<void> {
   await handleCodeBlockCopyClick(event);
 }
 
+/** Parse toolArgs JSON for Task tool — returns null if not a Task or parse fails */
+const taskInput = computed(() => {
+  if (props.message.toolName !== 'Task') return null
+  if (!props.message.toolArgs) return null
+  try {
+    return JSON.parse(props.message.toolArgs) as Record<string, unknown>
+  } catch {
+    return null
+  }
+})
+
+const isTaskTool = computed(() => props.message.toolName === 'Task')
+
 const hasAttachments = computed(
   () => (props.message.attachments?.length ?? 0) > 0,
 );
@@ -178,62 +192,73 @@ const renderedToolResult = computed(() => {
     :id="`message-${message.id}`"
   >
     <template v-if="message.role === 'tool'">
-      <div
-        class="tool-line"
-        :class="{ expandable: hasToolDetails }"
-        @click="hasToolDetails && (toolExpanded = !toolExpanded)"
-      >
-        <svg
-          v-if="hasToolDetails"
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          class="tool-chevron"
-          :class="{ rotated: toolExpanded }"
+      <!-- SOUL handoff card for Task tool -->
+      <SoulHandoffCard
+        v-if="isTaskTool"
+        :task-input="taskInput"
+        :result="message.toolResult"
+        :is-error="message.toolStatus === 'error'"
+        :running="message.toolStatus === 'running'"
+      />
+      <!-- Generic tool line for all other tools -->
+      <template v-else>
+        <div
+          class="tool-line"
+          :class="{ expandable: hasToolDetails }"
+          @click="hasToolDetails && (toolExpanded = !toolExpanded)"
         >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        <svg
-          v-else
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          class="tool-icon"
-        >
-          <path
-            d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
-          />
-        </svg>
-        <span class="tool-name">{{ message.toolName }}</span>
-        <span
-          v-if="message.toolPreview && !toolExpanded"
-          class="tool-preview"
-          >{{ message.toolPreview }}</span
-        >
-        <span
-          v-if="message.toolStatus === 'running'"
-          class="tool-spinner"
-        ></span>
-        <span v-if="message.toolStatus === 'error'" class="tool-error-badge">{{
-          t("chat.error")
-        }}</span>
-      </div>
-      <div v-if="toolExpanded && hasToolDetails" class="tool-details" @click="handleToolDetailClick">
-        <div v-if="formattedToolArgs" class="tool-detail-section" data-copy-source="tool-args">
-          <div class="tool-detail-label">{{ t("chat.arguments") }}</div>
-          <div class="tool-detail-code-block" v-html="renderedToolArgs"></div>
+          <svg
+            v-if="hasToolDetails"
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            class="tool-chevron"
+            :class="{ rotated: toolExpanded }"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <svg
+            v-else
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            class="tool-icon"
+          >
+            <path
+              d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+            />
+          </svg>
+          <span class="tool-name">{{ message.toolName }}</span>
+          <span
+            v-if="message.toolPreview && !toolExpanded"
+            class="tool-preview"
+            >{{ message.toolPreview }}</span
+          >
+          <span
+            v-if="message.toolStatus === 'running'"
+            class="tool-spinner"
+          ></span>
+          <span v-if="message.toolStatus === 'error'" class="tool-error-badge">{{
+            t("chat.error")
+          }}</span>
         </div>
-        <div v-if="formattedToolResult" class="tool-detail-section" data-copy-source="tool-result">
-          <div class="tool-detail-label">{{ t("chat.result") }}</div>
-          <div class="tool-detail-code-block" v-html="renderedToolResult"></div>
+        <div v-if="toolExpanded && hasToolDetails" class="tool-details" @click="handleToolDetailClick">
+          <div v-if="formattedToolArgs" class="tool-detail-section" data-copy-source="tool-args">
+            <div class="tool-detail-label">{{ t("chat.arguments") }}</div>
+            <div class="tool-detail-code-block" v-html="renderedToolArgs"></div>
+          </div>
+          <div v-if="formattedToolResult" class="tool-detail-section" data-copy-source="tool-result">
+            <div class="tool-detail-label">{{ t("chat.result") }}</div>
+            <div class="tool-detail-code-block" v-html="renderedToolResult"></div>
+          </div>
         </div>
-      </div>
+      </template>
     </template>
     <template v-else>
       <div class="msg-body">

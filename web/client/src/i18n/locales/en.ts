@@ -306,12 +306,13 @@ export default {
 
   // Skills
   skills: {
-    title: 'Skills',
+    title: 'Agent Skills',
     searchPlaceholder: 'Search skills...',
     noMatch: 'No skills match your search',
     noSkills: 'No skills found in this project',
     noProject: 'Please select a project first',
     empty: 'No skills registered in this project',
+    globalEmpty: 'No global skills found',
     loadFailed: 'Failed to load skills',
     hasScripts: 'has scripts',
     selectPrompt: 'Select a skill to view details',
@@ -319,6 +320,8 @@ export default {
     attachedFiles: 'Attached Files',
     fileLoadFailed: 'Failed to load file',
     toggleFailed: 'Failed to toggle skill',
+    projectTab: 'Project',
+    globalTab: 'Global',
   },
 
   // Memory
