@@ -17,6 +17,7 @@ from golem_gateway.config import INPUT_MAX_BYTES
 from golem_gateway.events import HermesEvent
 from golem_gateway.registry import ProjectRegistry
 from golem_gateway.session_manager import Run, SessionManager
+from golem_gateway.sessions_db import get_session_store
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,11 @@ async def create_run(
     # Assign session_id here so response always carries it.
     session_id = body.session_id or str(uuid.uuid4())
 
+    # --- Session persistence: record user message before spawning subprocess ---
+    store = get_session_store(project_path)
+    store.upsert_session(session_id=session_id, soul_id=body.soul_id)
+    store.add_message(session_id=session_id, role="user", content=body.input)
+
     try:
         run = await manager.spawn_run(
             input_text=body.input,
@@ -121,9 +127,60 @@ async def create_run(
             project_path=project_path,
             project_id=project_id,
         )
-    except RuntimeError as exc:
-        logger.error("failed to spawn run: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        # Zen F3: the user message is already persisted. If spawn fails the
+        # session would otherwise show an orphaned user turn forever. Append a
+        # system marker so the UI can render the failure beside the user msg
+        # rather than silently lose context.
+        logger.error("failed to spawn run for session %s: %s", session_id, exc)
+        try:
+            store.add_message(
+                session_id=session_id,
+                role="system",
+                content=f"⚠ run failed to start: {exc}",
+            )
+        except Exception:
+            logger.exception(
+                "failed to record run-failure marker for session %s", session_id
+            )
+        # Surface 503 Service Unavailable for spawn failures (transient resource
+        # condition) and 500 only for unexpected RuntimeError so callers can
+        # tell them apart in their own retry logic.
+        if isinstance(exc, RuntimeError):
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=503, detail=f"failed to spawn claude: {exc}"
+        ) from exc
+
+    # Wire the on_terminal callback: persist assistant reply + tool summary.
+    soul_id_capture = body.soul_id
+
+    def _persist_assistant(assistant_text: str) -> None:
+        # Zen M2: batch the assistant message and the optional tool summary
+        # into a single transaction (one open/close, one updated_at touch).
+        msgs: list[dict] = []
+        if assistant_text:
+            msgs.append({
+                "role": "assistant",
+                "content": assistant_text,
+                "soul_id": soul_id_capture,
+            })
+        if run.tool_log:
+            msgs.append({
+                "role": "tool",
+                "content": "\n".join(run.tool_log),
+                "soul_id": soul_id_capture,
+            })
+        if not msgs:
+            return
+        try:
+            store.add_messages_batch(session_id=session_id, messages=msgs)
+        except Exception:
+            logger.exception(
+                "failed to persist assistant messages for run %s", run.run_id
+            )
+
+    run.on_terminal = _persist_assistant
 
     return RunResponse(run_id=run.run_id, session_id=run.session_id)
 

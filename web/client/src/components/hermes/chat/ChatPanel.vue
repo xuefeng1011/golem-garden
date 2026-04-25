@@ -401,7 +401,7 @@ async function handleRenameConfirm() {
             :options="soulOptions"
             size="small"
             class="soul-session-select"
-            :placeholder="'SOUL 선택'"
+            :placeholder="t('chat.soulSelect')"
             @update:value="handleSessionSoulChange"
           />
           <div v-else class="soul-badge inactive">

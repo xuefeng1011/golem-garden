@@ -177,6 +177,7 @@ export default {
     groupMonitoring: 'Monitoring',
     groupTools: 'Tools',
     settings: 'Settings',
+    forge: 'Forge',
     connected: 'Connected',
     disconnected: 'Disconnected',
     collapse: 'Collapse menu',
@@ -222,6 +223,7 @@ export default {
     pin: 'Pin',
     unpin: 'Unpin',
     pinned: 'Pinned',
+    soulSelect: 'Select SOUL',
     chatMode: 'Chat',
     liveMode: 'Live',
     liveSessions: 'Live Sessions',
@@ -710,6 +712,27 @@ export default {
     invalidPath: 'Invalid file path',
     download: 'Download',
     downloadFile: 'Download file',
+  },
+
+  // Forge
+  forge: {
+    title: 'Forge Commands',
+    catalogTitle: 'Command Catalog',
+    selectedCommand: 'Selected:',
+    argsLabel: 'Arguments',
+    argPlaceholder: 'Arg {n}',
+    addArg: 'Add',
+    run: 'Run',
+    abort: 'Abort',
+    clearOutput: 'Clear output',
+    clearAll: 'Clear all output',
+    outputLabel: 'Output',
+    outputEmpty: 'Run output will appear here',
+    noProject: 'Please select a project first',
+    resultDone: 'Done · exit={code} · {duration}',
+    resultFailed: 'Failed · {reason}',
+    aborted: '[Aborted]',
+    historyTitle: 'Recent runs',
   },
 
   // Changelog

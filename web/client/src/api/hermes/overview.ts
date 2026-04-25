@@ -27,6 +27,7 @@ export interface ProjectOverview {
 
 export interface BoardTeamMember {
   name: string
+  soul?: string
   role: string
   rank: string
   agent?: string

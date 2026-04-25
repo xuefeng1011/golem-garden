@@ -18,6 +18,12 @@ const loading = ref(false)
 const error = ref(false)
 const showDebtModal = ref(false)
 
+const onRetry = () => {
+  const id = profilesStore.activeProfile?.id
+  if (!id) return
+  loadData(id)
+}
+
 async function loadData(projectId: string) {
   loading.value = true
   error.value = false
@@ -77,7 +83,7 @@ watch(
         <!-- Error state -->
         <div v-if="error" class="error-card">
           <p class="error-message">{{ t('overview.loadFailed') }}</p>
-          <NButton size="small" @click="loadData(profilesStore.activeProfile!.id)">
+          <NButton size="small" @click="onRetry">
             {{ t('common.retry') }}
           </NButton>
         </div>
@@ -114,8 +120,9 @@ watch(
       style="width: 480px;"
     >
       <ul class="debt-list">
-        <li v-for="(item, idx) in board?.tech_debt ?? []" :key="idx" class="debt-item">
-          {{ item }}
+        <li v-for="(item, idx) in board?.tech_debt ?? []" :key="idx" class="debt-item" :class="{ resolved: item.resolved }">
+          <span v-if="item.resolved" class="check">✓</span>
+          {{ item.text }}
         </li>
       </ul>
     </NModal>
@@ -233,5 +240,15 @@ watch(
     content: '• ';
     color: $text-muted;
   }
+
+  &.resolved {
+    text-decoration: line-through;
+    opacity: 0.6;
+  }
+}
+
+.check {
+  color: #52a770;
+  margin-right: 0.4em;
 }
 </style>

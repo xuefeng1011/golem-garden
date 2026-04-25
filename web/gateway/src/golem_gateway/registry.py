@@ -19,6 +19,53 @@ def _registry_path() -> Path:
     return Path.home() / ".golem" / "projects.json"
 
 
+def _validate_project_path(p: str) -> Path:
+    """Validate a project path before registering. Returns resolved Path or raises ValueError.
+
+    Zen F1: tightened allowlist. The path MUST live under ``Path.home()`` and be
+    an existing directory.  The marker (``.golem/`` or ``souls/``) check used
+    previously is removed from validation — pre-creating ``.golem/`` inside a
+    system path was a trivial bypass.
+
+    Escape hatch: ``GOLEM_EXTRA_PROJECT_ROOTS`` is an ``os.pathsep``-separated
+    list of additional roots that are explicitly trusted.  This is opt-in and
+    must be configured by the operator launching the Gateway.
+    """
+    if not p or not p.strip():
+        raise ValueError("path is empty")
+    resolved = Path(p).expanduser().resolve()
+    if not resolved.is_dir():
+        raise ValueError(f"path does not exist or is not a directory: {resolved}")
+
+    home = Path.home().resolve()
+
+    # Default policy: must live under the user's home directory.
+    try:
+        resolved.relative_to(home)
+        return resolved
+    except ValueError:
+        pass
+
+    # Escape hatch: explicit env-var allowlist of additional roots.
+    extra_roots_env = os.environ.get("GOLEM_EXTRA_PROJECT_ROOTS", "").strip()
+    if extra_roots_env:
+        for raw in extra_roots_env.split(os.pathsep):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                root = Path(raw).expanduser().resolve()
+                resolved.relative_to(root)
+                return resolved
+            except (ValueError, OSError):
+                continue
+
+    raise ValueError(
+        f"path must be inside Path.home() ({home}); "
+        f"set GOLEM_EXTRA_PROJECT_ROOTS to allow other roots: {resolved}"
+    )
+
+
 class Project(BaseModel):
     id: str
     name: str
@@ -72,7 +119,8 @@ class ProjectRegistry:
         async with self._lock:
             if not self._loaded:
                 await self._load_unlocked()
-            return list(self._projects)
+            # F5: hand out copies so caller mutation cannot corrupt registry state.
+            return [p.model_copy() for p in self._projects]
 
     async def get(self, project_id: str) -> Project | None:
         async with self._lock:
@@ -80,14 +128,16 @@ class ProjectRegistry:
                 await self._load_unlocked()
             for proj in self._projects:
                 if proj.id == project_id:
-                    return proj
+                    # F5: copy on read for the same reason as list().
+                    return proj.model_copy()
         return None
 
     async def create(self, *, name: str, path: str) -> Project:
         """Create a new project entry.
 
         Raises:
-            ValueError: if name is empty/too long, path doesn't exist, or path is duplicate.
+            ValueError: if name is empty/too long, path is invalid (missing,
+                outside the allowlist), or path is duplicate.
         """
         # Validate name
         name = name.strip()
@@ -96,10 +146,8 @@ class ProjectRegistry:
         if len(name) > 100:
             raise ValueError("name must be ≤100 characters")
 
-        # Validate path
-        resolved = Path(path).resolve()
-        if not resolved.is_dir():
-            raise ValueError(f"path {path!r} does not exist or is not a directory")
+        # F3: validate + allowlist path BEFORE storing.
+        resolved = _validate_project_path(path)
 
         canonical = resolved.as_posix().casefold()
 

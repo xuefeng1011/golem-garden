@@ -58,6 +58,11 @@ const router = createRouter({
       component: () => import('@/views/hermes/TeamView.vue'),
     },
     {
+      path: '/hermes/forge',
+      name: 'hermes.forge',
+      component: () => import('@/views/hermes/ForgeView.vue'),
+    },
+    {
       path: '/hermes/meta',
       name: 'hermes.meta',
       component: () => import('@/views/hermes/MetaView.vue'),

@@ -1,7 +1,7 @@
 import { startRun, streamRunEvents, type ChatMessage, type RunEvent } from '@/api/hermes/chat'
 import { deleteSession as deleteSessionApi, fetchSession, fetchSessions, fetchSessionUsageSingle, type HermesMessage, type SessionSummary } from '@/api/hermes/sessions'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAppStore } from './app'
 import { useProfilesStore } from './profiles'
 
@@ -49,25 +49,21 @@ function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
-async function uploadFiles(attachments: Attachment[]): Promise<{ name: string; path: string }[]> {
-  if (attachments.length === 0) return []
-  const formData = new FormData()
-  for (const att of attachments) {
-    if (att.file) formData.append('file', att.file, att.name)
-  }
-  const token = localStorage.getItem('hermes_api_key') || ''
-  const res = await fetch('/upload', {
-    method: 'POST',
-    body: formData,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-  const data = await res.json() as { files: { name: string; path: string }[] }
-  return data.files
+async function uploadFiles(_attachments: Attachment[]): Promise<{ name: string; path: string }[]> {
+  // Gateway has no /upload endpoint — file attachments are not supported in MVP.
+  return []
+}
+
+// Resolve a HermesMessage timestamp to milliseconds.
+// Gateway stores created_at as ISO string; legacy Hermes used timestamp as Unix seconds.
+function msgTimestampMs(msg: HermesMessage): number {
+  if (msg.created_at) return new Date(msg.created_at).getTime()
+  if (msg.timestamp != null) return Math.round(msg.timestamp * 1000)
+  return Date.now()
 }
 
 function mapHermesMessages(msgs: HermesMessage[]): Message[] {
-  // Build lookups from assistant messages with tool_calls
+  // Build lookups from assistant messages with tool_calls (legacy Hermes shape)
   const toolNameMap = new Map<string, string>()
   const toolArgsMap = new Map<string, string>()
   for (const msg of msgs) {
@@ -83,15 +79,16 @@ function mapHermesMessages(msgs: HermesMessage[]): Message[] {
 
   const result: Message[] = []
   for (const msg of msgs) {
+    const ts = msgTimestampMs(msg)
+
     // Skip assistant messages that only contain tool_calls (no meaningful content)
     if (msg.role === 'assistant' && msg.tool_calls?.length && !msg.content?.trim()) {
-      // Emit a tool.started message for each tool call
       for (const tc of msg.tool_calls) {
         result.push({
           id: String(msg.id) + '_' + tc.id,
           role: 'tool',
           content: '',
-          timestamp: Math.round(msg.timestamp * 1000),
+          timestamp: ts,
           toolName: tc.function?.name || 'tool',
           toolArgs: tc.function?.arguments || undefined,
           toolStatus: 'done',
@@ -105,7 +102,6 @@ function mapHermesMessages(msgs: HermesMessage[]): Message[] {
       const tcId = msg.tool_call_id || ''
       const toolName = msg.tool_name || toolNameMap.get(tcId) || 'tool'
       const toolArgs = toolArgsMap.get(tcId) || undefined
-      // Extract a short preview from the content
       let preview = ''
       if (msg.content) {
         try {
@@ -115,7 +111,6 @@ function mapHermesMessages(msgs: HermesMessage[]): Message[] {
           preview = msg.content.slice(0, 80)
         }
       }
-      // Find and remove the matching placeholder from tool_calls above
       const placeholderIdx = result.findIndex(
         m => m.role === 'tool' && m.toolName === toolName && !m.toolResult && m.id.includes('_' + tcId)
       )
@@ -126,7 +121,7 @@ function mapHermesMessages(msgs: HermesMessage[]): Message[] {
         id: String(msg.id),
         role: 'tool',
         content: '',
-        timestamp: Math.round(msg.timestamp * 1000),
+        timestamp: ts,
         toolName,
         toolArgs,
         toolPreview: typeof preview === 'string' ? preview.slice(0, 100) || undefined : undefined,
@@ -136,12 +131,12 @@ function mapHermesMessages(msgs: HermesMessage[]): Message[] {
       continue
     }
 
-    // Normal user/assistant messages
+    // Normal user/assistant/system messages
     result.push({
       id: String(msg.id),
       role: msg.role,
       content: msg.content || '',
-      timestamp: Math.round(msg.timestamp * 1000),
+      timestamp: ts,
     })
   }
   return result
@@ -151,15 +146,14 @@ function mapHermesSession(s: SessionSummary): Session {
   return {
     id: s.id,
     title: s.title || '',
-    source: s.source || undefined,
+    // Gateway sessions have no source concept — use a fixed label so the
+    // ChatPanel groups them correctly under one "api_server" bucket.
+    source: 'api_server',
     messages: [],
-    createdAt: Math.round(s.started_at * 1000),
-    updatedAt: Math.round((s.last_active || s.ended_at || s.started_at) * 1000),
-    model: s.model,
-    provider: (s as any).billing_provider || '',
+    createdAt: new Date(s.created_at).getTime(),
+    updatedAt: new Date(s.updated_at).getTime(),
     messageCount: s.message_count,
-    endedAt: s.ended_at != null ? Math.round(s.ended_at * 1000) : null,
-    lastActiveAt: s.last_active != null ? Math.round(s.last_active * 1000) : undefined,
+    soul_id: s.soul_id || undefined,
   }
 }
 
@@ -399,7 +393,8 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
       try {
-        const detail = await fetchSession(sid)
+        const profilesStore = useProfilesStore()
+        const detail = await fetchSession(sid, profilesStore.activeProfile?.id)
         if (!detail) return
         const mapped = mapHermesMessages(detail.messages || [])
         const target = sessions.value.find(s => s.id === sid)
@@ -479,7 +474,8 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
 
-      const list = await fetchSessions()
+      const profilesStore = useProfilesStore()
+      const list = await fetchSessions(profilesStore.activeProfile?.id)
       const fresh = list.map(mapHermesSession)
       const freshIds = new Set(fresh.map(s => s.id))
       // Preserve already-loaded messages for sessions that are still present,
@@ -520,7 +516,8 @@ export const useChatStore = defineStore('chat', () => {
     const sid = activeSessionId.value
     if (!sid) return false
     try {
-      const detail = await fetchSession(sid)
+      const profilesStore = useProfilesStore()
+      const detail = await fetchSession(sid, profilesStore.activeProfile?.id)
       if (!detail) return false
       const target = sessions.value.find(s => s.id === sid)
       if (!target) return false
@@ -581,7 +578,8 @@ export const useChatStore = defineStore('chat', () => {
     if (needsBlockingLoad) isLoadingMessages.value = true
 
     try {
-      const detail = await fetchSession(sessionId)
+      const profilesStore = useProfilesStore()
+      const detail = await fetchSession(sessionId, profilesStore.activeProfile?.id)
       if (detail && detail.messages) {
         const mapped = mapHermesMessages(detail.messages)
         // Pick whichever view has more information. Simple length comparison
@@ -1028,6 +1026,18 @@ export const useChatStore = defineStore('chat', () => {
       }
     })
   }
+
+  // Reload sessions whenever the active project changes so the SessionList
+  // always shows sessions scoped to the current project.
+  const profilesStoreForWatch = useProfilesStore()
+  watch(
+    () => profilesStoreForWatch.activeProfile?.id,
+    (newId, oldId) => {
+      if (newId && newId !== oldId) {
+        void loadSessions()
+      }
+    },
+  )
 
   return {
     sessions,

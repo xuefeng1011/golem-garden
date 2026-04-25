@@ -21,6 +21,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import Callable
 
 from golem_gateway.config import (
     CLAUDE_ARGS_BASE,
@@ -31,9 +32,11 @@ from golem_gateway.config import (
 )
 from golem_gateway.events import (
     HermesEvent,
+    MessageDeltaEvent,
     RunCompletedEvent,
     RunContext,
     RunFailedEvent,
+    ToolStartedEvent,
     parse_stream_event,
 )
 from golem_gateway.souls import SoulDetail
@@ -65,10 +68,26 @@ class Run:
     subscribed: bool = False
     # Legacy catch-all task list (kept for compatibility; prefer named fields).
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
+    # Accumulated assistant text across all message.delta events.
+    assistant_text: str = ""
+    # Zen F4: tracked separately so we don't re-encode assistant_text on every
+    # delta to measure its byte length.
+    assistant_text_bytes: int = 0
+    # Set once the cap is hit so the truncation marker is appended at most once.
+    assistant_text_truncated: bool = False
+    # Tool usage log: brief entries accumulated during the run.
+    tool_log: list[str] = field(default_factory=list)
+    # Called once with the accumulated assistant text after run.completed is enqueued.
+    on_terminal: Callable[[str], None] | None = None
 
 
 # Terminal event type names — these must never be dropped from the queue.
 _TERMINAL_EVENTS: frozenset[str] = frozenset({"run.completed", "run.failed"})
+
+# Zen F4: cap accumulated assistant text per run.  A pathological / runaway
+# assistant could otherwise grow assistant_text without bound and OOM the
+# process or push a multi-megabyte payload into sqlite at persist time.
+ASSISTANT_TEXT_CAP_BYTES: int = 256 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +211,12 @@ class SessionManager:
         logger.debug("claude exec: %r + %d extra args", args[0], len(args) - 1)
 
         try:
+            # Zen F5: claude subprocess INTENTIONALLY inherits the full parent
+            # env. It needs ANTHROPIC_API_KEY (or AWS/GCP credentials for
+            # Bedrock/Vertex), CLAUDE_CODE_* settings, NPM/Node config, and
+            # whatever the operator has configured for their auth setup. This
+            # is the opposite of forge_runner.py, which builds a minimal env
+            # because forge.sh does not need any of those credentials.
             proc = await asyncio.create_subprocess_exec(
                 *args,
                 stdout=asyncio.subprocess.PIPE,
@@ -314,6 +339,14 @@ class SessionManager:
                 for ev in events:
                     if ev.event in _TERMINAL_EVENTS:
                         run.terminal_emitted = True
+                    # Accumulate assistant text for persistence (Zen F4: capped).
+                    if ev.event == "message.delta":
+                        if isinstance(ev, MessageDeltaEvent):
+                            self._accumulate_assistant_text(run, ev.text)
+                    # Accumulate tool usage for persistence.
+                    elif ev.event == "tool.started":
+                        if isinstance(ev, ToolStartedEvent):
+                            run.tool_log.append(ev.tool_name)
                     self._enqueue(run, ev)
         except asyncio.CancelledError:
             pass
@@ -340,6 +373,15 @@ class SessionManager:
                             session_id=run.session_id,
                             reason=f"process exited rc={rc}",
                         ),
+                    )
+
+            # Fire persistence callback with accumulated assistant text.
+            if run.on_terminal is not None:
+                try:
+                    run.on_terminal(run.assistant_text)
+                except Exception as cb_exc:
+                    logger.warning(
+                        "on_terminal callback error for run %s: %s", run.run_id, cb_exc
                     )
 
             run.done.set()
@@ -393,6 +435,32 @@ class SessionManager:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _accumulate_assistant_text(self, run: Run, text: str) -> None:
+        """Append assistant delta text, enforcing ASSISTANT_TEXT_CAP_BYTES.
+
+        Tracks byte-length in run.assistant_text_bytes to avoid re-encoding
+        the full string on every delta.  Once the cap is hit, a one-shot
+        truncation marker is appended and further deltas are dropped.
+        """
+        if run.assistant_text_truncated:
+            return
+        delta_bytes = len(text.encode("utf-8"))
+        if run.assistant_text_bytes + delta_bytes <= ASSISTANT_TEXT_CAP_BYTES:
+            run.assistant_text += text
+            run.assistant_text_bytes += delta_bytes
+            return
+        # Cap exceeded — append a single truncation marker and stop.
+        marker = "\n\n…[truncated at 256KB]…"
+        run.assistant_text += marker
+        run.assistant_text_bytes += len(marker.encode("utf-8"))
+        run.assistant_text_truncated = True
+        logger.warning(
+            "run %s assistant_text capped at %d bytes (cap=%d)",
+            run.run_id,
+            run.assistant_text_bytes,
+            ASSISTANT_TEXT_CAP_BYTES,
+        )
 
     def _enqueue(self, run: Run, ev: HermesEvent) -> None:
         """Put an event on the run queue.

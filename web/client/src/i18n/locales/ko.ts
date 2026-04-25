@@ -177,6 +177,7 @@ export default {
     groupMonitoring: '모니터링',
     groupTools: '도구',
     settings: '설정',
+    forge: 'Forge',
     connected: '연결됨',
     disconnected: '연결 끊김',
     collapse: '메뉴 접기',
@@ -222,6 +223,7 @@ export default {
     pin: '고정',
     unpin: '고정 해제',
     pinned: '고정됨',
+    soulSelect: 'SOUL 선택',
     chatMode: '채팅',
     liveMode: '라이브',
     liveSessions: '라이브 세션',
@@ -651,6 +653,27 @@ export default {
     sessions: '세션',
     cost: '비용',
     noData: '사용량 데이터 없음',
+  },
+
+  // Forge
+  forge: {
+    title: 'Forge 명령',
+    catalogTitle: '명령 카탈로그',
+    selectedCommand: '선택된 명령:',
+    argsLabel: '인자',
+    argPlaceholder: '인자 {n}',
+    addArg: '추가',
+    run: '실행',
+    abort: '중단',
+    clearOutput: '출력 지우기',
+    clearAll: '전체 출력 지우기',
+    outputLabel: '출력',
+    outputEmpty: '실행 결과가 여기에 표시됩니다',
+    noProject: '프로젝트를 먼저 선택하세요',
+    resultDone: '완료 · exit={code} · {duration}',
+    resultFailed: '실패 · {reason}',
+    aborted: '[중단됨]',
+    historyTitle: '최근 실행',
   },
 
   // 변경 이력

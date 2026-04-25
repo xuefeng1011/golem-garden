@@ -76,16 +76,12 @@ export async function fetchProfileDetail(idOrName: string): Promise<HermesProfil
 // Second arg is `path?` in Gateway terms; legacy Hermes called with a bool
 // (clone). When a boolean is passed we ignore it and use name as path.
 export async function createProfile(name: string, pathOrClone?: string | boolean): Promise<boolean> {
-  try {
-    const path = typeof pathOrClone === 'string' ? pathOrClone : name
-    await request('/v1/projects', {
-      method: 'POST',
-      body: JSON.stringify({ name, path }),
-    })
-    return true
-  } catch {
-    return false
-  }
+  const path = typeof pathOrClone === 'string' ? pathOrClone : name
+  await request('/v1/projects', {
+    method: 'POST',
+    body: JSON.stringify({ name, path }),
+  })
+  return true
 }
 
 export async function deleteProfile(idOrName: string): Promise<boolean> {

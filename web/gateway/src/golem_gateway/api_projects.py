@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from golem_gateway.registry import Project, ProjectRegistry
 from golem_gateway.session_manager import SessionManager
+from golem_gateway.sessions_db import evict_session_store
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +72,38 @@ async def delete_project(
     registry: ProjectRegistry = Depends(get_registry),
     manager: SessionManager = Depends(get_manager),
 ) -> None:
-    """Delete a project and terminate any active runs for it."""
-    # Terminate active runs belonging to this project first.
+    """Delete a project and terminate any active runs for it.
+
+    F4 (TOCTOU): we must remove the project from the registry FIRST. Once it is
+    gone, any concurrent spawn attempt will fail to resolve the project and
+    404 instead of leaking a new Run between our terminate-then-delete steps.
+    Only after the registry mutation do we sweep runs that were already
+    in-flight at the moment of deletion.
+
+    Zen M3: also evict the cached SessionStore so a stale connection does not
+    pin the .golem/sessions.db file (Windows) and so re-registering a project
+    at the same path gets a fresh store.
+    """
+    # Look up the project BEFORE delete so we can evict the cached store using
+    # its on-disk path. registry.delete returns only a bool today.
+    project_before = await registry.get(project_id)
+
+    found = await registry.delete(project_id)
+    if not found:
+        raise HTTPException(status_code=404, detail=f"project {project_id!r} not found")
+
+    # Sweep any runs that were already in-flight before the registry delete.
     terminated = await manager.terminate_runs_for_project(project_id)
     if terminated:
         logger.info(
             "terminated %d active run(s) for project %s", terminated, project_id
         )
 
-    found = await registry.delete(project_id)
-    if not found:
-        raise HTTPException(status_code=404, detail=f"project {project_id!r} not found")
+    # Evict the SessionStore cache entry now that no run can reference it.
+    if project_before is not None:
+        try:
+            evict_session_store(Path(project_before.path))
+        except Exception:
+            logger.exception(
+                "failed to evict session store cache for project %s", project_id
+            )

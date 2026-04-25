@@ -2,8 +2,30 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
+
+
+def to_bash_path(p: Path | str) -> str:
+    """Convert a Windows-style path to /mnt/<drive>/... form for Git for
+    Windows / WSL bash. On non-Windows platforms returns the path unchanged.
+
+    Background: Python's subprocess on Windows passes argv as Unicode via
+    CreateProcessW, but Git for Windows bash (the bash that ships with the
+    Git installer and is what shutil.which('bash') typically finds) interprets
+    argv via its own MSYS path translator. Native Windows forms like
+    'C:/foo/bar' silently fail with 'No such file or directory' from this
+    bash; '/mnt/c/foo/bar' works. Korean (or any non-ASCII) characters in the
+    path additionally trigger codepage conversion bugs — we mitigate that with
+    GOLEM_FORGE_SH env override (see FORGE_SH_PATH).
+    """
+    if os.name != "nt":
+        return str(p)
+    s = (p.as_posix() if isinstance(p, Path) else str(p).replace("\\", "/"))
+    if len(s) > 2 and s[1] == ":" and s[2] == "/":
+        return "/mnt/" + s[0].lower() + s[2:]
+    return s
 
 # Server
 HOST: str = "127.0.0.1"
@@ -92,3 +114,47 @@ MAX_RUN_SECONDS: int = 300
 
 # Maximum accepted input size in bytes (32 KiB).
 INPUT_MAX_BYTES: int = 32 * 1024
+
+# ---------------------------------------------------------------------------
+# Phase 6: Forge runner
+# ---------------------------------------------------------------------------
+
+# Path to the forge.sh script installed by GolemGarden (Windows path form).
+FORGE_SH_PATH: Path = Path(
+    os.environ.get("GOLEM_FORGE_SH")
+    or str(Path.home() / ".claude" / "golem-garden" / "forge.sh")
+)
+
+# Bash-friendly form of the same path. Users with non-ASCII home dirs
+# should set GOLEM_FORGE_SH_BASH to an explicit ASCII path (e.g.
+# /mnt/c/g-garden/forge.sh) backed by an `mklink /J C:\g-garden ...` junction.
+FORGE_SH_BASH_PATH: str = (
+    os.environ.get("GOLEM_FORGE_SH_BASH")
+    or to_bash_path(FORGE_SH_PATH)
+)
+
+if not FORGE_SH_PATH.is_file():
+    import logging as _logging
+    _logging.getLogger(__name__).error(
+        "forge.sh not found at %s — POST /v1/projects/{id}/forge will return 500",
+        FORGE_SH_PATH,
+    )
+
+# Maximum wall-clock seconds before a forge run is forcibly terminated.
+MAX_FORGE_SECONDS: int = 300
+
+# Maximum combined stdout+stderr bytes per forge run before termination.
+FORGE_OUTPUT_CAP_BYTES: int = 2 * 1024 * 1024  # 2 MB
+
+# Whitelisted forge subcommands.  Anything outside this set is rejected 400.
+ALLOWED_FORGE_COMMANDS: frozenset[str] = frozenset({
+    "status", "souls", "rank", "dashboard", "insights",
+    "build", "quick", "assign", "review", "sync",
+    "mailbox", "session", "recover", "worktree",
+    "memory", "retro", "chemistry", "achievement", "skill-tree",
+    "dna", "budget", "tool-char",
+    "skill-export", "skill-import",
+    "soul-create", "pack",
+    "log-add",
+    "overview", "ov",
+})

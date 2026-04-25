@@ -36,9 +36,10 @@ async function handleSave() {
     if (ok) {
       message.success(t('profiles.createSuccess', { name: trimmedName }))
       emit('saved')
-    } else {
-      message.error('등록 실패 — 경로가 유효한 디렉토리인지 확인하세요')
     }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '알 수 없는 오류'
+    message.error(`등록 실패: ${msg}`)
   } finally {
     loading.value = false
   }

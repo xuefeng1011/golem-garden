@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
+from itertools import combinations
 from pathlib import Path
 from typing import Optional
 
@@ -134,11 +135,17 @@ def _load_total_cost(golem_dir: Path) -> float:
 # Overview
 # ---------------------------------------------------------------------------
 
+class ActiveSoul(BaseModel):
+    id: str
+    name: str
+    rank: str
+
+
 class OverviewResponse(BaseModel):
     project_id: str
     name: str
     souls_count: int
-    active_souls: list[str]
+    active_souls: list[ActiveSoul]
     recent_activity: list[ActivityEntry]
     total_tasks: int
     success_rate: float
@@ -199,7 +206,22 @@ def build_overview(project_id: str, project_name: str, project_path: Path) -> Ov
             sid = str(e.get("soul", ""))
             soul_recent_counts[sid] = soul_recent_counts.get(sid, 0) + 1
 
-    active_souls = sorted(soul_recent_counts, key=lambda s: soul_recent_counts[s], reverse=True)[:4]
+    top_active_ids = sorted(
+        soul_recent_counts, key=lambda s: soul_recent_counts[s], reverse=True
+    )[:4]
+
+    # F1: resolve each active soul to {id, name, rank} so the UI can render rank badges.
+    # Local import to avoid circular import with souls.py.
+    from golem_gateway.souls import get_soul_by_id  # noqa: WPS433
+
+    active_souls: list[ActiveSoul] = []
+    for sid in top_active_ids:
+        soul = get_soul_by_id(project_path, sid)
+        if soul is None:
+            # Orphan growth-log entry — keep something sane so the UI doesn't crash.
+            active_souls.append(ActiveSoul(id=sid, name=sid.capitalize(), rank="unknown"))
+        else:
+            active_souls.append(ActiveSoul(id=sid, name=soul.name, rank=soul.rank))
 
     last_activity_ts = _parse_ts(all_entries[0]) if all_entries else None
     total_cost_usd = _load_total_cost(golem_dir)
@@ -302,6 +324,7 @@ def build_soul_activity(soul_id: str, rank: str, project_path: Path) -> SoulActi
 
 class TeamMember(BaseModel):
     soul: str
+    name: str
     role: str
     agent: str
     model: str
@@ -347,11 +370,16 @@ def _parse_md_table_rows(lines: list[str]) -> list[list[str]]:
 
 
 def _section_lines(md: str, header: str) -> list[str]:
-    """Return lines belonging to the section that starts with `## header`."""
+    """Return lines belonging to the section that starts with `## header`.
+
+    F6: exact `## <header>` match (with optional trailing whitespace) so that
+    "팀 구성" does not accidentally match "## 팀 구성 요약".
+    """
+    target = f"## {header}"
     inside = False
     result: list[str] = []
     for line in md.splitlines():
-        if line.strip().startswith("## ") and header in line:
+        if line.strip() == target:
             inside = True
             continue
         if inside:
@@ -374,20 +402,22 @@ def build_board(project_path: Path) -> BoardResponse:
 
     # --- Team table (## 팀 구성) ---
     team_lines = _section_lines(raw_md, "팀 구성")
-    # skip first line if it's the header row (contains "SOUL")
     table_lines = [l for l in team_lines if l.strip().startswith("|")]
-    # First non-separator row is the header — skip it
+    # F7: `_parse_md_table_rows` already strips the `|---|---|` separator, so the
+    # first surviving row is always the markdown table header — skip it
+    # unconditionally instead of fragile content-based detection.
     data_rows = _parse_md_table_rows(table_lines)
-    # Remove header row (first row — cells like "SOUL", "역할", ...)
-    if data_rows and data_rows[0] and data_rows[0][0].strip().lower() in ("soul", "soul"):
+    if data_rows:
         data_rows = data_rows[1:]
 
     team: list[TeamMember] = []
     for row in data_rows:
         if len(row) < 6:
             continue
+        soul_cell = row[0].strip()
         team.append(TeamMember(
-            soul=row[0],
+            soul=soul_cell,
+            name=soul_cell,  # F2: same value, surfaced under expected UI key
             role=row[1],
             agent=row[2],
             model=row[3],
@@ -413,8 +443,8 @@ def build_board(project_path: Path) -> BoardResponse:
     history_lines = _section_lines(raw_md, "태스크 히스토리")
     history_table = [l for l in history_lines if l.strip().startswith("|")]
     hist_rows = _parse_md_table_rows(history_table)
-    # Skip header row
-    if hist_rows and hist_rows[0] and "날짜" in hist_rows[0][0]:
+    # F7: separator already stripped by parser; first row is always the header.
+    if hist_rows:
         hist_rows = hist_rows[1:]
 
     history: list[HistoryEntry] = []
@@ -847,12 +877,20 @@ def build_chemistry(project_path: Path) -> ChemistryResponse:
             if not s1 or not s2:
                 continue
             souls_raw = [s1, s2]
-        key = tuple(sorted([str(souls_raw[0]), str(souls_raw[1])]))  # type: ignore[arg-type]
-        pair_total[key] = pair_total.get(key, 0) + 1
-        # Consider "success" or positive type as positive interaction
+
+        # F8: triad-aware. A {souls:[a,b,c]} event yields pairs (a,b),(a,c),(b,c).
+        # Each pair gets 1 interaction credit per event; raw_events keeps the
+        # full soul list intact for downstream transparency.
+        soul_strs = [str(s) for s in souls_raw if s]
         result = str(event.get("result") or event.get("type") or "")
-        if result.lower() in ("success", "pass", "positive", "collaborate", "collab"):
-            pair_positive[key] = pair_positive.get(key, 0) + 1
+        is_positive = result.lower() in (
+            "success", "pass", "positive", "collaborate", "collab"
+        )
+        for a, b in combinations(soul_strs, 2):
+            key = tuple(sorted([a, b]))  # type: ignore[arg-type]
+            pair_total[key] = pair_total.get(key, 0) + 1
+            if is_positive:
+                pair_positive[key] = pair_positive.get(key, 0) + 1
 
     pairs: list[ChemistryPair] = []
     for key, total in pair_total.items():

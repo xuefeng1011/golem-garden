@@ -98,12 +98,14 @@ async def get_project_board(
     return build_board(project_path)
 
 
-@router.get("/sessions", response_model=list[SessionSummary])
-async def get_project_sessions(
+@router.get("/forge-sessions", response_model=list[SessionSummary])
+async def get_project_forge_sessions(
     project_id: str,
     registry: ProjectRegistry = Depends(get_registry),
 ) -> list[SessionSummary]:
-    """List all sessions from .golem/sessions/, sorted by created_at desc."""
+    """List forge.sh-managed sessions from .golem/sessions/ (legacy file-based).
+    Renamed from /sessions to free that path for the SQLite-backed chat history endpoint.
+    """
     _, project_path = await _resolve_project(project_id, registry)
     return scan_sessions(project_path)
 
