@@ -104,7 +104,7 @@ function translate(eventName: string, raw: Record<string, unknown>): RunEvent {
       const isError = raw.is_error === true
       return {
         event: 'tool.completed',
-        tool: (raw.tool_use_id as string) || undefined,
+        // Canonical id-carrying field for tool.completed.
         tool_use_id: (raw.tool_use_id as string) || undefined,
         // Pass through the result payload so the chat store can attach it
         // to the corresponding tool message (used by SoulHandoffCard etc.).

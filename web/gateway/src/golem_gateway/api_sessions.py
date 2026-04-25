@@ -105,10 +105,17 @@ async def cleanup_orphaned_sessions(
 
     Safe to call at any time — only UUID-named .jsonl files are removed.
     Returns {"deleted": N}.
+
+    Note: this endpoint has no auth or rate limit. The Gateway is bound to
+    127.0.0.1 and the UI surfaces this only via a confirm dialog in
+    ProfileCard, so accidental triggers from a browser tab are mitigated.
+    If multi-user / non-localhost deployment ever happens, gate this with
+    auth + per-project quota.
     """
     project_path = await _resolve_project_path(project_id, registry)
     store = get_session_store(project_path)
-    sessions = store.list_sessions(limit=10000)
-    known_ids = {s.id for s in sessions}
+    # Use list_all_session_ids (no pagination cap) so GC never wrongly nukes
+    # real sessions when a project exceeds an arbitrary list_sessions limit.
+    known_ids = store.list_all_session_ids()
     deleted = gc_orphaned_claude_sessions(project_path, known_ids)
     return {"deleted": deleted}

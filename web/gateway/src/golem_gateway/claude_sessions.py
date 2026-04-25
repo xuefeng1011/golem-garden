@@ -72,6 +72,11 @@ def delete_claude_session(project_path: Path, session_id: str) -> bool:
 
     # Observed naming: <uuid>.jsonl at top level; subdir <uuid>/ is metadata
     # (subagents/, tool-results/) — we don't touch subdirs.
+    #
+    # Risk: if claude CLI changes its layout, all 3 candidates miss → silent
+    # skip → orphan files accumulate. The /cleanup endpoint is a backstop
+    # (gc_orphaned_claude_sessions sweeps unknown UUIDs). Worth re-verifying
+    # this list against ~/.claude/projects/ after a major claude version bump.
     candidates = [
         sessions_dir / f"{session_id}.jsonl",
         # Fallback in case claude ever nests under sessions/

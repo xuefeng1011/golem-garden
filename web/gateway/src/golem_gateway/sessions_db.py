@@ -336,6 +336,16 @@ class SessionStore:
             row = cur.fetchone()
             return int(row[0]) if row else 0
 
+    def list_all_session_ids(self) -> set[str]:
+        """Return ALL session ids (no pagination cap). Used by GC.
+
+        Avoids the trap where `list_sessions(limit=N)` quietly truncates
+        when total exceeds N — which would cause GC to delete real sessions.
+        """
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id FROM sessions").fetchall()
+        return {row["id"] for row in rows}
+
     def list_sessions(self, limit: int = 100) -> list[SessionSummary]:
         """Return sessions sorted by updated_at DESC."""
         with self._connect() as conn:

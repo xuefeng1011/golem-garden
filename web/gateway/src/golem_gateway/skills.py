@@ -143,6 +143,10 @@ def get_skill_by_id(project_path: Path, skill_id: str) -> Optional[SkillDetail]:
         if not candidate.is_file():
             continue
         # Defense in depth: resolved path must be inside base / skill_id
+        # Caveat: assumes neither `base` nor `candidate` traverse a symlink
+        # OUT of the project tree. _VALID_SKILL_ID already blocks `..` and
+        # `/`, so the only way to escape is via a pre-existing symlink the
+        # user planted — out of attack scope on a single-user localhost tool.
         try:
             if candidate.resolve().parent.parent != base.resolve():
                 continue

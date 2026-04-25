@@ -903,6 +903,15 @@ export const useChatStore = defineStore('chat', () => {
                     resultText = String(raw)
                   }
                 }
+                // Cap at 256 KB to keep localStorage persistence within quota.
+                // Large worker replies (Task subagent output etc.) would
+                // otherwise blow the 5 MB browser limit and trigger a silent
+                // recovery that wipes prior session caches.
+                const TOOL_RESULT_CAP = 256_000
+                if (resultText && resultText.length > TOOL_RESULT_CAP) {
+                  resultText =
+                    resultText.slice(0, TOOL_RESULT_CAP) + '\n…[truncated]'
+                }
                 updateMessage(sid, target.id, {
                   toolStatus: evt.error ? 'error' : 'done',
                   toolResult: resultText,

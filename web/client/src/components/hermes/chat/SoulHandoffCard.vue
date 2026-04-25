@@ -24,10 +24,12 @@ const workerLabel = computed<string>(() => {
   const input = props.taskInput
   if (!input) return 'Worker'
 
-  // Try to extract "You are **Name**" from prompt
+  // Try to extract "You are **Name**" from prompt. Pattern accepts any
+  // non-asterisk content so Korean (넥스), compound (Big-Ryn), and
+  // multi-word ("Senior Ryn") SOUL names all match.
   if (input.prompt) {
-    const match = /You are \*\*([A-Z][a-z]+)\*\*/.exec(input.prompt)
-    if (match) return match[1]
+    const match = /You are \*\*([^*\n]+?)\*\*/.exec(input.prompt)
+    if (match) return match[1].trim()
   }
 
   if (input.subagent_type) {
