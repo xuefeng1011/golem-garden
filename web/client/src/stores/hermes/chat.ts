@@ -878,7 +878,23 @@ export const useChatStore = defineStore('chat', () => {
               )
               if (toolMsgs.length > 0) {
                 const last = toolMsgs[toolMsgs.length - 1]
-                updateMessage(sid, last.id, { toolStatus: 'done' })
+                // Stringify result for display: most claude tool results are
+                // strings; Task subagent replies arrive as objects.
+                const raw = (evt as { result?: unknown }).result
+                let resultText: string | undefined
+                if (typeof raw === 'string') {
+                  resultText = raw
+                } else if (raw !== undefined && raw !== null) {
+                  try {
+                    resultText = JSON.stringify(raw, null, 2)
+                  } catch {
+                    resultText = String(raw)
+                  }
+                }
+                updateMessage(sid, last.id, {
+                  toolStatus: evt.error ? 'error' : 'done',
+                  toolResult: resultText,
+                })
               }
               schedulePersist()
               break

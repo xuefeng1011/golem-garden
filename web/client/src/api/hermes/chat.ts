@@ -30,6 +30,10 @@ export interface RunEvent {
   preview?: string
   timestamp?: number
   error?: string
+  // tool.completed result payload (Gateway forwards raw result from claude
+  // — typically a string or stringifiable object). Used by SoulHandoffCard
+  // to render the worker's reply inside the collapse area.
+  result?: unknown
   usage?: {
     input_tokens: number
     output_tokens: number
@@ -91,6 +95,9 @@ function translate(eventName: string, raw: Record<string, unknown>): RunEvent {
       return {
         event: 'tool.completed',
         tool: (raw.tool_use_id as string) || undefined,
+        // Pass through the result payload so the chat store can attach it
+        // to the corresponding tool message (used by SoulHandoffCard etc.).
+        result: raw.result,
         error: isError ? String(raw.result ?? 'tool error') : undefined,
       }
     }
