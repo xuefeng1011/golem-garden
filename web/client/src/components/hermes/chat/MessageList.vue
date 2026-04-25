@@ -3,14 +3,31 @@ import { ref, computed, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import MessageItem from "./MessageItem.vue";
 import { useChatStore } from "@/stores/hermes/chat";
-import thinkingVideoLight from "@/assets/thinking-light.mp4";
-import thinkingVideoDark from "@/assets/thinking-dark.mp4";
-import { useTheme } from "@/composables/useTheme";
+import { useProfilesStore } from "@/stores/hermes/profiles";
 
 const chatStore = useChatStore();
+const profilesStore = useProfilesStore();
 const { t } = useI18n();
-const { isDark } = useTheme();
 const listRef = ref<HTMLElement>();
+
+const activeSoul = computed(() => {
+  const soulId = chatStore.activeSession?.soul_id || profilesStore.currentSoulId;
+  return profilesStore.availableSouls.find(s => s.id === soulId) ?? null;
+});
+
+// Show GolemGarden thinking indicator while a run is active but no assistant
+// message has arrived yet for the current turn. Once the first delta lands
+// (last message is assistant), the bubble itself shows streaming content.
+// Tool messages also indicate the model is actively producing, so treat them
+// the same as assistant — hide the indicator to avoid flicker between tool calls.
+const showThinking = computed(() => {
+  if (!chatStore.isRunActive) return false;
+  const msgs = chatStore.messages;
+  if (msgs.length === 0) return true;
+  const last = msgs[msgs.length - 1];
+  // Only show during the initial pre-first-event window (last msg is user or system).
+  return last.role === "user" || last.role === "system";
+});
 
 const displayMessages = computed(() =>
   chatStore.messages.filter((m) => m.role !== "tool"),
@@ -122,14 +139,10 @@ watch(currentToolCalls, () => {
     />
     <Transition name="fade">
       <div v-if="chatStore.isRunActive" class="streaming-indicator">
-        <video
-          :src="isDark ? thinkingVideoDark : thinkingVideoLight"
-          autoplay
-          loop
-          muted
-          playsinline
-          class="thinking-video"
-        />
+        <div v-if="showThinking" class="thinking-indicator">
+          <span class="dot" :class="`rank-${activeSoul?.rank || 'novice'}`"></span>
+          <span class="thinking-text">{{ activeSoul?.name || 'SOUL' }} 생각 중...</span>
+        </div>
         <div v-if="currentToolCalls.length > 0" class="tool-calls-panel">
           <div
             v-for="tc in currentToolCalls"
@@ -215,15 +228,34 @@ watch(currentToolCalls, () => {
 
 .streaming-indicator {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 4px;
-  .thinking-video {
-    width: 120px;
-    height: 213px;
-    border-radius: $radius-md;
-    object-fit: contain;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  opacity: 0.85;
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
     flex-shrink: 0;
+    animation: thinking-pulse 1.5s ease-in-out infinite;
+
+    &.rank-novice { background: #888888; }
+    &.rank-junior { background: #4a9eff; }
+    &.rank-senior { background: #52a770; }
+    &.rank-master { background: #a855f7; }
+  }
+
+  .thinking-text {
+    color: $text-secondary;
   }
 }
 
@@ -297,5 +329,10 @@ watch(currentToolCalls, () => {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.3); }
 }
 </style>

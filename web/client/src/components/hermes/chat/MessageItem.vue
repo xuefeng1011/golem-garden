@@ -4,6 +4,7 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useMessage } from "naive-ui";
 import { useProfilesStore } from "@/stores/hermes/profiles";
+import { useChatStore } from "@/stores/hermes/chat";
 import MarkdownRenderer from "./MarkdownRenderer.vue";
 import {
   copyTextToClipboard,
@@ -18,9 +19,15 @@ const { t } = useI18n();
 const toast = useMessage();
 
 const profilesStore = useProfilesStore();
-const currentSoul = computed(() =>
-  profilesStore.availableSouls.find(s => s.id === profilesStore.currentSoulId) ?? null
-);
+const chatStore = useChatStore();
+
+const currentSoul = computed(() => {
+  // Prefer active session's soul_id for correct per-tab attribution;
+  // fall back to global default for sessions that pre-date this field.
+  const sessionSoul = chatStore.activeSession?.soul_id;
+  const targetId = sessionSoul || profilesStore.currentSoulId;
+  return profilesStore.availableSouls.find(s => s.id === targetId) ?? null;
+});
 
 const isSystem = computed(() => props.message.role === "system");
 const toolExpanded = ref(false);

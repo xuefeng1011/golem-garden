@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import * as profilesApi from '@/api/hermes/profiles'
 import type { HermesProfile, HermesProfileDetail } from '@/api/hermes/profiles'
 import { fetchSouls, type Soul } from '@/api/hermes/souls'
@@ -43,6 +43,20 @@ export const useProfilesStore = defineStore('profiles', () => {
       }
     }
   }
+
+  const directorSoulId = computed<string | null>(() => {
+    const nex = availableSouls.value.find(s => s.id === 'nex')
+    if (nex) return nex.id
+    const fallback = availableSouls.value.find(s =>
+      s.specialty.some(sp => /director|architect|lead/i.test(sp))
+    )
+    if (fallback) return fallback.id
+    return availableSouls.value[0]?.id ?? null
+  })
+
+  const directorSoul = computed(() =>
+    availableSouls.value.find(s => s.id === directorSoulId.value) ?? null
+  )
 
   function setCurrentSoul(soulId: string) {
     currentSoulId.value = soulId
@@ -172,6 +186,8 @@ export const useProfilesStore = defineStore('profiles', () => {
     activeProfileName,
     availableSouls,
     currentSoulId,
+    directorSoulId,
+    directorSoul,
     detailMap,
     loading,
     switching,

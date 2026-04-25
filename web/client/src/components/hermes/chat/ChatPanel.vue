@@ -25,29 +25,24 @@ const chatStore = useChatStore()
 const profilesStore = useProfilesStore()
 const sessionBrowserPrefsStore = useSessionBrowserPrefsStore()
 
-// Per-session active SOUL — falls back to global currentSoulId for sessions
-// persisted before this field was introduced (migration safety).
-const activeSoulId = computed<string | null>(() =>
-  chatStore.activeSession?.soul_id
-  ?? profilesStore.currentSoulId
-  ?? null,
+const director = computed(() => profilesStore.directorSoul)
+
+const projectOptions = computed(() =>
+  profilesStore.profiles.map(p => ({
+    label: p.name,
+    value: p.id,
+  }))
 )
 
-const activeSoul = computed(() =>
-  profilesStore.availableSouls.find(s => s.id === activeSoulId.value) ?? null,
-)
-
-const soulOptions = computed(() =>
-  profilesStore.availableSouls.map(s => ({
-    label: `${s.name} · ${s.rank}`,
-    value: s.id,
-  })),
-)
-
-function handleSessionSoulChange(value: string | number | Array<string | number>) {
-  if (typeof value === 'string' && chatStore.activeSessionId) {
-    chatStore.setSessionSoul(chatStore.activeSessionId, value)
+async function onSwitchProject(projectId: string) {
+  const target = profilesStore.profiles.find(p => p.id === projectId)
+  if (!target) return
+  // Abort any in-flight run before switching projects so we don't
+  // mutate the previous session in the background.
+  if (chatStore.activeSession?.id) {
+    chatStore.stopStreaming()
   }
+  await profilesStore.switchProfile(target.name)
 }
 const message = useMessage()
 const { t } = useI18n()
@@ -396,16 +391,22 @@ async function handleRenameConfirm() {
         </div>
         <div class="header-actions">
           <NSelect
-            v-if="soulOptions.length > 0"
-            :value="activeSoulId"
-            :options="soulOptions"
             size="small"
-            class="soul-session-select"
-            :placeholder="t('chat.soulSelect')"
-            @update:value="handleSessionSoulChange"
+            :value="profilesStore.activeProfile?.id ?? null"
+            :options="projectOptions"
+            :disabled="projectOptions.length === 0"
+            :placeholder="projectOptions.length === 0 ? '프로젝트 없음' : undefined"
+            class="project-switcher"
+            @update:value="onSwitchProject"
           />
-          <div v-else class="soul-badge inactive">
-            <span>SOUL 없음</span>
+          <div v-if="director" class="director-badge">
+            <span class="director-label">Director</span>
+            <span class="director-name">{{ director.name }}</span>
+            <span class="director-rank" :class="`rank-${director.rank}`">{{ director.rank }}</span>
+          </div>
+          <div v-else class="director-badge director-badge--empty">
+            <span class="director-label">Director</span>
+            <span class="director-name">—</span>
           </div>
           <div class="chat-mode-toggle">
             <NButton
@@ -816,27 +817,52 @@ async function handleRenameConfirm() {
   flex-shrink: 0;
 }
 
-.soul-badge {
-  font-size: 11px;
-  font-weight: 500;
-  color: $accent-primary;
-  background: rgba(var(--accent-primary-rgb), 0.10);
-  padding: 2px 10px;
+.project-switcher {
+  width: 200px;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.director-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
-  white-space: nowrap;
+  background: rgba($text-muted, 0.08);
   flex-shrink: 0;
   margin-right: 4px;
 
-  &.inactive {
-    color: $text-muted;
-    background: rgba($text-muted, 0.08);
+  &--empty {
+    opacity: 0.5;
   }
 }
 
-.soul-session-select {
-  width: 160px;
-  flex-shrink: 0;
-  margin-right: 4px;
+.director-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: $text-muted;
+}
+
+.director-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.director-rank {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+
+  &.rank-novice   { color: $text-muted;    background: rgba($text-muted, 0.12); }
+  &.rank-junior   { color: #4a9eff;        background: rgba(74, 158, 255, 0.12); }
+  &.rank-senior   { color: #52c41a;        background: rgba(82, 196, 26, 0.12); }
+  &.rank-master   { color: #a855f7;        background: rgba(168, 85, 247, 0.12); }
 }
 
 .chat-mode-toggle {

@@ -544,7 +544,7 @@ export const useChatStore = defineStore('chat', () => {
       updatedAt: Date.now(),
       // Inherit global default soul at creation time; after this the session
       // owns its soul_id independently of the global default.
-      soul_id: profilesStore.currentSoulId || undefined,
+      soul_id: profilesStore.directorSoulId || undefined,
     }
     sessions.value.unshift(session)
     // Persist immediately so a refresh before run.completed can still find
@@ -562,6 +562,15 @@ export const useChatStore = defineStore('chat', () => {
     activeSession.value = sessions.value.find(s => s.id === sessionId) || null
 
     if (!activeSession.value) return
+
+    // Backfill legacy session soul_id to current director (chat is Director-only).
+    // One-time migration on first re-open after the upgrade; subsequent saves
+    // persist the new value.
+    const dir = profilesStore.directorSoulId
+    if (dir && activeSession.value.soul_id !== dir) {
+      activeSession.value.soul_id = dir
+      persistSessionsList()
+    }
 
     // Hydrate messages from localStorage cache first (instant render), then
     // revalidate from server in the background. If no cache exists, show the
@@ -664,18 +673,6 @@ export const useChatStore = defineStore('chat', () => {
     if (provider) {
       const { useAppStore } = await import('./app')
       await useAppStore().switchModel(modelId, provider)
-    }
-  }
-
-  function setSessionSoul(sessionId: string, soulId: string | null) {
-    const target = sessions.value.find(s => s.id === sessionId)
-    if (target) {
-      target.soul_id = soulId || undefined
-      persistSessionsList()
-    }
-    // Keep activeSession ref in sync
-    if (activeSession.value?.id === sessionId) {
-      activeSession.value.soul_id = soulId || undefined
     }
   }
 
@@ -785,7 +782,7 @@ export const useChatStore = defineStore('chat', () => {
         session_id: sid,
         model: sessionModel || undefined,
         project_id: profilesStore.activeProfile?.id || undefined,
-        soul_id: activeSession.value?.soul_id || undefined,
+        soul_id: profilesStore.directorSoulId || undefined,
       })
 
       const runId = (run as any).run_id || (run as any).id
@@ -1055,7 +1052,6 @@ export const useChatStore = defineStore('chat', () => {
     newChat,
     switchSession,
     switchSessionModel,
-    setSessionSoul,
     deleteSession,
     sendMessage,
     stopStreaming,

@@ -43,8 +43,7 @@ function resolveProjectId(body: StartRunRequest): string | null {
 }
 
 function resolveSoulId(body: StartRunRequest): string | null {
-  if (body.soul_id) return body.soul_id
-  return localStorage.getItem('hermes_active_soul_id')
+  return body.soul_id ?? null
 }
 
 export async function startRun(body: StartRunRequest): Promise<StartRunResponse> {
@@ -54,7 +53,7 @@ export async function startRun(body: StartRunRequest): Promise<StartRunResponse>
   }
   const soulId = resolveSoulId(body)
   if (!soulId) {
-    throw new Error('선택된 SOUL이 없습니다. 프로젝트에 SOUL이 있는지 확인하세요.')
+    throw new Error('Director SOUL이 없습니다. 프로젝트에 Director(Nex) SOUL이 등록되어 있는지 확인하세요.')
   }
   const history = (body.conversation_history ?? [])
     .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content.length > 0)
