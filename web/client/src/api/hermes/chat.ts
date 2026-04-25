@@ -34,6 +34,9 @@ export interface RunEvent {
   // — typically a string or stringifiable object). Used by SoulHandoffCard
   // to render the worker's reply inside the collapse area.
   result?: unknown
+  // claude's tool_use_id — set on both tool.started and tool.completed so
+  // chat store can pair them precisely (concurrent tools).
+  tool_use_id?: string
   usage?: {
     input_tokens: number
     output_tokens: number
@@ -88,13 +91,21 @@ function translate(eventName: string, raw: Record<string, unknown>): RunEvent {
       const toolName = (raw.tool_name as string) || ''
       const input = raw.input
       const preview = input !== undefined ? JSON.stringify(input).slice(0, 140) : undefined
-      return { event: 'tool.started', tool: toolName, name: toolName, preview }
+      return {
+        event: 'tool.started',
+        tool: toolName,
+        name: toolName,
+        preview,
+        // Forward tool_use_id so chat store can pair it with tool.completed.
+        tool_use_id: (raw.tool_use_id as string) || undefined,
+      }
     }
     case 'tool.completed': {
       const isError = raw.is_error === true
       return {
         event: 'tool.completed',
         tool: (raw.tool_use_id as string) || undefined,
+        tool_use_id: (raw.tool_use_id as string) || undefined,
         // Pass through the result payload so the chat store can attach it
         // to the corresponding tool message (used by SoulHandoffCard etc.).
         result: raw.result,

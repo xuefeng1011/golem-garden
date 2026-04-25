@@ -30,7 +30,14 @@ const workerLabel = computed<string>(() => {
     if (match) return match[1]
   }
 
-  if (input.subagent_type) return input.subagent_type
+  if (input.subagent_type) {
+    // Strip plugin prefixes like "oh-my-claudecode:executor" → "executor"
+    const stripped = input.subagent_type.includes(':')
+      ? input.subagent_type.split(':').pop() ?? input.subagent_type
+      : input.subagent_type
+    // Capitalize first letter for display
+    return stripped.charAt(0).toUpperCase() + stripped.slice(1)
+  }
 
   return 'Worker'
 })

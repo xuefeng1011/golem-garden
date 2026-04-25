@@ -24,6 +24,9 @@ export interface Message {
   toolArgs?: string
   toolResult?: string
   toolStatus?: 'running' | 'done' | 'error'
+  // Claude's tool_use_id — used to precisely match tool.completed events
+  // back to the right tool message when multiple tools run concurrently.
+  toolUseId?: string
   isStreaming?: boolean
   attachments?: Attachment[]
 }
@@ -866,6 +869,7 @@ export const useChatStore = defineStore('chat', () => {
                 toolName: evt.tool || evt.name,
                 toolPreview: evt.preview,
                 toolStatus: 'running',
+                toolUseId: evt.tool_use_id,
               })
               schedulePersist()
               break
@@ -873,11 +877,19 @@ export const useChatStore = defineStore('chat', () => {
 
             case 'tool.completed': {
               const msgs = getSessionMsgs(sid)
-              const toolMsgs = msgs.filter(
-                m => m.role === 'tool' && m.toolStatus === 'running',
-              )
-              if (toolMsgs.length > 0) {
-                const last = toolMsgs[toolMsgs.length - 1]
+              // Prefer exact tool_use_id match (handles concurrent tools);
+              // fall back to "last running tool" for legacy / missing id.
+              const completedId = evt.tool_use_id
+              let target = completedId
+                ? msgs.find(m => m.role === 'tool' && m.toolUseId === completedId)
+                : undefined
+              if (!target) {
+                const running = msgs.filter(
+                  m => m.role === 'tool' && m.toolStatus === 'running',
+                )
+                target = running[running.length - 1]
+              }
+              if (target) {
                 // Stringify result for display: most claude tool results are
                 // strings; Task subagent replies arrive as objects.
                 const raw = (evt as { result?: unknown }).result
@@ -891,7 +903,7 @@ export const useChatStore = defineStore('chat', () => {
                     resultText = String(raw)
                   }
                 }
-                updateMessage(sid, last.id, {
+                updateMessage(sid, target.id, {
                   toolStatus: evt.error ? 'error' : 'done',
                   toolResult: resultText,
                 })
