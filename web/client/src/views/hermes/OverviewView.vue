@@ -1,0 +1,237 @@
+<script setup lang="ts">
+import { ref, onMounted, watch } from 'vue'
+import { NSpin, NButton, NModal } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
+import { useProfilesStore } from '@/stores/hermes/profiles'
+import { fetchOverview, fetchBoard } from '@/api/hermes/overview'
+import type { ProjectOverview, ProjectBoard } from '@/api/hermes/overview'
+import StatCards from '@/components/hermes/overview/StatCards.vue'
+import TeamGrid from '@/components/hermes/overview/TeamGrid.vue'
+import RecentActivity from '@/components/hermes/overview/RecentActivity.vue'
+
+const { t } = useI18n()
+const profilesStore = useProfilesStore()
+
+const overview = ref<ProjectOverview | null>(null)
+const board = ref<ProjectBoard | null>(null)
+const loading = ref(false)
+const error = ref(false)
+const showDebtModal = ref(false)
+
+async function loadData(projectId: string) {
+  loading.value = true
+  error.value = false
+  try {
+    const [ov, bd] = await Promise.all([
+      fetchOverview(projectId),
+      fetchBoard(projectId),
+    ])
+    overview.value = ov
+    board.value = bd
+  } catch {
+    error.value = true
+    overview.value = null
+    board.value = null
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  if (profilesStore.activeProfile?.id) {
+    loadData(profilesStore.activeProfile.id)
+  }
+})
+
+watch(
+  () => profilesStore.activeProfile?.id,
+  (id) => {
+    if (id) {
+      loadData(id)
+    } else {
+      overview.value = null
+      board.value = null
+    }
+  },
+)
+</script>
+
+<template>
+  <div class="overview-view">
+    <header class="page-header">
+      <h2 class="header-title">
+        {{ profilesStore.activeProfile?.name ?? t('overview.title') }}
+      </h2>
+      <span v-if="profilesStore.activeProfile" class="header-hint">
+        {{ t('overview.switchHint') }}
+      </span>
+    </header>
+
+    <div class="overview-content">
+      <!-- No project selected -->
+      <div v-if="!profilesStore.activeProfile" class="empty-state">
+        {{ t('overview.noProject') }}
+      </div>
+
+      <NSpin v-else :show="loading">
+        <!-- Error state -->
+        <div v-if="error" class="error-card">
+          <p class="error-message">{{ t('overview.loadFailed') }}</p>
+          <NButton size="small" @click="loadData(profilesStore.activeProfile!.id)">
+            {{ t('common.retry') }}
+          </NButton>
+        </div>
+
+        <template v-else-if="!loading && overview">
+          <!-- Stat row -->
+          <StatCards :overview="overview" />
+
+          <!-- Two-column body -->
+          <div class="two-col">
+            <div class="col-left">
+              <TeamGrid :team="board?.team ?? []" />
+            </div>
+            <div class="col-right">
+              <RecentActivity :activities="overview.recent_activity ?? []" />
+            </div>
+          </div>
+
+          <!-- Footer: tech debt -->
+          <div v-if="board && board.tech_debt.length > 0" class="footer-bar">
+            <button class="debt-link" @click="showDebtModal = true">
+              {{ t('overview.techDebt', { count: board.tech_debt.length }) }}
+            </button>
+          </div>
+        </template>
+      </NSpin>
+    </div>
+
+    <!-- Tech debt modal -->
+    <NModal
+      v-model:show="showDebtModal"
+      preset="dialog"
+      :title="t('overview.techDebtTitle')"
+      style="width: 480px;"
+    >
+      <ul class="debt-list">
+        <li v-for="(item, idx) in board?.tech_debt ?? []" :key="idx" class="debt-item">
+          {{ item }}
+        </li>
+      </ul>
+    </NModal>
+  </div>
+</template>
+
+<style scoped lang="scss">
+@use '@/styles/variables' as *;
+
+.overview-view {
+  height: calc(100 * var(--vh));
+  display: flex;
+  flex-direction: column;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid $border-color;
+  flex-shrink: 0;
+}
+
+.header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.header-hint {
+  font-size: 12px;
+  color: $text-muted;
+}
+
+.overview-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.empty-state {
+  padding: 60px 0;
+  text-align: center;
+  color: $text-muted;
+  font-size: 14px;
+}
+
+.error-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 60px 0;
+  text-align: center;
+}
+
+.error-message {
+  font-size: 14px;
+  color: $text-secondary;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 16px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.col-left,
+.col-right {
+  min-width: 0;
+}
+
+.footer-bar {
+  border-top: 1px solid $border-color;
+  padding-top: 12px;
+}
+
+.debt-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: $text-muted;
+  padding: 0;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $accent-primary;
+  }
+}
+
+.debt-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.debt-item {
+  font-size: 13px;
+  color: $text-secondary;
+  padding: 6px 0;
+  border-bottom: 1px solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &::before {
+    content: '• ';
+    color: $text-muted;
+  }
+}
+</style>

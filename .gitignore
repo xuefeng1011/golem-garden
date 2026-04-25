@@ -3,3 +3,6 @@ dist/
 
 # Budget state (session-specific)
 .golem/budget-state.json
+
+# Node
+node_modules/

@@ -28,7 +28,6 @@ from golem_gateway.config import (
     INPUT_MAX_BYTES,
     MAX_RUN_SECONDS,
     RUN_QUEUE_MAXSIZE,
-    SUBPROCESS_CWD,
 )
 from golem_gateway.events import (
     HermesEvent,
@@ -37,6 +36,7 @@ from golem_gateway.events import (
     RunFailedEvent,
     parse_stream_event,
 )
+from golem_gateway.souls import SoulDetail
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ class Run:
     run_id: str
     session_id: str
     soul_id: str
+    project_id: str
     proc: asyncio.subprocess.Process | None
     queue: asyncio.Queue[HermesEvent]
     done: asyncio.Event
@@ -68,6 +69,41 @@ class Run:
 
 # Terminal event type names — these must never be dropped from the queue.
 _TERMINAL_EVENTS: frozenset[str] = frozenset({"run.completed", "run.failed"})
+
+
+# ---------------------------------------------------------------------------
+# System prompt builder
+# ---------------------------------------------------------------------------
+
+def _build_system_prompt(
+    *,
+    soul_name: str,
+    soul_rank: str,
+    soul_specialty: list[str],
+    soul_body: str,
+    history: list[dict],
+) -> str:
+    """Wrap the SOUL body with an identity header and optional conversation history."""
+    specialty_str = ", ".join(soul_specialty) if soul_specialty else "—"
+    header = (
+        f"# SOUL Identity\n"
+        f"You are **{soul_name}** ({soul_rank}). "
+        f"Specialty: {specialty_str}.\n"
+        f"Respond as {soul_name}, staying in your area of expertise. "
+        f"Keep your voice consistent across turns.\n\n"
+    )
+    parts = [header, soul_body.strip(), ""]
+    if history:
+        parts.append("\n# Conversation so far")
+        for turn in history:
+            role = turn.get("role") or turn.get("kind")
+            content = str(turn.get("content") or "").strip()
+            if not content:
+                continue
+            label = "User" if role == "user" else soul_name
+            parts.append(f"\n## {label}\n{content}")
+        parts.append(f"\nNow respond to the user's next message as {soul_name}.")
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -91,13 +127,18 @@ class SessionManager:
         input_text: str,
         session_id: str | None,
         soul_id: str,
-        soul_content: str,
+        soul_detail: "SoulDetail",
+        history: list[dict],
+        project_path: "Path",
+        project_id: str,
     ) -> Run:
         """Create a Run, spawn the subprocess, and begin draining stdout.
 
         Raises RuntimeError if CLAUDE_CMD is not found or the process fails
         to start.
         """
+        from pathlib import Path  # local import to avoid circular at module level
+
         if CLAUDE_CMD is None:
             raise RuntimeError(
                 "claude executable not found on PATH.  "
@@ -114,11 +155,22 @@ class SessionManager:
             run_id=run_id,
             session_id=sid,
             soul_id=soul_id,
+            project_id=project_id,
             proc=None,
             queue=asyncio.Queue(maxsize=RUN_QUEUE_MAXSIZE),
             done=asyncio.Event(),
             started_at=time.monotonic(),
         )
+
+        # Build enhanced system prompt: identity header + SOUL body + history.
+        system_prompt = _build_system_prompt(
+            soul_name=soul_detail.name,
+            soul_rank=soul_detail.rank,
+            soul_specialty=soul_detail.specialty,
+            soul_body=soul_detail.content,
+            history=history,
+        )
+        prompt_bytes = len(system_prompt.encode("utf-8"))
 
         # Build argument list — never interpolated into a shell string.
         # config.py guarantees CLAUDE_CMD is a real .exe (or None, caught above).
@@ -128,12 +180,15 @@ class SessionManager:
             CLAUDE_CMD,
             *CLAUDE_ARGS_BASE,
             "--append-system-prompt",
-            soul_content,
+            system_prompt,
             "--",
             input_text,
         ]
 
-        logger.info("spawning run %s (session=%s soul=%s)", run_id, sid, soul_id)
+        logger.info(
+            "spawning run %s (session=%s soul=%s project=%s system_prompt_bytes=%d history_turns=%d)",
+            run_id, sid, soul_id, project_id, prompt_bytes, len(history),
+        )
         logger.debug("claude exec: %r + %d extra args", args[0], len(args) - 1)
 
         try:
@@ -142,7 +197,7 @@ class SessionManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 stdin=asyncio.subprocess.DEVNULL,
-                cwd=str(SUBPROCESS_CWD),
+                cwd=str(project_path),
                 env={**os.environ},
             )
         except (OSError, FileNotFoundError) as exc:
@@ -211,6 +266,24 @@ class SessionManager:
             *(self.terminate_run(rid) for rid in run_ids),
             return_exceptions=True,
         )
+
+    async def terminate_runs_for_project(self, project_id: str) -> int:
+        """Terminate all active runs belonging to the given project_id.
+
+        Returns the count of runs terminated.
+        """
+        async with self._lock:
+            run_ids = [
+                rid for rid, run in self._runs.items()
+                if run.project_id == project_id
+            ]
+        if not run_ids:
+            return 0
+        await asyncio.gather(
+            *(self.terminate_run(rid) for rid in run_ids),
+            return_exceptions=True,
+        )
+        return len(run_ids)
 
     # ------------------------------------------------------------------
     # Internal tasks

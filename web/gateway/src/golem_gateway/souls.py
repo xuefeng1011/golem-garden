@@ -9,8 +9,6 @@ from typing import Optional
 import frontmatter
 from pydantic import BaseModel, field_validator
 
-from golem_gateway.config import SOULS_GLOBAL_DIR, SOULS_OVERRIDE_DIR
-
 _VALID_SOUL_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -94,13 +92,15 @@ def _parse_soul_file(path: Path) -> Optional[SoulDetail]:
     )
 
 
-_scan_cache: dict[str, tuple[float, list[SoulDetail]]] = {}
+_scan_cache: dict[Path, tuple[float, list[SoulDetail]]] = {}
 
 
-def _dir_mtime_fingerprint() -> float:
-    """Max mtime across both SOUL dirs — changes invalidate cache."""
+def _dir_mtime_fingerprint(project_path: Path) -> float:
+    """Max mtime across both SOUL dirs for the given project — changes invalidate cache."""
+    override_dir = project_path / ".golem" / "souls"
+    global_dir = project_path / "souls"
     mtimes: list[float] = []
-    for d in (SOULS_OVERRIDE_DIR, SOULS_GLOBAL_DIR):
+    for d in (override_dir, global_dir):
         if d.is_dir():
             mtimes.append(d.stat().st_mtime)
             for f in d.glob("*.md"):
@@ -111,17 +111,22 @@ def _dir_mtime_fingerprint() -> float:
     return max(mtimes) if mtimes else 0.0
 
 
-def scan_souls() -> list[SoulDetail]:
-    """Scan .golem/souls/ (override) then souls/ (global).
+def scan_souls(project_path: Path) -> list[SoulDetail]:
+    """Scan {project_path}/.golem/souls/ (override) then {project_path}/souls/ (global).
 
     Project override wins: if the same basename exists in both dirs,
     the .golem/souls/ version is used.
-    Results are mtime-cached to avoid re-reading all files on every request.
+    Results are mtime-cached per project_path to avoid re-reading all files on every request.
+    If neither soul directory exists, returns an empty list without error.
     """
-    fingerprint = _dir_mtime_fingerprint()
-    cached = _scan_cache.get("all")
+    resolved = project_path.resolve()
+    fingerprint = _dir_mtime_fingerprint(resolved)
+    cached = _scan_cache.get(resolved)
     if cached and cached[0] == fingerprint:
         return cached[1]
+
+    override_dir = resolved / ".golem" / "souls"
+    global_dir = resolved / "souls"
 
     seen: dict[str, SoulDetail] = {}
 
@@ -140,20 +145,23 @@ def scan_souls() -> list[SoulDetail]:
                 seen[soul_id] = parsed
 
     # Override directory has highest priority
-    _scan_dir(SOULS_OVERRIDE_DIR)
+    _scan_dir(override_dir)
     # Global fallback
-    _scan_dir(SOULS_GLOBAL_DIR)
+    _scan_dir(global_dir)
 
     result = list(seen.values())
-    _scan_cache["all"] = (fingerprint, result)
+    _scan_cache[resolved] = (fingerprint, result)
     return result
 
 
-def get_soul_by_id(soul_id: str) -> Optional[SoulDetail]:
-    """Return a single SoulDetail for the given id, or None if not found."""
+def get_soul_by_id(project_path: Path, soul_id: str) -> Optional[SoulDetail]:
+    """Return a single SoulDetail for the given id within the given project, or None."""
     if not _VALID_SOUL_ID.match(soul_id):
         return None
-    for directory in (SOULS_OVERRIDE_DIR, SOULS_GLOBAL_DIR):
+    resolved = project_path.resolve()
+    override_dir = resolved / ".golem" / "souls"
+    global_dir = resolved / "souls"
+    for directory in (override_dir, global_dir):
         candidate = directory / f"{soul_id}.md"
         if not candidate.is_file():
             continue

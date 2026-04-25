@@ -8,15 +8,22 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from golem_gateway.api_activity import router as activity_router
+from golem_gateway.api_projects import router as projects_router
 from golem_gateway.api_runs import router as runs_router
+from golem_gateway.api_skills import router as skills_router
 from golem_gateway.api_souls import router as souls_router
 from golem_gateway.config import CORS_ORIGINS, HOST, PORT
+from golem_gateway.registry import ProjectRegistry
 from golem_gateway.session_manager import SessionManager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Create the SessionManager at startup; shut it down on exit."""
+    """Create the SessionManager and ProjectRegistry at startup; shut down on exit."""
+    registry = ProjectRegistry()
+    await registry.load()
+    app.state.registry = registry
     app.state.session_manager = SessionManager()
     try:
         yield
@@ -26,7 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="GolemGarden Gateway",
-    version="0.2.0",
+    version="0.4.0",
     description="Gateway for SOUL metadata and Claude Code subprocess bridge.",
     lifespan=lifespan,
 )
@@ -35,11 +42,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
+app.include_router(projects_router)
 app.include_router(souls_router)
+app.include_router(activity_router)
+app.include_router(skills_router)
 app.include_router(runs_router)
 
 

@@ -1,38 +1,9 @@
-"""Gateway configuration: project root resolution and constants."""
+"""Gateway configuration: server constants."""
 
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
-
-
-def _find_project_root() -> Path:
-    """Walk up from this file until we find the directory containing '.golem/'.
-
-    Falls back to env var GOLEM_PROJECT if set (absolute path wins).
-    """
-    env_override = os.environ.get("GOLEM_PROJECT", "").strip()
-    if env_override:
-        p = Path(env_override).resolve()
-        if p.is_dir():
-            return p
-
-    # Walk up from this file's location
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / ".golem").is_dir():
-            return candidate
-
-    # Last resort: cwd
-    return Path.cwd().resolve()
-
-
-PROJECT_ROOT: Path = _find_project_root()
-
-# SOUL scan directories (priority order — first match wins per id)
-SOULS_OVERRIDE_DIR: Path = PROJECT_ROOT / ".golem" / "souls"
-SOULS_GLOBAL_DIR: Path = PROJECT_ROOT / "souls"
 
 # Server
 HOST: str = "127.0.0.1"
@@ -115,9 +86,6 @@ CLAUDE_ARGS_BASE: list[str] = [
 
 # Async queue max depth per run; excess events are dropped with a WARNING log.
 RUN_QUEUE_MAXSIZE: int = 1000
-
-# Working directory for spawned Claude Code subprocesses.
-SUBPROCESS_CWD: Path = PROJECT_ROOT
 
 # Maximum wall-clock seconds before a run is forcibly terminated.
 MAX_RUN_SECONDS: int = 300

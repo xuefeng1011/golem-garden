@@ -1,28 +1,30 @@
-"""API router: POST /v1/runs and GET /v1/runs/{run_id}/events."""
+"""API router: POST /v1/projects/{project_id}/runs and GET /v1/runs/{run_id}/events."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from typing import Any, AsyncIterator
+from pathlib import Path
+from typing import Any, AsyncIterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 
 from golem_gateway import souls
 from golem_gateway.config import INPUT_MAX_BYTES
 from golem_gateway.events import HermesEvent
+from golem_gateway.registry import ProjectRegistry
 from golem_gateway.session_manager import Run, SessionManager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["runs"])
+router = APIRouter(tags=["runs"])
 
 
 # ---------------------------------------------------------------------------
-# Dependency
+# Dependencies
 # ---------------------------------------------------------------------------
 
 def get_manager(request: Request) -> SessionManager:
@@ -30,14 +32,27 @@ def get_manager(request: Request) -> SessionManager:
     return request.app.state.session_manager  # type: ignore[no-any-return]
 
 
+def get_registry(request: Request) -> ProjectRegistry:
+    return request.app.state.registry  # type: ignore[no-any-return]
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
+
+HISTORY_MAX_BYTES: int = 64 * 1024  # 64 KiB combined history cap
+
+
+class HistoryTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
 
 class RunRequest(BaseModel):
     input: str
     session_id: str | None = None
     soul_id: str
+    history: list[HistoryTurn] = Field(default_factory=list)
 
     @field_validator("soul_id")
     @classmethod
@@ -60,26 +75,38 @@ class RunResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/runs
+# POST /v1/projects/{project_id}/runs
 # ---------------------------------------------------------------------------
 
-@router.post("/runs", response_model=RunResponse)
+@router.post("/v1/projects/{project_id}/runs", response_model=RunResponse)
 async def create_run(
+    project_id: str,
     body: RunRequest,
     manager: SessionManager = Depends(get_manager),
+    registry: ProjectRegistry = Depends(get_registry),
 ) -> RunResponse:
     """Spawn a Claude Code subprocess for the given input + SOUL and return run_id."""
+
+    # 404: unknown project
+    project = await registry.get(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"project {project_id!r} not found")
+
+    project_path = Path(project.path)
 
     # 413: oversized input
     if len(body.input.encode("utf-8")) > INPUT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="input exceeds 32 KiB limit")
 
+    # 413: oversized history
+    history_bytes = sum(len(t.content.encode("utf-8")) for t in body.history)
+    if history_bytes > HISTORY_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="history exceeds 64 KiB limit")
+
     # 404: unknown soul
-    soul = souls.get_soul_by_id(body.soul_id)
+    soul = souls.get_soul_by_id(project_path, body.soul_id)
     if soul is None:
         raise HTTPException(status_code=404, detail=f"soul {body.soul_id!r} not found")
-
-    soul_content = soul.content
 
     # Assign session_id here so response always carries it.
     session_id = body.session_id or str(uuid.uuid4())
@@ -89,7 +116,10 @@ async def create_run(
             input_text=body.input,
             session_id=session_id,
             soul_id=body.soul_id,
-            soul_content=soul_content,
+            soul_detail=soul,
+            history=[t.model_dump() for t in body.history],
+            project_path=project_path,
+            project_id=project_id,
         )
     except RuntimeError as exc:
         logger.error("failed to spawn run: %s", exc)
@@ -99,10 +129,10 @@ async def create_run(
 
 
 # ---------------------------------------------------------------------------
-# GET /v1/runs/{run_id}/events  (SSE)
+# GET /v1/runs/{run_id}/events  (SSE — global, run_id is sufficient)
 # ---------------------------------------------------------------------------
 
-@router.get("/runs/{run_id}/events")
+@router.get("/v1/runs/{run_id}/events")
 async def run_events(
     run_id: str,
     manager: SessionManager = Depends(get_manager),
