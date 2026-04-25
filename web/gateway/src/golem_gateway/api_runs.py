@@ -109,13 +109,41 @@ async def create_run(
     if soul is None:
         raise HTTPException(status_code=404, detail=f"soul {body.soul_id!r} not found")
 
-    # Assign session_id here so response always carries it.
+    # Phase 8: session_id MUST be a valid UUID v4 because we pass it to claude
+    # CLI as --session-id (which strictly requires UUID v4). If the caller did
+    # not supply one, OR supplied something that does not parse as UUID v4,
+    # generate a fresh server-side UUID and use that. The actual session_id
+    # used is returned in the response so the client can track it.
     session_id = body.session_id or str(uuid.uuid4())
+    try:
+        parsed = uuid.UUID(session_id)
+        if parsed.version != 4:
+            raise ValueError(f"session_id is UUID v{parsed.version}, expected v4")
+    except (ValueError, AttributeError, TypeError) as exc:
+        logger.info(
+            "client-supplied session_id %r invalid (%s); generating fresh UUID v4",
+            session_id, exc,
+        )
+        session_id = str(uuid.uuid4())
 
-    # --- Session persistence: record user message before spawning subprocess ---
+    # Phase 8: body.history is now ignored — claude maintains conversation
+    # context natively via --resume. We accept the field for backward compat
+    # but log a hint when callers still send it so they can migrate.
+    if body.history:
+        logger.debug(
+            "history field passed (%d turns) but ignored — using --resume for session %s",
+            len(body.history), session_id,
+        )
+
+    # --- Session persistence: snapshot count + upsert session row BEFORE spawn ---
     store = get_session_store(project_path)
+    # Phase 8: snapshot prior turn count first; spawn_run uses it to pick
+    # --session-id (first turn) vs --resume (continuing). The user message is
+    # NOT added yet — we wait until spawn_run succeeds to avoid leaving an
+    # orphaned user row that would falsely bump prior_count on the retry,
+    # forcing --resume against a never-created claude session (Zen Phase 8.1).
+    prior_turn_count = store.get_user_assistant_count(session_id)
     store.upsert_session(session_id=session_id, soul_id=body.soul_id)
-    store.add_message(session_id=session_id, role="user", content=body.input)
 
     try:
         run = await manager.spawn_run(
@@ -126,12 +154,13 @@ async def create_run(
             history=[t.model_dump() for t in body.history],
             project_path=project_path,
             project_id=project_id,
+            prior_turn_count=prior_turn_count,
         )
     except Exception as exc:
-        # Zen F3: the user message is already persisted. If spawn fails the
-        # session would otherwise show an orphaned user turn forever. Append a
-        # system marker so the UI can render the failure beside the user msg
-        # rather than silently lose context.
+        # Spawn failed before any user/assistant rows existed for this session.
+        # Append a system marker so the UI can render the failure; the next
+        # POST against the same session_id will see prior_turn_count=0 and
+        # correctly retry with --session-id.
         logger.error("failed to spawn run for session %s: %s", session_id, exc)
         try:
             store.add_message(
@@ -151,6 +180,10 @@ async def create_run(
         raise HTTPException(
             status_code=503, detail=f"failed to spawn claude: {exc}"
         ) from exc
+
+    # Spawn succeeded — now safe to persist the user message. The on_terminal
+    # callback (set below) will append the assistant reply once streaming completes.
+    store.add_message(session_id=session_id, role="user", content=body.input)
 
     # Wire the on_terminal callback: persist assistant reply + tool summary.
     soul_id_capture = body.soul_id

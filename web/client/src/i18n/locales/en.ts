@@ -714,6 +714,35 @@ export default {
     downloadFile: 'Download file',
   },
 
+  // Project Init
+  init: {
+    title: 'Initialize {name}',
+    choosePack: 'Choose a team preset',
+    badge: 'Needs init',
+    button: 'Initialize',
+    install: 'Install {pack}',
+    abort: 'Abort',
+    installing: 'Installing...',
+    success: 'Install complete — SOUL team is ready',
+    error: 'Install failed',
+    overwriteWarning: 'This project already has {count} SOUL(s). Overwrite?',
+    overwriteConfirm: 'Overwrite',
+    packs: {
+      fullstack: {
+        name: 'Fullstack Web',
+        description: 'Frontend + Backend + DevOps + QA + Director (5 members)',
+      },
+      gamedev: {
+        name: 'Game Dev',
+        description: 'Game Logic + Designer + Frontend + QA + Director (5 members)',
+      },
+      trading: {
+        name: 'Trading',
+        description: 'Data Analyst + News + Sentinel + Director (4 members)',
+      },
+    },
+  },
+
   // Forge
   forge: {
     title: 'Forge Commands',

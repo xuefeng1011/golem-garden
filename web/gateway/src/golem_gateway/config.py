@@ -103,7 +103,9 @@ CLAUDE_ARGS_BASE: list[str] = [
     "--print",
     "--output-format=stream-json",
     "--verbose",
-    "--no-session-persistence",
+    # REMOVED: "--no-session-persistence" — we now use --session-id/--resume natively
+    # so claude maintains conversation context across turns and we get cache hits
+    # on subsequent turns. See session_manager.spawn_run for the decision tree.
 ]
 
 # Async queue max depth per run; excess events are dropped with a WARNING log.

@@ -10,7 +10,9 @@ const props = defineProps<{
   profile: HermesProfile
   overview?: ProjectOverview | null
 }>()
-const emit = defineEmits<{}>()
+const emit = defineEmits<{
+  init: [projectId: string, projectName: string, soulsCount: number]
+}>()
 
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
@@ -217,6 +219,16 @@ async function handleExport() {
     </div>
 
     <div class="card-actions">
+      <template v-if="overview && overview.souls_count === 0 && profile.id">
+        <NTag size="tiny" type="warning" :bordered="false">{{ t('init.badge') }}</NTag>
+        <NButton
+          size="tiny"
+          type="primary"
+          @click="emit('init', profile.id!, profile.name, 0)"
+        >
+          {{ t('init.button') }}
+        </NButton>
+      </template>
       <NButton
         v-if="!profile.active"
         size="tiny"

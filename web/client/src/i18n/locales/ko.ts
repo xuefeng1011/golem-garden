@@ -655,6 +655,35 @@ export default {
     noData: '사용량 데이터 없음',
   },
 
+  // 프로젝트 초기화
+  init: {
+    title: '{name} 초기화',
+    choosePack: '어떤 팀을 구성할까요?',
+    badge: '초기화 필요',
+    button: '초기화',
+    install: '{pack} 설치',
+    abort: '중단',
+    installing: '설치 중...',
+    success: '설치 완료 — SOUL 팀이 구성되었습니다',
+    error: '설치 실패',
+    overwriteWarning: '이미 {count}개 SOUL이 있습니다. 덮어쓸까요?',
+    overwriteConfirm: '덮어쓰기',
+    packs: {
+      fullstack: {
+        name: '풀스택 웹앱',
+        description: 'Frontend + Backend + DevOps + QA + Director (5명)',
+      },
+      gamedev: {
+        name: '게임 개발',
+        description: 'Game Logic + Designer + Frontend + QA + Director (5명)',
+      },
+      trading: {
+        name: '트레이딩',
+        description: 'Data Analyst + News + Sentinel + Director (4명)',
+      },
+    },
+  },
+
   // Forge
   forge: {
     title: 'Forge 명령',

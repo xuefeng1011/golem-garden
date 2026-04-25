@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useMessage } from 'naive-ui'
 import ProfileCard from './ProfileCard.vue'
+import ProjectInitModal from './ProjectInitModal.vue'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { useI18n } from 'vue-i18n'
 import { fetchOverview } from '@/api/hermes/overview'
@@ -10,6 +12,7 @@ defineEmits<{ rename: [name: string] }>()
 
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
+const message = useMessage()
 
 // Map<projectId, ProjectOverview | null>  (null = load failed or no id)
 const overviewCache = ref<Map<string, ProjectOverview | null>>(new Map())
@@ -33,6 +36,41 @@ watch(
   },
   { immediate: false }
 )
+
+// --- Init modal state ---
+interface InitTarget {
+  projectId: string
+  projectName: string
+  soulsCount: number
+}
+const initTarget = ref<InitTarget | null>(null)
+
+function handleInitEvent(projectId: string, projectName: string, soulsCount: number) {
+  initTarget.value = { projectId, projectName, soulsCount }
+}
+
+function handleInitClose() {
+  initTarget.value = null
+}
+
+async function handleInitialized() {
+  if (!initTarget.value) return
+  const id = initTarget.value.projectId
+  try {
+    const fresh = await fetchOverview(id)
+    const next = new Map(overviewCache.value)
+    next.set(id, fresh)
+    overviewCache.value = next
+    // Phase 8.1 verification: pack install reported success but no SOULs
+    // were actually written (e.g. silent pack failure, wrong pack name).
+    // Surface this so the user isn't left wondering why the badge persists.
+    if (fresh.souls_count === 0) {
+      message.error('설치는 성공했지만 SOUL이 생성되지 않았습니다 — 팩 이름을 확인하세요')
+    }
+  } catch {
+    // ignore, stale cache will self-correct on next load
+  }
+}
 </script>
 
 <template>
@@ -50,8 +88,19 @@ watch(
       :profile="p"
       :overview="p.id ? (overviewCache.get(p.id) ?? undefined) : undefined"
       @rename="$emit('rename', $event)"
+      @init="handleInitEvent"
     />
   </div>
+
+  <ProjectInitModal
+    v-if="initTarget"
+    :project-id="initTarget.projectId"
+    :project-name="initTarget.projectName"
+    :existing-souls-count="initTarget.soulsCount"
+    :open="true"
+    @close="handleInitClose"
+    @initialized="handleInitialized"
+  />
 </template>
 
 <style scoped lang="scss">

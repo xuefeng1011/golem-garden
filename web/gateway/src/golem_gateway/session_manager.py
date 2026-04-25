@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -39,6 +40,7 @@ from golem_gateway.events import (
     ToolStartedEvent,
     parse_stream_event,
 )
+from golem_gateway.sessions_db import get_session_store
 from golem_gateway.souls import SoulDetail
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,8 @@ class Run:
     tool_log: list[str] = field(default_factory=list)
     # Called once with the accumulated assistant text after run.completed is enqueued.
     on_terminal: Callable[[str], None] | None = None
+    # Accumulated stderr lines for post-exit inspection (truncated at ~4 KiB total).
+    stderr_buffer: list[str] = field(default_factory=list)
 
 
 # Terminal event type names — these must never be dropped from the queue.
@@ -102,7 +106,13 @@ def _build_system_prompt(
     soul_body: str,
     history: list[dict],
 ) -> str:
-    """Wrap the SOUL body with an identity header and optional conversation history."""
+    """Wrap the SOUL body with an identity header.
+
+    Phase 8: ``history`` arg is kept for API compatibility but is no longer
+    embedded in the system prompt. Claude maintains conversation context
+    natively via ``--session-id`` / ``--resume`` (see ``spawn_run``), which
+    preserves prompt cache hits across turns.
+    """
     specialty_str = ", ".join(soul_specialty) if soul_specialty else "—"
     header = (
         f"# SOUL Identity\n"
@@ -111,18 +121,7 @@ def _build_system_prompt(
         f"Respond as {soul_name}, staying in your area of expertise. "
         f"Keep your voice consistent across turns.\n\n"
     )
-    parts = [header, soul_body.strip(), ""]
-    if history:
-        parts.append("\n# Conversation so far")
-        for turn in history:
-            role = turn.get("role") or turn.get("kind")
-            content = str(turn.get("content") or "").strip()
-            if not content:
-                continue
-            label = "User" if role == "user" else soul_name
-            parts.append(f"\n## {label}\n{content}")
-        parts.append(f"\nNow respond to the user's next message as {soul_name}.")
-    return "\n".join(parts)
+    return header + soul_body.strip() + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +129,16 @@ def _build_system_prompt(
 # ---------------------------------------------------------------------------
 
 class SessionManager:
+    # F2 (Phase 8.1 hardening): regex with word boundaries to anchor the
+    # session-lost match. Substring matching previously could trigger on
+    # incidental phrases like "tool session not found in cache".
+    _SESSION_LOST_PATTERN: "re.Pattern[str]" = re.compile(
+        r"\b(session (file )?not found|could not resume session|no such session)\b",
+        re.IGNORECASE,
+    )
+    # Max bytes to accumulate in stderr_buffer before discarding new lines.
+    _STDERR_BUFFER_MAX_BYTES: int = 4 * 1024  # 4 KiB
+
     def __init__(self) -> None:
         self._runs: dict[str, Run] = {}
         # session_id -> set of run_ids (for future GC / history)
@@ -150,6 +159,7 @@ class SessionManager:
         history: list[dict],
         project_path: "Path",
         project_id: str,
+        prior_turn_count: int | None = None,
     ) -> Run:
         """Create a Run, spawn the subprocess, and begin draining stdout.
 
@@ -191,6 +201,36 @@ class SessionManager:
         )
         prompt_bytes = len(system_prompt.encode("utf-8"))
 
+        # Phase 8: decide between --session-id (first turn, claude creates the
+        # session keyed by our UUID) and --resume (continuing turn, claude
+        # loads its existing session file). Mutually exclusive.
+        # If a session row exists in the DB but message_count is 0 (e.g. crash
+        # mid-turn before persistence), --session-id is still safe — claude
+        # will overwrite with an empty session.
+        # Phase 8: prior_turn_count is captured by api_runs BEFORE it adds the
+        # caller's user message to the DB, so it correctly reflects whether
+        # this is the first turn of the session. We accept it as a param to
+        # avoid the race where reading message_count here always returns ≥1
+        # because the user message has already been persisted upstream.
+        if prior_turn_count is not None:
+            prior_count = prior_turn_count
+        else:
+            # Defensive fallback for any caller that forgot to pass it.
+            store = get_session_store(project_path)
+            try:
+                prior_count = store.get_message_count(sid)
+            except Exception as exc:
+                logger.warning(
+                    "get_message_count failed for session %s (%s); defaulting to 0",
+                    sid, exc,
+                )
+                prior_count = 0
+
+        if prior_count == 0:
+            session_args = ["--session-id", sid]
+        else:
+            session_args = ["--resume", sid]
+
         # Build argument list — never interpolated into a shell string.
         # config.py guarantees CLAUDE_CMD is a real .exe (or None, caught above).
         # The "--" separator prevents input_text starting with "-" from being
@@ -198,6 +238,7 @@ class SessionManager:
         args: list[str] = [
             CLAUDE_CMD,
             *CLAUDE_ARGS_BASE,
+            *session_args,
             "--append-system-prompt",
             system_prompt,
             "--",
@@ -205,8 +246,9 @@ class SessionManager:
         ]
 
         logger.info(
-            "spawning run %s (session=%s soul=%s project=%s system_prompt_bytes=%d history_turns=%d)",
+            "spawning run %s (session=%s soul=%s project=%s system_prompt_bytes=%d history_turns=%d session_mode=%s prior_count=%d)",
             run_id, sid, soul_id, project_id, prompt_bytes, len(history),
+            session_args[0], prior_count,
         )
         logger.debug("claude exec: %r + %d extra args", args[0], len(args) - 1)
 
@@ -362,16 +404,47 @@ class SessionManager:
 
                 logger.info("run %s exited rc=%d", run.run_id, rc)
 
+                # Phase 8.1 race fix: ensure all stderr is consumed before
+                # pattern detection. proc.wait() returning does NOT guarantee
+                # the concurrent _drain_stderr task has finished consuming the
+                # pipe; for fast-exit cases (claude rejecting --resume) the
+                # session-lost line could still be in the kernel buffer.
+                # Shield prevents external cancellation from interrupting the
+                # drain; 0.5s cap prevents stuck draining from blocking us.
+                if run.stderr_task is not None and not run.stderr_task.done():
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(run.stderr_task), timeout=0.5
+                        )
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass  # best-effort
+
                 if not run.terminal_emitted:
                     # Process crashed before emitting a result event.
                     # Guard with terminal_emitted so watchdog timeout can't double-emit.
                     run.terminal_emitted = True
+                    # F2: detect "session lost" via anchored regex (substring
+                    # matching previously over-fired on incidental phrases).
+                    stderr_text = " ".join(run.stderr_buffer)
+                    if self._SESSION_LOST_PATTERN.search(stderr_text):
+                        reason = (
+                            "claude session file missing or GC'd — "
+                            "DELETE this session and start fresh "
+                            "(claude session lost — please retry: "
+                            "DELETE /v1/projects/{project_id}/sessions/{session_id})"
+                        )
+                        logger.warning(
+                            "run %s: detected lost session (rc=%d); emitting clear error",
+                            run.run_id, rc,
+                        )
+                    else:
+                        reason = f"process exited rc={rc}"
                     self._enqueue(
                         run,
                         RunFailedEvent(
                             run_id=run.run_id,
                             session_id=run.session_id,
-                            reason=f"process exited rc={rc}",
+                            reason=reason,
                         ),
                     )
 
@@ -387,17 +460,27 @@ class SessionManager:
             run.done.set()
 
     async def _drain_stderr(self, run: Run) -> None:
-        """Read stderr from the subprocess and log at INFO.
+        """Read stderr from the subprocess, log it, and buffer it for inspection.
 
         Claude Code writes status/progress to stderr; non-empty stderr is
         normal and should not be treated as an error.
+
+        F2: lines are accumulated into run.stderr_buffer (capped at 4 KiB
+        total) so that _drain_stdout's finally block can inspect stderr for
+        "session not found" patterns after the process exits.
         """
         assert run.proc is not None and run.proc.stderr is not None
+        buffered_bytes = 0
         try:
             async for line_bytes in run.proc.stderr:
                 line = line_bytes.decode("utf-8", errors="replace").rstrip()
                 if line:
                     logger.info("claude stderr (run=%s): %s", run.run_id, line)
+                    # Accumulate for post-exit inspection, bounded at 4 KiB.
+                    line_len = len(line.encode("utf-8"))
+                    if buffered_bytes + line_len <= self._STDERR_BUFFER_MAX_BYTES:
+                        run.stderr_buffer.append(line)
+                        buffered_bytes += line_len
         except asyncio.CancelledError:
             pass
         except Exception as exc:

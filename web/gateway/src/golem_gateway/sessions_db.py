@@ -303,6 +303,39 @@ class SessionStore:
                 (len(messages), now, session_id),
             )
 
+    def get_message_count(self, session_id: str) -> int:
+        """Return the persisted message_count for a session, or 0 if unknown.
+
+        Used by the API and UI for display purposes (badge counts, etc.).
+        Includes all rows regardless of role.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT message_count FROM sessions WHERE id = ?",
+                (session_id,),
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+
+    def get_user_assistant_count(self, session_id: str) -> int:
+        """Count only user+assistant messages for a session, or 0 if unknown.
+
+        System markers (e.g. spawn-failure rows from F3) and tool messages
+        are NOT counted, because they don't represent turns claude has actually
+        seen. This prevents a poisoned --resume against a non-existent session
+        when a prior spawn failure wrote a role="system" marker row.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                SELECT COUNT(*) FROM messages
+                WHERE session_id = ? AND role IN ('user', 'assistant')
+                """,
+                (session_id,),
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+
     def list_sessions(self, limit: int = 100) -> list[SessionSummary]:
         """Return sessions sorted by updated_at DESC."""
         with self._connect() as conn:
