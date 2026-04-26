@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from golem_gateway.session_manager import SessionManager, _build_system_prompt
+from golem_gateway.session_manager import SessionManager, _build_system_prompt, Run
 
 
 # ---------------------------------------------------------------------------
@@ -150,3 +150,189 @@ class TestArgvDecision:
             assert has_session_id ^ has_resume, (
                 f"count={count}: both or neither present: {args}"
             )
+
+
+# ---------------------------------------------------------------------------
+# TestRunTerminalState (Zen Phase M2 regression tests)
+# ---------------------------------------------------------------------------
+
+
+class TestRunTerminalState:
+    """Verify Run dataclass terminal state fields are correctly initialized
+    and can be populated during event draining."""
+
+    def test_run_terminal_fields_initialized_empty(self) -> None:
+        """On Run creation, all terminal_* fields default to empty/zero."""
+        import asyncio
+        import time
+        import uuid
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+
+        # Verify default values
+        assert run.terminal_result == "", "terminal_result should start empty"
+        assert run.terminal_usage == {}, "terminal_usage should start as empty dict"
+        assert run.terminal_duration_ms == 0, "terminal_duration_ms should start at 0"
+        assert run.session_model == "", "session_model should start empty"
+
+    def test_run_terminal_result_accepts_success(self) -> None:
+        """terminal_result can be set to 'success'."""
+        import asyncio
+        import time
+        import uuid
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+        run.terminal_result = "success"
+        assert run.terminal_result == "success"
+
+    def test_run_terminal_result_accepts_fail(self) -> None:
+        """terminal_result can be set to 'fail'."""
+        import asyncio
+        import time
+        import uuid
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+        run.terminal_result = "fail"
+        assert run.terminal_result == "fail"
+
+    def test_run_terminal_usage_accepts_dict(self) -> None:
+        """terminal_usage can be populated with token counts."""
+        import asyncio
+        import time
+        import uuid
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+        run.terminal_usage = {
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_read_input_tokens": 10,
+        }
+        assert run.terminal_usage["input_tokens"] == 100
+        assert run.terminal_usage["output_tokens"] == 50
+        assert run.terminal_usage["cache_read_input_tokens"] == 10
+
+    def test_run_terminal_duration_ms_accepts_int(self) -> None:
+        """terminal_duration_ms stores run duration."""
+        import asyncio
+        import time
+        import uuid
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+        run.terminal_duration_ms = 1234
+        assert run.terminal_duration_ms == 1234
+
+    def test_run_session_model_accepts_string(self) -> None:
+        """session_model stores the model name from session.init."""
+        import asyncio
+        import time
+        import uuid
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+        run.session_model = "claude-3-5-sonnet-20241022"
+        assert run.session_model == "claude-3-5-sonnet-20241022"
+
+    def test_run_on_terminal_callback_field_exists(self) -> None:
+        """on_terminal callback field can be set."""
+        import asyncio
+        import time
+        import uuid
+
+        def dummy_callback(text: str) -> None:
+            pass
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+        run.on_terminal = dummy_callback
+        assert run.on_terminal is not None
+        assert callable(run.on_terminal)
+        run.on_terminal("test")  # Should not crash
+
+    def test_run_all_terminal_fields_together(self) -> None:
+        """All terminal fields can be set together (e.g., after event draining)."""
+        import asyncio
+        import time
+        import uuid
+
+        run = Run(
+            run_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
+            soul_id="test-soul",
+            project_id="proj-test",
+            proc=None,
+            queue=asyncio.Queue(maxsize=10),
+            done=asyncio.Event(),
+            started_at=time.monotonic(),
+        )
+        # Simulate state after draining events
+        run.terminal_result = "success"
+        run.terminal_usage = {"input_tokens": 150, "output_tokens": 75}
+        run.terminal_duration_ms = 2500
+        run.session_model = "claude-3-5-sonnet-20241022"
+
+        # Verify all fields are set as expected
+        assert run.terminal_result == "success"
+        assert run.terminal_usage["input_tokens"] == 150
+        assert run.terminal_duration_ms == 2500
+        assert run.session_model == "claude-3-5-sonnet-20241022"

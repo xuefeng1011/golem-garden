@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 
-from golem_gateway import souls
+from golem_gateway import growth_log, souls
 from golem_gateway.config import INPUT_MAX_BYTES
 from golem_gateway.events import HermesEvent
 from golem_gateway.registry import ProjectRegistry
@@ -185,8 +185,10 @@ async def create_run(
     # callback (set below) will append the assistant reply once streaming completes.
     store.add_message(session_id=session_id, role="user", content=body.input)
 
-    # Wire the on_terminal callback: persist assistant reply + tool summary.
+    # Wire the on_terminal callback: persist assistant reply + tool summary
+    # and append a growth-log entry for the chat run.
     soul_id_capture = body.soul_id
+    input_capture = body.input
 
     def _persist_assistant(assistant_text: str) -> None:
         # Zen M2: batch the assistant message and the optional tool summary
@@ -204,14 +206,38 @@ async def create_run(
                 "content": "\n".join(run.tool_log),
                 "soul_id": soul_id_capture,
             })
-        if not msgs:
-            return
-        try:
-            store.add_messages_batch(session_id=session_id, messages=msgs)
-        except Exception:
-            logger.exception(
-                "failed to persist assistant messages for run %s", run.run_id
-            )
+        if msgs:
+            try:
+                store.add_messages_batch(session_id=session_id, messages=msgs)
+            except Exception:
+                logger.exception(
+                    "failed to persist assistant messages for run %s", run.run_id
+                )
+
+        # --- growth-log append (best-effort, never blocks chat response) ---
+        # Determine result from terminal event captured by _drain_stdout.
+        gl_result = run.terminal_result if run.terminal_result else "fail"
+
+        # Extract token counts from usage dict (keys match claude stream-json).
+        usage = run.terminal_usage or {}
+        tokens_in: int = int(usage.get("input_tokens") or 0)
+        tokens_out: int = int(usage.get("output_tokens") or 0)
+        tokens_cache: int = int(usage.get("cache_read_input_tokens") or 0)
+
+        # task: first 80 chars of user input, newlines stripped.
+        task_summary = input_capture.replace("\n", " ").replace("\r", "").strip()[:80]
+
+        growth_log.append_entry(
+            project_path,
+            soul_id_capture,
+            task_summary,
+            gl_result,
+            model=run.session_model,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            tokens_cache=tokens_cache,
+            duration_ms=run.terminal_duration_ms,
+        )
 
     run.on_terminal = _persist_assistant
 

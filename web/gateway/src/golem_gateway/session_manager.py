@@ -37,6 +37,7 @@ from golem_gateway.events import (
     RunCompletedEvent,
     RunContext,
     RunFailedEvent,
+    SessionInitEvent,
     ToolStartedEvent,
     parse_stream_event,
 )
@@ -83,6 +84,14 @@ class Run:
     on_terminal: Callable[[str], None] | None = None
     # Accumulated stderr lines for post-exit inspection (truncated at ~4 KiB total).
     stderr_buffer: list[str] = field(default_factory=list)
+    # Terminal event outcome: "success" | "fail" | "" (unknown/not-yet-set).
+    terminal_result: str = ""
+    # Usage dict from RunCompletedEvent (tokens etc.); empty dict if unavailable.
+    terminal_usage: dict = field(default_factory=dict)
+    # Duration in milliseconds from RunCompletedEvent; 0 if unavailable.
+    terminal_duration_ms: int = 0
+    # Model string from SessionInitEvent (populated on first session.init).
+    session_model: str = ""
 
 
 # Terminal event type names — these must never be dropped from the queue.
@@ -389,6 +398,18 @@ class SessionManager:
                     elif ev.event == "tool.started":
                         if isinstance(ev, ToolStartedEvent):
                             run.tool_log.append(ev.tool_name)
+                    # Capture terminal outcome + usage for growth-log.
+                    elif ev.event == "run.completed":
+                        if isinstance(ev, RunCompletedEvent):
+                            run.terminal_result = "fail" if ev.is_error else "success"
+                            run.terminal_usage = ev.usage or {}
+                            run.terminal_duration_ms = ev.duration_ms
+                    elif ev.event == "run.failed":
+                        run.terminal_result = "fail"
+                    # Capture model from session.init.
+                    elif ev.event == "session.init":
+                        if isinstance(ev, SessionInitEvent):
+                            run.session_model = ev.model
                     self._enqueue(run, ev)
         except asyncio.CancelledError:
             pass
