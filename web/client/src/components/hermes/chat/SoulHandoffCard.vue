@@ -82,7 +82,7 @@ const formattedResult = computed<string>(() => {
   }
 })
 
-const resultExpanded = ref(false)
+const resultExpanded = ref<string[]>([])
 </script>
 
 <template>

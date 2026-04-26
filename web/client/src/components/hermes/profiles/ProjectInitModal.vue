@@ -34,10 +34,6 @@ const showConfirmOverwrite = ref(false)
 
 let streamHandle: { abort: () => void } | null = null
 
-const needsOverwriteConfirm = computed(
-  () => (props.existingSoulsCount ?? 0) > 0 && !showConfirmOverwrite.value,
-)
-
 const succeeded = computed(
   () => result.value !== null && 'exit_code' in result.value && (result.value as ForgeCompletedEvent).exit_code === 0,
 )

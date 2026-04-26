@@ -17,6 +17,18 @@ export interface SessionSummary {
   created_at: string
   updated_at: string
   message_count: number
+  // Usage fields — populated when Gateway returns per-session stats
+  input_tokens?: number
+  output_tokens?: number
+  cache_read_tokens?: number
+  actual_cost_usd?: number
+  estimated_cost_usd?: number
+  model?: string
+  started_at?: number
+  // Optional display fields — may be returned by some backends or search endpoints
+  preview?: string
+  source?: string
+  last_active?: number
 }
 
 export interface HermesMessage {
