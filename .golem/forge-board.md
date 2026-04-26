@@ -78,7 +78,7 @@ branch: feature/web-ui (Tier C 진행 중)
 1. ~~JSONL 인젝션~~ — **부분 해결** (`_json_escape()` 적용, 일부 경로 미완)
 2. ~~승급 로직 중복~~ — **해결** (`rank_should_promote()` 통합)
 3. ~~무조건 모듈 로딩~~ — **해결** (`_load()` lazy loader)
-4. **soul_parse() 글로벌 변수 오염** — 미해결 (4/18부터 누적, save/restore 패턴으로 우회)
+4. ~~soul_parse() 글로벌 변수 오염~~ — **해결** (4/26 Sage mutation 검증: 13개 SOUL_* 변수 모두 매 호출 명시 재할당으로 구조적 차단. strong test 3개 — EFFORT/DISALLOWED_TOOLS/IS_COORDINATOR — mutation-validated. 잔여 10개 변수 strong test는 후속 PR)
 5. ~~경로 순회 미검증~~ — registry는 해결 (`$HOME` 강제), 모듈별 basename 가드는 재검토 필요
 
 ### 4/25 신규 부채 (Tier B/C 도입 후)

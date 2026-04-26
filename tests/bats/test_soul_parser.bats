@@ -73,18 +73,67 @@ load "test_helper"
   [[ "$SOUL_TOOLS" =~ "TaskCreate" ]]
 }
 
-@test "soul-parser: 연속 파싱 시 변수 누설 없음" {
-  load_fixture "souls/ryn.md" "$GOLEM_PROJECT/.golem/souls/ryn.md"
+@test "soul-parser: 글로벌 변수 누설 — strong invariant (effort model-based reset)" {
+  load_fixture "souls/nex.md" "$GOLEM_PROJECT/.golem/souls/nex.md"
   source "$GOLEM_ROOT/lib/soul-parser.sh"
-  soul_parse "$GOLEM_PROJECT/.golem/souls/ryn.md"
-  local first_name="$SOUL_NAME"
-  local first_rank="$SOUL_RANK"
+  soul_parse "$GOLEM_PROJECT/.golem/souls/nex.md"
 
+  # nex.md에 명시된 effort: high
+  [ "$SOUL_NAME" = "Nex" ]
+  [ "$SOUL_EFFORT" = "high" ]
+  [ "$SOUL_MODEL" = "opus" ]
+  local nex_effort="$SOUL_EFFORT"
+
+  # 두 번째 SOUL 파싱: zen.md는 effort 필드 미명시 (model: haiku → 기본값 "low")
   load_fixture "souls/zen.md" "$GOLEM_PROJECT/.golem/souls/zen.md"
   soul_parse "$GOLEM_PROJECT/.golem/souls/zen.md"
 
-  [ "$first_name" = "Ryn" ]
   [ "$SOUL_NAME" = "Zen" ]
-  [ "$first_rank" = "junior" ]
-  [ "$SOUL_RANK" = "novice" ]
+  [ "$SOUL_MODEL" = "haiku" ]
+
+  # STRONG INVARIANT: zen의 SOUL_EFFORT는 model 기반 기본값(low)이어야 함
+  # nex의 "high"가 남아있다면 = 누설 = FAIL
+  [ "$SOUL_EFFORT" = "low" ]
+  [ "$SOUL_EFFORT" != "$nex_effort" ]
+}
+
+@test "soul-parser: SOUL_DISALLOWED_TOOLS — director→non-director 누설 차단 (보안)" {
+  load_fixture "souls/nex.md" "$GOLEM_PROJECT/.golem/souls/nex.md"
+  source "$GOLEM_ROOT/lib/soul-parser.sh"
+  soul_parse "$GOLEM_PROJECT/.golem/souls/nex.md"
+
+  # nex(director)는 disallowed 채움
+  [ "$SOUL_ROLE" = "director" ]
+  [[ -n "$SOUL_DISALLOWED_TOOLS" ]]
+  local nex_disallowed="$SOUL_DISALLOWED_TOOLS"
+
+  # 두 번째 SOUL 파싱: zen은 director 아님 → DISALLOWED_TOOLS는 빈 문자열
+  load_fixture "souls/zen.md" "$GOLEM_PROJECT/.golem/souls/zen.md"
+  soul_parse "$GOLEM_PROJECT/.golem/souls/zen.md"
+
+  [ "$SOUL_ROLE" = "qa-tester" ]
+
+  # STRONG INVARIANT: zen은 director 아님 → DISALLOWED_TOOLS는 빈 문자열
+  # nex의 값이 누설되면 Junior가 권한 차단됨 (보안 회귀)
+  [ -z "$SOUL_DISALLOWED_TOOLS" ]
+  [ "$SOUL_DISALLOWED_TOOLS" != "$nex_disallowed" ]
+}
+
+@test "soul-parser: SOUL_IS_COORDINATOR — director→non-director 누설 차단" {
+  load_fixture "souls/nex.md" "$GOLEM_PROJECT/.golem/souls/nex.md"
+  source "$GOLEM_ROOT/lib/soul-parser.sh"
+  soul_parse "$GOLEM_PROJECT/.golem/souls/nex.md"
+
+  [ "$SOUL_ROLE" = "director" ]
+  [ "$SOUL_IS_COORDINATOR" = "true" ]
+
+  # 두 번째 SOUL 파싱: zen은 director 아님 → IS_COORDINATOR는 false
+  load_fixture "souls/zen.md" "$GOLEM_PROJECT/.golem/souls/zen.md"
+  soul_parse "$GOLEM_PROJECT/.golem/souls/zen.md"
+
+  [ "$SOUL_ROLE" = "qa-tester" ]
+
+  # STRONG INVARIANT: zen은 director 아님 → IS_COORDINATOR는 false
+  [ "$SOUL_IS_COORDINATOR" = "false" ]
+  [ "$SOUL_IS_COORDINATOR" != "true" ]
 }
