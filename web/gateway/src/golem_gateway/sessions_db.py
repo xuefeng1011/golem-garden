@@ -12,12 +12,13 @@ MVP.
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 from pydantic import BaseModel
 
@@ -117,13 +118,85 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
 """
 
-# Bumped on every schema migration. Existing DBs are not migrated automatically
-# yet; future migrations will compare CURRENT_SCHEMA_VERSION to the row in
-# schema_version and apply the necessary ALTERs.
-# TODO(v0.5): introduce ON DELETE CASCADE for messages.session_id (requires
-# table redefine + migration). For now delete_session() does the cascade
-# manually.
+# ---------------------------------------------------------------------------
+# Migration framework
+# ---------------------------------------------------------------------------
+
+# Each entry migrates from version N to N+1 (index 0 → v1→v2, etc.).
+# To add a migration: append a function here and bump CURRENT_SCHEMA_VERSION.
+# The function receives an open connection; it must NOT commit (caller handles
+# the transaction boundary so a failed migration leaves user_version unchanged).
+_MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
+    # _migrate_v1_to_v2,  # example — uncomment when v2 schema is ready
+]
+
+# Must equal len(_MIGRATIONS) + 1 once migrations exist.
 CURRENT_SCHEMA_VERSION: int = 1
+
+
+def _backup_db(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Checkpoint WAL then copy db_path to db_path.bak.<YYYYMMDD-HHMMSS>.
+
+    WAL checkpoint flushes all committed WAL frames into the main DB file so
+    the single-file backup is complete and self-consistent.
+    Raises RuntimeError if the copy fails so that the caller can abort.
+    """
+    conn.execute("PRAGMA wal_checkpoint(FULL)")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    bak = db_path.parent / f"sessions.db.bak.{ts}"
+    try:
+        shutil.copy2(db_path, bak)
+    except OSError as exc:
+        raise RuntimeError(f"DB backup failed before migration: {exc}") from exc
+
+
+def _run_pending_migrations(db_path: Path) -> None:
+    """Apply any unapplied migrations in order, committing independently.
+
+    Opens its own connection so migration commits are durable regardless of
+    what the caller's transaction does afterward (HIGH #2 fix).
+
+    user_version == 0: fresh DB — stamp directly, no backup needed.
+    0 < user_version < CURRENT_SCHEMA_VERSION: backup then migrate.
+    user_version >= CURRENT_SCHEMA_VERSION: noop.
+
+    Each migration runs under a SAVEPOINT; failure rolls back only that step.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode = WAL")
+    try:
+        current: int = conn.execute("PRAGMA user_version").fetchone()[0]
+
+        if current >= CURRENT_SCHEMA_VERSION:
+            return
+
+        if current == 0:
+            # Fresh DB — stamp directly, no migrations to run.
+            conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+            conn.commit()
+            return
+
+        # Legacy DB (0 < current < CURRENT_SCHEMA_VERSION) — backup then migrate.
+        _backup_db(conn, db_path)
+
+        for idx, migrate_fn in enumerate(_MIGRATIONS):
+            target_version = idx + 2  # migrations list starts at v1→v2
+            if current >= target_version:
+                continue
+            sp = f"migration_v{target_version}"
+            conn.execute(f"SAVEPOINT {sp}")
+            try:
+                migrate_fn(conn)
+                conn.execute(f"PRAGMA user_version = {target_version}")
+                conn.execute(f"RELEASE {sp}")
+                conn.commit()
+                current = target_version
+            except Exception:
+                conn.execute(f"ROLLBACK TO {sp}")
+                conn.execute(f"RELEASE {sp}")
+                raise
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -170,8 +243,7 @@ class SessionStore:
     def _init_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
-            # Seed schema_version on a brand-new DB.  Once seeded the row is
-            # left alone here; future migrations will UPDATE it explicitly.
+            # Seed schema_version table (legacy compatibility — kept as-is).
             row = conn.execute(
                 "SELECT version FROM schema_version LIMIT 1"
             ).fetchone()
@@ -180,6 +252,9 @@ class SessionStore:
                     "INSERT INTO schema_version (version) VALUES (?)",
                     (CURRENT_SCHEMA_VERSION,),
                 )
+        # Migration runs after schema conn is closed: avoids "database is
+        # locked" when its own connection writes PRAGMA user_version.
+        _run_pending_migrations(self.db_path)
 
     @staticmethod
     def _now() -> str:
