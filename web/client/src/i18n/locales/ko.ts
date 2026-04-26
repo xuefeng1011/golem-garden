@@ -76,6 +76,21 @@ export default {
     detail: 'SOUL 상세',
     content: '내용',
     loadFailed: 'SOUL을 불러오지 못했습니다',
+    fields: {
+      allowedTools: '허용 도구',
+      disallowedTools: '차단 도구',
+      maxTurns: '최대 턴',
+      maxTurnsDefault: '기본값',
+      isolation: '격리 모드',
+      coordinator: '디렉터',
+      effort: '사고 깊이',
+      effortLow: '낮음',
+      effortMedium: '중간',
+      effortHigh: '높음',
+      isolationNone: '없음',
+      isolationWorktree: '워크트리',
+      permissionRestrictions: '권한 제한',
+    },
   },
 
   // 프로젝트 개요

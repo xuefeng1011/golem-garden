@@ -112,7 +112,7 @@ function fmtDate(dateStr: string): string {
           quaternary
           :loading="loading"
           :disabled="!profilesStore.activeProfile"
-          @click="profilesStore.activeProfile && loadBudget(profilesStore.activeProfile.id)"
+          @click="profilesStore.activeProfile && loadBudget(profilesStore.activeProfile.id ?? '')"
         >
           새로고침
         </NButton>
@@ -138,7 +138,7 @@ function fmtDate(dateStr: string): string {
         <!-- Error -->
         <div v-if="error" class="center-state">
           <p class="error-msg">데이터를 불러올 수 없습니다.</p>
-          <NButton size="small" @click="loadBudget(profilesStore.activeProfile!.id)">
+          <NButton size="small" @click="loadBudget(profilesStore.activeProfile!.id ?? '')">
             재시도
           </NButton>
         </div>

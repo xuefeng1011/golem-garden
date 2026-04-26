@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { NSpin, NButton, NModal, NDataTable } from 'naive-ui'
-import type { DataTableColumns, DataTableSortState } from 'naive-ui'
+import type { DataTableColumns } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchBoard } from '@/api/hermes/overview'
-import type { ProjectBoard, TechDebtItem, HistoryEntry } from '@/api/hermes/overview'
+import type { ProjectBoard, HistoryEntry } from '@/api/hermes/overview'
 import MarkdownRenderer from '@/components/hermes/chat/MarkdownRenderer.vue'
 
 const { t } = useI18n()
@@ -61,8 +61,6 @@ function formatDate(raw: string): string {
   if (isNaN(d.getTime())) return raw
   return `${d.getMonth() + 1}월 ${d.getDate()}일`
 }
-
-const historySort = ref<DataTableSortState | null>(null)
 
 const historyCols = computed<DataTableColumns<HistoryEntry>>(() => [
   {
@@ -124,7 +122,7 @@ const historyData = computed<HistoryEntry[]>(() =>
         <!-- Error -->
         <div v-if="error" class="error-card">
           <p class="error-message">{{ t('team.loadFailed') }}</p>
-          <NButton size="small" @click="load(profilesStore.activeProfile!.id)">
+          <NButton size="small" @click="load(profilesStore.activeProfile!.id ?? '')">
             {{ t('common.retry') }}
           </NButton>
         </div>

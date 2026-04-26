@@ -100,7 +100,7 @@ export const useUsageStore = defineStore('usage', () => {
     }
 
     for (const s of sessions.value) {
-      const d = new Date(s.started_at * 1000)
+      const d = new Date((s.started_at ?? 0) * 1000)
       const key = d.toISOString().slice(0, 10)
       const entry = map.get(key)
       if (entry) {
@@ -117,7 +117,7 @@ export const useUsageStore = defineStore('usage', () => {
 
   const avgSessionsPerDay = computed(() => {
     const firstDate = sessions.value.length > 0
-      ? new Date(sessions.value[sessions.value.length - 1].started_at * 1000)
+      ? new Date((sessions.value[sessions.value.length - 1].started_at ?? 0) * 1000)
       : new Date()
     const days = Math.max(1, Math.ceil((Date.now() - firstDate.getTime()) / (1000 * 60 * 60 * 24)))
     return totalSessions.value / days

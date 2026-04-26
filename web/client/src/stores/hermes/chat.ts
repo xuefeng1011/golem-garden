@@ -557,6 +557,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function switchSession(sessionId: string, focusId?: string | null) {
+    const profilesStore = useProfilesStore()
     activeSessionId.value = sessionId
     focusMessageId.value = focusId ?? null
     setItemBestEffort(storageKey(), sessionId)

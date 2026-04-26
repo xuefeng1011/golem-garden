@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { NModal, NTag, NSpin, NSkeleton, NIcon } from 'naive-ui'
 import { CheckmarkCircle, CloseCircle, InformationCircle } from '@vicons/ionicons5'
 import type { SoulDetail, SoulActivity } from '@/api/hermes/souls'
 import { fetchSoul, fetchSoulActivity } from '@/api/hermes/souls'
 import MarkdownRenderer from '@/components/hermes/chat/MarkdownRenderer.vue'
 import { useI18n } from 'vue-i18n'
+import { effortTagType, isolationTagType, formatMaxTurns, showDisallowedTools } from './soulDetailHelpers'
 
 const props = defineProps<{
   projectId: string
@@ -60,6 +61,9 @@ function resultKind(result: string): ResultKind {
   return 'info'
 }
 
+// whether coordinator card border should be highlighted
+const isCoordinator = computed(() => detail.value?.is_coordinator === true)
+
 watch(
   () => [props.open, props.soulId] as const,
   async ([open, soulId]) => {
@@ -93,7 +97,13 @@ watch(
     :show="open"
     preset="card"
     :title="detail ? detail.name : t('souls.detail')"
-    style="width: min(720px, 90vw); max-height: 85vh; display: flex; flex-direction: column;"
+    :style="{
+      width: 'min(720px, 90vw)',
+      maxHeight: '85vh',
+      display: 'flex',
+      flexDirection: 'column',
+      ...(isCoordinator ? { border: '2px solid #c8922a' } : {}),
+    }"
     :segmented="{ content: true }"
     @close="emit('close')"
     @mask-click="emit('close')"
@@ -119,6 +129,74 @@ watch(
             {{ spec }}
           </NTag>
         </div>
+
+        <!-- N3: Capability & Isolation Fields -->
+        <div class="capability-panel" :class="{ 'coordinator-panel': isCoordinator }">
+          <!-- Director badge -->
+          <div v-if="isCoordinator" class="capability-row">
+            <span class="cap-label">{{ t('souls.fields.coordinator') }}</span>
+            <NTag type="warning" size="small" :bordered="false" class="coordinator-tag">
+              👑 Director
+            </NTag>
+          </div>
+
+          <!-- Effort level -->
+          <div v-if="detail.effort" class="capability-row">
+            <span class="cap-label">{{ t('souls.fields.effort') }}</span>
+            <NTag :type="effortTagType(detail.effort)" size="small" :bordered="false">
+              {{ t(`souls.fields.effort${detail.effort.charAt(0).toUpperCase()}${detail.effort.slice(1)}`) }}
+            </NTag>
+          </div>
+
+          <!-- Isolation mode -->
+          <div class="capability-row">
+            <span class="cap-label">{{ t('souls.fields.isolation') }}</span>
+            <NTag :type="isolationTagType(detail.isolation)" size="small" :bordered="false">
+              {{ detail.isolation === 'worktree' ? t('souls.fields.isolationWorktree') : t('souls.fields.isolationNone') }}
+            </NTag>
+          </div>
+
+          <!-- Max turns -->
+          <div class="capability-row">
+            <span class="cap-label">{{ t('souls.fields.maxTurns') }}</span>
+            <span class="cap-value">{{ formatMaxTurns(detail.max_turns, t('souls.fields.maxTurnsDefault')) }}</span>
+          </div>
+
+          <!-- Allowed tools -->
+          <div v-if="detail.tools?.length" class="capability-row capability-row--wrap">
+            <span class="cap-label">{{ t('souls.fields.allowedTools') }}</span>
+            <div class="cap-tags">
+              <NTag
+                v-for="tool in detail.tools"
+                :key="tool"
+                type="success"
+                size="small"
+                :bordered="false"
+                class="tool-tag"
+              >
+                {{ tool }}
+              </NTag>
+            </div>
+          </div>
+
+          <!-- Disallowed tools — only shown when non-empty -->
+          <div v-if="showDisallowedTools(detail.disallowed_tools ?? [])" class="capability-row capability-row--wrap">
+            <span class="cap-label cap-label--warn">{{ t('souls.fields.permissionRestrictions') }}</span>
+            <div class="cap-tags">
+              <NTag
+                v-for="tool in detail.disallowed_tools"
+                :key="tool"
+                type="warning"
+                size="small"
+                :bordered="false"
+                class="tool-tag"
+              >
+                {{ tool }}
+              </NTag>
+            </div>
+          </div>
+        </div>
+        <!-- /N3 Capability Fields -->
 
         <!-- Activity Panel -->
         <div class="activity-divider" />
@@ -412,5 +490,66 @@ watch(
   text-align: center;
   color: $text-muted;
   font-size: 13px;
+}
+
+/* ── N3 Capability Panel ── */
+.capability-panel {
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+// coordinator: gold left-border accent inside the panel
+.coordinator-panel {
+  border-left: 3px solid #c8922a;
+}
+
+.capability-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+
+  &--wrap {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+.cap-label {
+  flex-shrink: 0;
+  min-width: 80px;
+  color: $text-muted;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+
+  &--warn {
+    color: #c8922a;
+  }
+}
+
+.cap-value {
+  color: $text-secondary;
+  font-size: 12px;
+}
+
+.cap-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tool-tag {
+  font-size: 11px;
+}
+
+.coordinator-tag {
+  font-weight: 600;
 }
 </style>

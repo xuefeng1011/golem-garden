@@ -257,7 +257,7 @@ onUnmounted(() => {
               <div class="result-main">
                 <div class="result-title-row">
                   <span class="result-title">{{ getItemTitle(item) }}</span>
-                  <span class="result-source">{{ formatSource(item.source) }}</span>
+                  <span class="result-source">{{ formatSource(item.source ?? '') }}</span>
                 </div>
                 <div class="result-snippet">
                   {{ hasQuery ? item.snippet || t('chat.searchNoSnippet') : item.preview || t('chat.searchRecent') }}

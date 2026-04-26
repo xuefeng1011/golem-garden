@@ -10,6 +10,13 @@ export interface Soul {
 
 export interface SoulDetail extends Soul {
   content: string
+  // N3 fields: capability & isolation metadata
+  tools: string[]
+  disallowed_tools: string[]
+  max_turns: number | null
+  isolation: 'none' | 'worktree'
+  is_coordinator: boolean
+  effort: 'low' | 'medium' | 'high' | null
 }
 
 export interface RecentTask {
