@@ -22,6 +22,7 @@
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/test-utils": "^2.4.6",
     "@vue/tsconfig": "^0.9.1",
+    "happy-dom": "^20.9.0",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.1",
     "naive-ui": "^2.44.1",

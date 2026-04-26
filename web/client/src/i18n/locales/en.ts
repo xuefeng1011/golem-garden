@@ -76,6 +76,21 @@ export default {
     detail: 'SOUL Detail',
     content: 'Content',
     loadFailed: 'Failed to load SOUL',
+    fields: {
+      allowedTools: 'Allowed Tools',
+      disallowedTools: 'Disallowed Tools',
+      maxTurns: 'Max Turns',
+      maxTurnsDefault: 'Default',
+      isolation: 'Isolation',
+      coordinator: 'Director',
+      effort: 'Effort Level',
+      effortLow: 'Low',
+      effortMedium: 'Medium',
+      effortHigh: 'High',
+      isolationNone: 'None',
+      isolationWorktree: 'Worktree',
+      permissionRestrictions: 'Permission Restrictions',
+    },
   },
 
   // Project Overview
