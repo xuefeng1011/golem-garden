@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# uv / venv
+.venv/
+venv/
+
+# editor
+.vscode/
+.idea/
+
+# nested agent state created by tools running from this dir by mistake
+.golem/
+.omc/

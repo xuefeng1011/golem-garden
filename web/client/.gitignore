@@ -1,0 +1,23 @@
+# Build / cache
+dist/
+.vite/
+.cache/
+
+# Dependencies
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Nested agent state (created by tools running with wrong cwd)
+.golem/
+.omc/

@@ -9,11 +9,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/guard-growth-log.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-growth-log.sh\""
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/guard-mailbox.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-mailbox.sh\""
           }
         ]
       }
@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/guard-novice.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-novice.sh\""
           }
         ]
       }
@@ -35,11 +35,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/auto-growth-log.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/auto-growth-log.sh\""
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/auto-dashboard-refresh.sh"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/auto-dashboard-refresh.sh\""
           }
         ]
       }
