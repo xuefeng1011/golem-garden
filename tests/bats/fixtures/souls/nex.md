@@ -9,6 +9,7 @@ tools: [Agent, SendMessage, TaskCreate, TaskStop, Read, Grep, Glob]
 maxTurns: 50
 isolation: none
 effort: high
+disallowed_tools: [Edit, Bash, Write]
 created: 2026-03-30
 ---
 

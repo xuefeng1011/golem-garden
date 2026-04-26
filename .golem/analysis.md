@@ -129,7 +129,7 @@ forge log-add → growth_log_append
 | 1 | JSONL 인젝션 | 부분 해결 | **부분 해결** (변동 없음) |
 | 2 | 승급 로직 중복 | 해결 | 해결 |
 | 3 | 무조건 모듈 로딩 | 해결 | 해결 |
-| 4 | 글로벌 변수 오염 (soul_parse) | 미해결 | **미해결** (저장/복원 패턴으로 우회 중) |
+| 4 | 글로벌 변수 오염 (soul_parse) | 미해결 | **해결** (4/26 mutation 검증 — 13개 SOUL_* 모두 매 호출 명시 재할당, EFFORT/DISALLOWED_TOOLS/IS_COORDINATOR 3개 invariant 테스트화) |
 | 5 | 경로 순회 검증 | 해결 | **재검토 필요** (registry $HOME 검증은 해결, basename 가드는 모듈별 상이) |
 
 ### 핵심 도메인 분포
