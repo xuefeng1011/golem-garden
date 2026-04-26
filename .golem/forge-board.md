@@ -13,7 +13,7 @@ branch: feature/web-ui (Tier C 진행 중)
 | SOUL | 역할 | OMC Agent | 모델 | Rank | 상태 | 주력 영역 |
 |------|------|-----------|------|------|------|----------|
 | **Nex** | Director | architect | opus | junior | active | 팀 빌드/분배, 아키텍처 |
-| **Ryn** | Backend (Bash + Python) | executor | sonnet | **junior** | active | lib/, web/gateway/, forge.sh |
+| **Ryn** | Backend (Bash + Python) | executor | sonnet | junior | active | lib/, web/gateway/, forge.sh |
 | **Kai** | Frontend (Vue/TS) | executor | sonnet | novice | active | web/client/, Pinia, SoulHandoffCard |
 | **Zen** | QA Tester | test-engineer | haiku | novice | active | pytest 90개, vitest, 크로스 리뷰 |
 | **Bolt** | DevOps | executor | sonnet | novice | active | install.sh, hook, uv/Vite |

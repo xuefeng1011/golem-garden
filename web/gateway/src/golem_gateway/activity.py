@@ -354,6 +354,16 @@ class BoardResponse(BaseModel):
 _EMPTY_BOARD = BoardResponse(raw_md="", team=[], tech_debt=[], history=[])
 
 
+_INLINE_EMPHASIS_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _strip_inline_emphasis(value: str) -> str:
+    # Only **bold** is stripped: forge-board.md uses ** for SOUL names and the
+    # only observed cause of UI breakage. Underscore/single-asterisk emphasis
+    # would collide with snake_case identifiers (e.g. claude_3_5_sonnet).
+    return _INLINE_EMPHASIS_RE.sub(r"\1", value)
+
+
 def _parse_md_table_rows(lines: list[str]) -> list[list[str]]:
     """Extract data rows from a markdown table (skip header separator)."""
     rows: list[list[str]] = []
@@ -414,15 +424,15 @@ def build_board(project_path: Path) -> BoardResponse:
     for row in data_rows:
         if len(row) < 6:
             continue
-        soul_cell = row[0].strip()
+        cells = [_strip_inline_emphasis(c).strip() for c in row[:6]]
         team.append(TeamMember(
-            soul=soul_cell,
-            name=soul_cell,  # F2: same value, surfaced under expected UI key
-            role=row[1],
-            agent=row[2],
-            model=row[3],
-            rank=row[4],
-            status=row[5],
+            soul=cells[0],
+            name=cells[0],  # F2: same value, surfaced under expected UI key
+            role=cells[1],
+            agent=cells[2],
+            model=cells[3],
+            rank=cells[4],
+            status=cells[5],
         ))
 
     # --- Tech debt (## 기술 부채) ---
