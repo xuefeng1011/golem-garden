@@ -2,8 +2,8 @@
 project: golem-garden
 type: 3-tier 하이브리드 — Bash CLI + Python FastAPI Gateway + Vue 3 Web UI
 created: 2026-04-06
-updated: 2026-04-25
-branch: feature/web-ui (Tier C 진행 중)
+updated: 2026-04-26
+branch: feature/web-ui (Tier C + 부채 N1~N4/#4 모두 해결, PR #4 open)
 ---
 
 # Forge Board
@@ -83,14 +83,21 @@ branch: feature/web-ui (Tier C 진행 중)
 
 ### 4/25 신규 부채 (Tier B/C 도입 후)
 
-| # | 부채 | 우선순위 | 위치 |
+| # | 부채 | 우선순위 | 해결 |
 |---|------|---------|------|
-| **N1** | **데이터 정합성 비대칭** — Gateway는 sessions.db에만, Bash는 growth-log/jsonl에만 쓴다. **chat에서 자동 승급이 트리거되지 않음** | **HIGH** | api_runs.py:191-216 ↔ growth-log.sh:51 |
-| **N2** | **schema_version 마이그레이션 미구현** — `CURRENT_SCHEMA_VERSION=1` 고정, ALTER 분기 부재 | **HIGH** | sessions_db.py:121-126 |
-| N3 | SOUL 정의 3중 노출 비대칭 — Pydantic SoulDetail이 tools/maxTurns/disallowed_tools 미노출 | MEDIUM | souls.py:15-28 |
-| N4 | **Bash 단위 테스트 부재** — Python 90개 vs Bash 0개. forge.sh + lib/ ~9.9K LOC가 회귀 검출 수단 없음 | MEDIUM | tests/bats/ 신규 필요 |
+| ~~**N1**~~ | ~~데이터 정합성 비대칭 — Gateway/Bash 분리 writer~~ | ~~HIGH~~ | **PR #1** (4/26) — `growth_log.py` 후크 추가 |
+| ~~**N2**~~ | ~~schema_version 마이그레이션 미구현~~ | ~~HIGH~~ | **PR #1** (4/26) — PRAGMA user_version + WAL checkpoint |
+| ~~N3~~ | ~~Pydantic SoulDetail tools/maxTurns/... 미노출~~ | ~~MEDIUM~~ | backend **PR #1** + frontend **PR #3** (4/26) |
+| ~~N4~~ | ~~Bash 단위 테스트 부재~~ | ~~MEDIUM~~ | **PR #1** (4/26) — bats-core 1.11.0 vendoring + 3 테스트 파일 |
 | N5 | `_VALID_SKILL_ID` symlink 회피 가정 — single-user localhost 한정 | LOW | skills.py:144-149 |
 | N6 | forge.sh 내부 escape — eval/변수확장 사용. 새 subcommand 추가 시 회귀 위험 | LOW | forge.sh:48 |
+
+### 4/26 추가 해결
+
+| 부채 | 해결 |
+|------|------|
+| `**Ryn** 랭크 raw 마크다운 노출` (UI 회귀) | **PR #4** — `_strip_inline_emphasis` parser hardening + 16 단위 테스트 |
+| `soul_parse()` 글로벌 변수 누설 | **PR #2** — Sage mutation-validated strong invariant 3종 (EFFORT/DISALLOWED_TOOLS/IS_COORDINATOR) |
 
 > Root cause: **두 데이터 writer의 lifecycle event가 통합되지 않음**. 자세한 분석은 `.golem/analysis.md` 참조.
 
@@ -115,10 +122,10 @@ branch: feature/web-ui (Tier C 진행 중)
 | 2026-04-25 | forge-init 재분석 (v3) | Nex+architect | success | analysis.md/forge-board.md 갱신 |
 | 2026-04-25 | install.sh fix 검증 (재설치 후 forge-board 경고 사라지는지) | bolt | success |  |
 
-## 다음 작업 후보 (분석 결과 기반)
+## 다음 작업 후보 (4/26 갱신)
 
-1. **chat run terminal 후크 도입** (HIGH) — `api_runs.py:on_terminal`에서 `forge log-add` 호출 → 자동 승급/업적 통합
-2. **schema_version 마이그레이션** (HIGH) — `sessions_db.py`에 ALTER 분기 + 백업 hook
-3. **Bash 단위 테스트** (MEDIUM) — bats-core 도입, 최소 soul-parser/growth-log/rank-system
-4. **Pydantic SoulDetail 확장** (MEDIUM) — tools/maxTurns/disallowed_tools 노출 → Vue가 director 격리 시각화 가능
-5. **Vue chat.ts 메시지 cap** (LOW) — 500개 초과 시 head trim
+1. **N2 Sage MEDIUM 4건** (MEDIUM) — timestamp 충돌 해결, schema_version 테이블 정리, legacy schema 시뮬레이션 케이스 등 (Sage 리뷰 후속)
+2. **잔여 10 SOUL_* 변수 mutation invariant 확장** (LOW) — 부채 #4 후속 (현재 EFFORT/DISALLOWED_TOOLS/IS_COORDINATOR 3종만 strong test)
+3. **MarkdownRenderer chunk size 최적화** (LOW) — 1MB → dynamic import code-split (vite warning)
+4. **N5/N6 잔여 부채** (LOW) — symlink 가드, forge.sh subcommand escape 회귀 가드
+5. **`_strip_inline_emphasis` → markdown_utils.py 분리** (LOW) — 유사 사용 사례 추가 시

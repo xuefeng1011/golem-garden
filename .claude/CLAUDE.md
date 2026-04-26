@@ -153,6 +153,20 @@ lib/            — Bash 라이브러리
 skills/         — OMC 스킬 정의 (forge-init, forge-team, forge-review 등)
 growth-log/     — 글로벌 성장 기록
 domain-packs/   — 프리셋 팀 번들 (fullstack, gamedev, trading)
+tests/          — 테스트
+  bats/         — Bash 단위 테스트 (bats-core 1.11.0 vendored, run.sh 진입점)
+web/            — 3-tier 웹 스택 (Tier B/C 도입)
+  gateway/      — Python FastAPI Gateway (uv, pytest, sessions.db)
+    src/golem_gateway/
+      growth_log.py  — chat 종료 후크 (Bash growth-log.sh 와 동일 schema 로 jsonl 기록)
+      sessions_db.py — SQLite WAL + PRAGMA user_version 자동 마이그레이션
+      souls.py       — Pydantic SoulDetail (6 필드 노출)
+      activity.py    — forge-board.md 파서 (강조 셀 평탄화)
+    tests/      — pytest (187 케이스)
+  client/       — Vue 3 + Pinia + Naive UI (Node 23+, vite, vitest happy-dom)
+    src/components/hermes/souls/SoulDetailModal.vue — director 격리 시각화
+    tests/      — vitest (13+ 케이스)
+  setup.ps1     — Windows 통합 셋업 (한글 username junction, env, deps)
 ```
 
 ## 코딩 컨벤션
@@ -196,4 +210,5 @@ forge insights            팀 전체 인사이트 (성과 패턴 분석)
 forge insights {soul}     SOUL별 성과 분석 (추세, 비용 효율, 학습 영역)
 forge skill-export --all  SOUL → Agent Skill 내보내기 (agentskills.io 호환)
 forge skill-import <dir>  Agent Skill → SOUL 임포트
+forge log-add {soul} {task} {result}  성장 기록 직접 추가 (gateway growth_log 후크의 정식 진입점)
 ```
