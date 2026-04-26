@@ -14,6 +14,10 @@ setup() {
   # GOLEM_ROOT는 tests/bats/ 기준 두 단계 위 (프로젝트 루트)
   export GOLEM_ROOT
   GOLEM_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
+  # GOLEM_DIR: lib/growth-log.sh가 source 시 ${GOLEM_DIR:-${GOLEM_ROOT}} 분기를 탐
+  # 반드시 TEST_PROJECT 기반으로 고정해야 글로벌 growth-log/ 누설을 차단한다
+  export GOLEM_DIR="$TEST_PROJECT/.golem"
+  export GROWTH_DIR="$TEST_PROJECT/.golem/growth-log"
 
   mkdir -p "$TEST_PROJECT/.golem/souls"
   mkdir -p "$TEST_PROJECT/.golem/growth-log"
@@ -24,6 +28,25 @@ teardown() {
   if [[ -n "${TEST_PROJECT:-}" && -d "$TEST_PROJECT" ]]; then
     rm -rf "$TEST_PROJECT"
   fi
+  unset GOLEM_DIR GROWTH_DIR
+}
+
+# --------------------------------------------------------------------------
+# golem_load_lib — lib을 source한 후 격리 변수를 반드시 재설정
+# lib/growth-log.sh 등은 source 시 GROWTH_DIR을 덮어쓰므로,
+# source 후에도 TEST_PROJECT 기반 격리를 보장해야 한다.
+#
+# 사용법:
+#   golem_load_lib growth-log
+#   golem_load_lib soul-parser
+# --------------------------------------------------------------------------
+golem_load_lib() {
+  local lib_name="$1"
+  # shellcheck source=/dev/null
+  source "${GOLEM_ROOT}/lib/${lib_name}.sh"
+  # source 후 덮어쓰인 GROWTH_DIR을 격리 값으로 재설정
+  export GOLEM_DIR="$TEST_PROJECT/.golem"
+  export GROWTH_DIR="$TEST_PROJECT/.golem/growth-log"
 }
 
 # --------------------------------------------------------------------------

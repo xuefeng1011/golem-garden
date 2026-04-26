@@ -6,3 +6,20 @@ dist/
 
 # Node
 node_modules/
+
+# Runtime state
+.golem/sessions.db
+.golem/sessions/
+.golem/growth-log/
+.golem/mailbox/
+.server.pid
+dashboard/data.json
+
+# OMC scratch
+.omc/
+
+# Local Claude Code permissions cache
+.claude/settings.local.json
+
+# bats test scratch (testuser* are test fixtures, never commit)
+growth-log/testuser*
