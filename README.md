@@ -33,7 +33,7 @@ GolemGarden가 얹는 것:
 │  ~/.claude/golem-garden/                         │
 │  ├── souls/            ← SOUL 페르소나            │
 │  │   (tools, maxTurns, isolation, effort 포함)   │
-│  ├── lib/ (24개 모듈)                             │
+│  ├── lib/ (30개 모듈)                             │
 │  │   ├── soul-parser, growth-log, rank-system   │
 │  │   ├── prompt-builder (캐시 최적화)             │
 │  │   ├── mailbox (SOUL간 통신)                    │
@@ -238,6 +238,16 @@ OMC 실행 모드 매핑:
 
 ## 설치 및 사용
 
+### Prerequisites
+
+| 도구 | 최소 버전 | 용도 |
+|------|----------|------|
+| Bash | 4.0+ (Git Bash on Windows) | forge.sh / lib 실행 |
+| Python | 3.13+ | web/gateway (FastAPI) |
+| Node | 23+ | web/client (Vite/Vue) |
+| uv | 최신 | Python 의존성 관리 |
+| Claude CLI | 최신 | OMC + agent 실행 |
+
 ### 설치 (OMC 위에)
 
 ```bash
@@ -245,10 +255,32 @@ OMC 실행 모드 매핑:
 /plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
 /plugin install oh-my-claudecode
 
-# 2. GolemGarden 설치
+# 2. GolemGarden Bash 코어 설치
 git clone https://github.com/xuefeng1011/golem-garden.git
 cd golem-garden
 bash install.sh
+
+# 3. (선택) Web UI dev 환경 셋업 — cross-platform
+cd web/gateway && uv sync           # Python deps
+cd ../client && npm install         # Node deps
+npm run dev                         # Vite dev server (5173)
+# 별도 터미널에서:
+cd web/gateway && uv run uvicorn golem_gateway.main:app --reload
+```
+
+> Windows 의 경우 `web/setup.ps1` 한 번 실행으로 위 3-step 자동화 (한글 username junction 포함). 자세한 내용은 하단 "Web UI" 섹션 참조.
+
+### Testing
+
+```bash
+# Bash 단위 테스트 (bats-core 1.11.0 vendored)
+bash tests/bats/run.sh
+
+# Gateway 단위 테스트 (pytest 187 케이스)
+cd web/gateway && uv run pytest
+
+# Client 단위 테스트 (vitest + happy-dom)
+cd web/client && npm test
 ```
 
 ### 사용
@@ -312,7 +344,17 @@ forge review: Ryn이 작성한 AuthController를 Zen이 리뷰
 - [x] JSONL 요약 캐시 — `.summary` 사이드카로 O(1) 조회
 - [x] 자동 비용 추적 — `log-add-usage` (Agent usage → 모델별 가격 자동 계산)
 
-### Phase 4: TypeScript 전환 — 미착수 (선택)
+### Phase 4: Web UI + 품질 보증 — 완료 (4/26 기준 PR #1~#4 머지)
+- [x] **3-tier 아키텍처** — Bash CLI + Python FastAPI Gateway + Vue 3 Client
+- [x] **N1: chat 종료 후크** (`growth_log.py`) — Gateway 가 Bash 와 동일 schema 로 자동 기록 → 자동 승급/업적 통합
+- [x] **N2: SQLite schema_version 자동 마이그레이션** — PRAGMA user_version + WAL checkpoint
+- [x] **N3: SoulDetail 6 필드 전체 노출** — backend (Pydantic) + frontend (Vue + i18n + 헬퍼 분리)
+- [x] **N4: Bash 단위 테스트 도입** — bats-core 1.11.0 vendoring, soul-parser/growth-log/rank-system 커버
+- [x] **부채 #4 종결** — `soul_parse()` 글로벌 변수 누설 mutation-validated strong invariant 3종
+- [x] **vitest 도입** — happy-dom 기반, 13+ 케이스
+- [x] **forge-board 마크다운 평탄화** — `_strip_inline_emphasis` parser hardening + snake_case 식별자 보존 회귀 가드 (PR #4)
+
+### Phase 5: TypeScript 전환 — 미착수 (선택)
 - [ ] 핵심 라이브러리 TS + Zod 전환
 - [ ] MCP 서버화
 

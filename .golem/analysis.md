@@ -111,16 +111,22 @@ forge log-add → growth_log_append
 5. **Vue chat.ts의 tmux-like resume**: SSE drop 시 polling 전환, `pollSignatures` 안정성 검증, `serverIsAhead` 비교로 localStorage vs 서버 충돌 해결
 6. **Phase 8 session-id 결정 트리**: `prior_turn_count` 명시 파라미터로 race 회피, `--session-id` vs `--resume` mutually exclusive invariant
 
-### 약점 / 새로 식별된 부채
+### 약점 / 새로 식별된 부채 (4/26 갱신)
 
-| # | 부채 | 우선순위 | 위치 |
-|---|------|---------|------|
-| **1** | **데이터 정합성 비대칭** — Gateway는 sessions.db에만 쓰고, Bash는 growth-log/jsonl에만 쓴다. 두 writer가 같은 도메인 이벤트(SOUL 작업 완료)를 각자 기록하며 동기화 X | **HIGH** | api_runs.py:191-216 / growth-log.sh:51 |
-| **2** | **schema_version 마이그레이션 미구현** — `CURRENT_SCHEMA_VERSION=1` 고정, ALTER 로직 부재. 다음 schema 변경 시 silent corruption 가능 | **HIGH** | sessions_db.py:121-126 |
-| 3 | SOUL 정의 3중 노출의 비대칭 — Bash는 tools/maxTurns/disallowed_tools/is_coordinator를 강제하지만 Pydantic SoulDetail은 미노출 → Vue는 director 격리를 모름 | MEDIUM | souls.py:15-28 |
-| 4 | **테스트 비대칭** — Python 90개 vs Bash **0개** vs Vue 미확인. forge.sh 1052줄 + lib/ 8836줄이 단위 테스트 없이 운영 | MEDIUM | tests/bats/ 신규 필요 |
-| 5 | `_VALID_SKILL_ID` symlink 회피의 명시적 가정 — single-user localhost 가정. multi-user 전환 시 정면충돌 | LOW | skills.py:144-149 |
-| 6 | forge.sh 내부 escape — 외부 args는 견고하나 forge.sh는 `eval`/변수확장 사용. 새 subcommand 추가 시 회귀 위험 | LOW | forge.sh:48 |
+| # | 부채 | 4/25 | 4/26 |
+|---|------|------|------|
+| ~~**1**~~ | ~~데이터 정합성 비대칭~~ | HIGH | **해결** — PR #1 `growth_log.py` 후크 |
+| ~~**2**~~ | ~~schema_version 마이그레이션 미구현~~ | HIGH | **해결** — PR #1 PRAGMA user_version + WAL checkpoint |
+| ~~3~~ | ~~Pydantic SoulDetail 비대칭~~ | MEDIUM | **해결** — PR #1 backend + PR #3 frontend |
+| ~~4~~ | ~~Bash 단위 테스트 부재~~ | MEDIUM | **해결** — PR #1 bats-core 1.11.0 vendoring + 3 테스트 파일 |
+| 5 | `_VALID_SKILL_ID` symlink 회피의 명시적 가정 — single-user localhost 가정. multi-user 전환 시 정면충돌 | LOW | LOW (변동 없음) |
+| 6 | forge.sh 내부 escape — 외부 args는 견고하나 forge.sh는 `eval`/변수확장 사용. 새 subcommand 추가 시 회귀 위험 | LOW | LOW (변동 없음) |
+
+### 4/26 추가 식별 + 해결
+
+| # | 부채 | 해결 |
+|---|------|------|
+| 7 | `**Ryn**` 랭크 raw 마크다운 노출 (Vue Team view) — `forge-board.md` 단일 셀 anomaly + parser 미가드 | **해결** — PR #4 `_strip_inline_emphasis` parser hardening + 16 단위 테스트 (snake_case 식별자 보존 회귀 가드 포함) |
 
 ### 4/18 부채 추적
 

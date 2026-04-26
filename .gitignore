@@ -7,6 +7,10 @@ dist/
 # Node
 node_modules/
 
+# Vite HMR cache
+web/client/.vite/
+web/client/node_modules/.vite/
+
 # Runtime state
 .golem/sessions.db
 .golem/sessions/

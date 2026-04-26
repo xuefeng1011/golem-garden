@@ -1,6 +1,6 @@
 # GolemGarden Gateway
 
-Read-only FastAPI gateway for SOUL metadata. Phase 1 skeleton.
+FastAPI gateway for SOUL metadata, chat sessions, growth-log, forge runner.
 
 ## Requirements
 
@@ -30,9 +30,17 @@ uvicorn golem_gateway.main:app --host 127.0.0.1 --port 8642
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Server liveness check |
-| GET | `/v1/souls` | List all SOULs (no content body) |
-| GET | `/v1/souls/{id}` | Single SOUL with full markdown content |
+| GET  | `/health` | Server liveness |
+| GET  | `/v1/souls` | List SOULs (no content) |
+| GET  | `/v1/souls/{id}` | Single SOUL with 6 fields (tools, disallowed_tools, max_turns, isolation, is_coordinator, effort) + markdown |
+| GET  | `/v1/projects` | Project list / active project state |
+| POST | `/v1/runs` | Start a run (SSE) — chat 종료 시 `growth_log.py` 자동 후크 |
+| GET  | `/v1/runs/{id}/events` | SSE event stream |
+| GET  | `/v1/sessions` / `/v1/sessions/{id}` | Session listing / detail (sessions.db, WAL + auto-migration) |
+| GET  | `/v1/activity` | growth-log/achievements/chemistry aggregates |
+| GET  | `/v1/board` | forge-board.md 파서 — team/tech_debt/history (마크다운 강조 셀 평탄화) |
+| GET  | `/v1/skills/global` | 글로벌 OMC 스킬 카탈로그 |
+| POST | `/v1/forge/*` | forge.sh whitelist subprocess runner |
 
 ## SOUL discovery
 
@@ -42,7 +50,13 @@ Scans two directories (project override wins):
 
 Set `GOLEM_PROJECT` env var to override the project root detection.
 
-## Phase 2 notes
+## sessions.db
 
-- Replace `uvicorn.run()` with a lifespan context (`@asynccontextmanager`) when adding the subprocess session manager.
-- `/v1/runs` + SSE endpoints go in a new `api_runs.py` router.
+SQLite WAL + per-connection FK. Schema 버전은 `PRAGMA user_version` 으로 자동 마이그레이션 (WAL checkpoint → backup → ALTER → checkpoint). 신규 설치는 latest 로 바로 시작.
+
+## Tests
+
+```bash
+uv run pytest                        # 187 케이스
+uv run pytest --cov=golem_gateway    # 커버리지 (pytest-cov 필요)
+```
