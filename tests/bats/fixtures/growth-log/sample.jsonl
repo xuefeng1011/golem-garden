@@ -1,0 +1,4 @@
+{"date":"2026-04-01","soul":"nex","task":"forge-init","result":"success","files_changed":3,"tests_passed":0,"tokens":1200,"cost_usd":0.012}
+{"date":"2026-04-02","soul":"bolt","task":"ci-setup","result":"success","files_changed":1,"tests_passed":5,"tokens":800,"cost_usd":0.008}
+{"date":"2026-04-03","soul":"zen","task":"test-write","result":"success","files_changed":2,"tests_passed":12,"tokens":600,"cost_usd":0.003}
+{"date":"2026-04-04","soul":"nex","task":"review","result":"fail","files_changed":0,"tests_passed":0,"tokens":400,"cost_usd":0.004}

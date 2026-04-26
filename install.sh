@@ -8,6 +8,12 @@ GOLEM_HOME="$HOME/.claude/golem-garden"
 SKILLS_HOME="$HOME/.claude/skills/golem-garden"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# --with-bats 플래그: bats-core 벤더링 확인 및 설치 안내
+WITH_BATS=0
+for arg in "$@"; do
+  [[ "$arg" == "--with-bats" ]] && WITH_BATS=1
+done
+
 echo "=== GolemGarden Installer ==="
 echo ""
 
@@ -181,7 +187,7 @@ echo "글로벌 구조:"
 echo "  $GOLEM_HOME/"
 echo "  ├── forge.sh          CLI 진입점"
 echo "  ├── souls/             SOUL 원본 (tools/maxTurns/isolation/effort 포함)"
-echo "  ├── lib/               라이브러리 (22개 모듈)"
+echo "  ├── lib/               라이브러리 ($(ls "$GOLEM_HOME/lib/"*.sh 2>/dev/null | wc -l | tr -d ' ')개 모듈)"
 echo "  │   ├── soul-parser, growth-log, rank-system, prompt-builder"
 echo "  │   ├── mailbox, session, error-recovery, worktree"
 echo "  │   ├── budget, tool-character (비용/도구 성격)"
@@ -199,3 +205,24 @@ echo "시작하기:"
 echo "  Claude Code에서: forge-init"
 echo "  CLI에서: bash $GOLEM_HOME/forge.sh status"
 echo ""
+
+# --with-bats: bats-core 벤더링 상태 확인
+if [[ "$WITH_BATS" -eq 1 ]]; then
+  BATS_DIR="$SCRIPT_DIR/tests/bats/bats-core"
+  echo "=== bats-core 확인 (--with-bats) ==="
+  if [[ -x "$BATS_DIR/bin/bats" ]]; then
+    BATS_VER=$("$BATS_DIR/bin/bats" --version 2>/dev/null || echo "unknown")
+    echo "  bats-core: $BATS_VER (벤더링 OK)"
+    echo "  실행: bash tests/bats/run.sh"
+  else
+    echo "  [INFO] bats-core가 벤더링되어 있지 않습니다."
+    echo "  아래 명령으로 설치하세요:"
+    echo ""
+    echo "    curl -fsSL https://github.com/bats-core/bats-core/archive/refs/tags/v1.11.0.tar.gz \\"
+    echo "      -o /tmp/bats.tar.gz"
+    echo "    tar -xzf /tmp/bats.tar.gz -C tests/bats/"
+    echo "    mv tests/bats/bats-core-1.11.0 tests/bats/bats-core"
+    echo "    rm /tmp/bats.tar.gz"
+  fi
+  echo ""
+fi
