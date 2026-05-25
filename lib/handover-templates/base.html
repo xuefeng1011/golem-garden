@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{PROJECT_NAME}} — Handover</title>
+  <style>
+    /* ── CSS 변수 (라이트 모드 기본값) ──────────────────── */
+    :root {
+      --bg:          #f6f8fa;
+      --bg-main:     #ffffff;
+      --text:        #1f2328;
+      --text-muted:  #57606a;
+      --sidebar-bg:  #ffffff;
+      --sidebar-border: #d0d7de;
+      --header-bg:   #1a1f2e;
+      --header-text: #e6edf3;
+      --link:        #0969da;
+      --link-active-bg: #ddf4ff;
+      --border:      #d0d7de;
+      --code-bg:     #f6f8fa;
+      --code-text:   #cf222e;
+      --pre-bg:      #161b22;
+      --pre-border:  #30363d;
+      --pre-text:    #e6edf3;
+      --table-head:  #f6f8fa;
+      --table-even:  #f6f8fa;
+      --bq-bg:       #f6f8fa;
+      --bq-text:     #57606a;
+      --bq-auto-bg:  #fffbdd;
+      --bq-auto-text: #6a4c00;
+      --bq-auto-border: #d4a017;
+      --footer-bg:   #f6f8fa;
+      --modal-bg:    #ffffff;
+      --modal-overlay: rgba(0,0,0,0.45);
+      --mark-bg:     #fff3b0;
+      --mark-text:   #1f2328;
+      --th-bg:       #f6f8fa;
+      --transition-color: color 0.2s, background 0.2s, border-color 0.2s;
+    }
+
+    /* ── 다크 모드 CSS 변수 ──────────────────────────────── */
+    [data-theme="dark"] {
+      --bg:          #0d1117;
+      --bg-main:     #0d1117;
+      --text:        #c9d1d9;
+      --text-muted:  #8b949e;
+      --sidebar-bg:  #161b22;
+      --sidebar-border: #30363d;
+      --header-bg:   #010409;
+      --header-text: #c9d1d9;
+      --link:        #58a6ff;
+      --link-active-bg: #1c2a3a;
+      --border:      #30363d;
+      --code-bg:     #161b22;
+      --code-text:   #ff7b72;
+      --pre-bg:      #0d1117;
+      --pre-border:  #30363d;
+      --pre-text:    #c9d1d9;
+      --table-head:  #161b22;
+      --table-even:  #161b22;
+      --bq-bg:       #161b22;
+      --bq-text:     #8b949e;
+      --bq-auto-bg:  #2d2200;
+      --bq-auto-text: #e3b341;
+      --bq-auto-border: #9e6a03;
+      --footer-bg:   #010409;
+      --modal-bg:    #161b22;
+      --modal-overlay: rgba(0,0,0,0.7);
+      --mark-bg:     #4d3800;
+      --mark-text:   #e3b341;
+      --th-bg:       #161b22;
+    }
+
+    /* ── 리셋 & 기본 ──────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Pretendard", "Apple SD Gothic Neo", -apple-system,
+                   BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, "Noto Sans KR", sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      transition: var(--transition-color);
+    }
+
+    /* ── 상단 고정 헤더 ────────────────────────────────── */
+    #top-header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 200;
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 0 1.5em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      height: 52px;
+      gap: 1em;
+    }
+    #top-header .project-name {
+      font-size: 1.05em;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #top-header .generated-at {
+      font-size: 0.8em;
+      color: #8b949e;
+      white-space: nowrap;
+    }
+    #top-header .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      flex-shrink: 0;
+    }
+    .icon-btn {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: var(--header-text);
+      cursor: pointer;
+      padding: 0.3em 0.6em;
+      font-size: 0.85em;
+      display: flex;
+      align-items: center;
+      gap: 0.35em;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .icon-btn:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.4);
+    }
+    .icon-btn svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    /* ── 레이아웃 ──────────────────────────────────────── */
+    #layout {
+      display: flex;
+      margin-top: 52px;
+      flex: 1;
+    }
+
+    /* ── 좌측 사이드바 ─────────────────────────────────── */
+    #sidebar {
+      width: 250px;
+      flex-shrink: 0;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--sidebar-border);
+      position: sticky;
+      top: 52px;
+      height: calc(100vh - 52px);
+      overflow-y: auto;
+      padding: 1.5em 0;
+      transition: var(--transition-color);
+    }
+
+    #sidebar h2 {
+      font-size: 0.7em;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      padding: 0 1.2em 0.6em;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0.6em;
+    }
+
+    #sidebar nav ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    #sidebar nav ul li a {
+      display: block;
+      padding: 0.4em 1.2em;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 0.88em;
+      border-left: 3px solid transparent;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+    }
+
+    #sidebar nav ul li a:hover {
+      background: var(--bg);
+      border-left-color: var(--link);
+      color: var(--link);
+    }
+
+    #sidebar nav ul li a.active {
+      background: var(--link-active-bg);
+      border-left-color: var(--link);
+      color: var(--link);
+      font-weight: 500;
+    }
+
+    #sidebar nav ul li .section-num {
+      display: inline-block;
+      width: 1.6em;
+      text-align: right;
+      margin-right: 0.5em;
+      color: var(--text-muted);
+      font-family: monospace;
+      font-size: 0.9em;
+    }
+
+    /* ── 메인 컨텐츠 ───────────────────────────────────── */
+    #main {
+      flex: 1;
+      max-width: 900px;
+      padding: 2em 2.5em;
+      background: var(--bg-main);
+      min-height: calc(100vh - 52px);
+      transition: var(--transition-color);
+    }
+
+    /* section 구분 */
+    .handover-section {
+      margin-bottom: 3em;
+      padding-bottom: 2em;
+      border-bottom: 1px solid var(--border);
+    }
+    .handover-section:last-of-type {
+      border-bottom: none;
+    }
+
+    /* ── 타이포그래피 ──────────────────────────────────── */
+    .handover-section h1 {
+      font-size: 1.6em;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.6em;
+      padding-bottom: 0.4em;
+      border-bottom: 2px solid var(--link);
+    }
+
+    .handover-section h2 {
+      font-size: 1.2em;
+      font-weight: 600;
+      color: var(--text);
+      margin: 1.4em 0 0.5em;
+    }
+
+    .handover-section h3 {
+      font-size: 1em;
+      font-weight: 600;
+      color: var(--text);
+      margin: 1.1em 0 0.4em;
+    }
+
+    .handover-section p {
+      margin-bottom: 0.8em;
+    }
+
+    .handover-section ul,
+    .handover-section ol {
+      margin: 0.5em 0 0.8em 1.5em;
+    }
+
+    .handover-section li {
+      margin-bottom: 0.25em;
+    }
+
+    /* ── 자동 분석 배지 (blockquote 첫번째) ─────────────── */
+    .handover-section blockquote:first-of-type {
+      border-left: 4px solid var(--bq-auto-border);
+      background: var(--bq-auto-bg);
+      padding: 0.6em 1em;
+      margin: 0.8em 0 1.2em;
+      color: var(--bq-auto-text);
+      font-size: 0.88em;
+      border-radius: 0 4px 4px 0;
+    }
+
+    .handover-section blockquote {
+      border-left: 4px solid var(--border);
+      background: var(--bq-bg);
+      padding: 0.6em 1em;
+      margin: 0.8em 0;
+      color: var(--bq-text);
+      border-radius: 0 4px 4px 0;
+    }
+
+    /* ── 코드 ──────────────────────────────────────────── */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.85em;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0.1em 0.4em;
+      color: var(--code-text);
+    }
+
+    pre {
+      background: var(--pre-bg);
+      border: 1px solid var(--pre-border);
+      border-radius: 6px;
+      padding: 1em 1.2em;
+      overflow-x: auto;
+      margin: 0.8em 0;
+    }
+
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--pre-text);
+      font-size: 0.85em;
+    }
+
+    /* ── mermaid 다이어그램 ─────────────────────────────── */
+    .mermaid {
+      margin: 0.8em 0;
+      text-align: center;
+    }
+    .mermaid-fallback {
+      background: var(--code-bg);
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      padding: 0.8em 1em;
+      margin: 0.8em 0;
+      font-size: 0.8em;
+      color: var(--text-muted);
+    }
+
+    /* ── 테이블 ────────────────────────────────────────── */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.8em 0;
+      font-size: 0.9em;
+    }
+
+    th {
+      background: var(--th-bg);
+      border: 1px solid var(--border);
+      padding: 0.5em 0.8em;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    td {
+      border: 1px solid var(--border);
+      padding: 0.45em 0.8em;
+      color: var(--text);
+    }
+
+    tr:nth-child(even) td {
+      background: var(--table-even);
+    }
+
+    /* ── 체크리스트 ────────────────────────────────────── */
+    .handover-section ul li input[type="checkbox"] {
+      margin-right: 0.4em;
+    }
+
+    /* ── hr ─────────────────────────────────────────────── */
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.5em 0;
+    }
+
+    /* ── 링크 ───────────────────────────────────────────── */
+    a {
+      color: var(--link);
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* ── mark (검색 하이라이트) ─────────────────────────── */
+    mark {
+      background: var(--mark-bg);
+      color: var(--mark-text);
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+
+    /* ── 검색 모달 ──────────────────────────────────────── */
+    #search-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: var(--modal-overlay);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 80px;
+    }
+    #search-overlay.open {
+      display: flex;
+      animation: fadeIn 0.15s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    #search-modal {
+      background: var(--modal-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      width: 100%;
+      max-width: 600px;
+      overflow: hidden;
+      animation: slideDown 0.15s ease;
+    }
+    @keyframes slideDown {
+      from { transform: translateY(-12px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+    #search-input-wrap {
+      display: flex;
+      align-items: center;
+      padding: 0.9em 1.1em;
+      border-bottom: 1px solid var(--border);
+      gap: 0.6em;
+    }
+    #search-input-wrap svg {
+      flex-shrink: 0;
+      color: var(--text-muted);
+      width: 16px;
+      height: 16px;
+    }
+    #search-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 1.05em;
+      color: var(--text);
+      font-family: inherit;
+    }
+    #search-input::placeholder {
+      color: var(--text-muted);
+    }
+    #search-shortcut-hint {
+      font-size: 0.75em;
+      color: var(--text-muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.4em;
+      white-space: nowrap;
+    }
+    #search-results {
+      max-height: 360px;
+      overflow-y: auto;
+      padding: 0.4em 0;
+    }
+    .search-result-item {
+      display: block;
+      padding: 0.6em 1.1em;
+      text-decoration: none;
+      color: var(--text);
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      transition: background 0.08s;
+    }
+    .search-result-item:hover,
+    .search-result-item.keyboard-focus {
+      background: var(--link-active-bg);
+      border-left-color: var(--link);
+    }
+    .search-result-item .result-title {
+      font-size: 0.92em;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.2em;
+    }
+    .search-result-item .result-snippet {
+      font-size: 0.8em;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .search-result-item .result-section {
+      font-size: 0.75em;
+      color: var(--text-muted);
+      margin-bottom: 0.15em;
+    }
+    #search-empty {
+      padding: 1.5em;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9em;
+    }
+    #search-footer {
+      display: flex;
+      gap: 1em;
+      padding: 0.55em 1.1em;
+      border-top: 1px solid var(--border);
+      font-size: 0.72em;
+      color: var(--text-muted);
+    }
+    #search-footer kbd {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0 0.35em;
+      font-family: monospace;
+      margin-right: 0.2em;
+    }
+
+    /* ── 푸터 ──────────────────────────────────────────── */
+    #footer {
+      text-align: center;
+      padding: 1.5em;
+      font-size: 0.8em;
+      color: var(--text-muted);
+      background: var(--footer-bg);
+      border-top: 1px solid var(--border);
+      margin-left: 250px;
+      transition: var(--transition-color);
+    }
+
+    /* ── 반응형 ────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #main { padding: 1.2em; }
+      #footer { margin-left: 0; }
+      #search-modal { max-width: calc(100% - 2em); }
+      #top-header .generated-at { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 검색 인덱스 + CWD (render.py가 채워줌) -->
+  <script>
+    window.SEARCH_INDEX = {{SEARCH_INDEX_JSON}};
+    window.CWD = "{{CWD}}";
+  </script>
+
+  <!-- 다크모드 초기화 (FOUC 방지 — body 렌더 전에 실행) -->
+  <script>
+    (function() {
+      var saved = localStorage.getItem('handoverTheme');
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var theme = saved ? saved : (prefersDark ? 'dark' : 'light');
+      if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
+
+  <!-- 상단 고정 헤더 -->
+  <header id="top-header">
+    <span class="project-name">📋 {{PROJECT_NAME}} — Handover</span>
+    <span class="generated-at">생성: {{GENERATED_AT}}</span>
+    <div class="header-actions">
+      <!-- 검색 버튼 -->
+      <button class="icon-btn" id="btn-search" aria-label="검색 (Ctrl+K)" title="검색 (Ctrl+K)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <circle cx="6.5" cy="6.5" r="4.5"/>
+          <path d="M10.5 10.5 14 14" stroke-linecap="round"/>
+        </svg>
+        <span>검색</span>
+      </button>
+      <!-- 다크모드 토글 버튼 -->
+      <button class="icon-btn" id="btn-theme" aria-label="다크모드 토글" title="다크모드 토글">
+        <svg id="icon-sun" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="display:none">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        </svg>
+        <svg id="icon-moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M6 2a7 7 0 1 0 8 8 5 5 0 0 1-8-8z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- 검색 모달 -->
+  <div id="search-overlay" role="dialog" aria-modal="true" aria-label="검색">
+    <div id="search-modal">
+      <div id="search-input-wrap">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <circle cx="6.5" cy="6.5" r="4.5"/>
+          <path d="M10.5 10.5 14 14" stroke-linecap="round"/>
+        </svg>
+        <input
+          type="search"
+          id="search-input"
+          placeholder="검색어 입력... (섹션, 키워드 등)"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          aria-label="검색어"
+        />
+        <span id="search-shortcut-hint">Esc 닫기</span>
+      </div>
+      <div id="search-results" role="listbox" aria-label="검색 결과"></div>
+      <div id="search-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 이동</span>
+        <span><kbd>Enter</kbd> 이동</span>
+        <span><kbd>Esc</kbd> 닫기</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="layout">
+
+    <!-- 좌측 사이드바 목차 -->
+    <aside id="sidebar" aria-label="목차">
+      <h2>목차 / Contents</h2>
+      <nav>
+        <ul>
+{{TOC_HTML}}
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- 메인 컨텐츠 -->
+    <main id="main">
+{{SECTIONS_HTML}}
+    </main>
+
+  </div>
+
+  <!-- 푸터 -->
+  <footer id="footer">
+    Generated by <strong>GolemGarden forge handover v0.1 (M3)</strong><br/>
+    <small>M1: 자동 분석. M2: 인터뷰(pitfalls/glossary). M3: 다이어그램/검색/다크모드/active 사이드바.</small>
+  </footer>
+
+  <!-- mermaid CDN (비동기 로드) -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js"
+    integrity="sha384-R63zfMfSwJF4xCR11wXii+QUsbiBIdiDzDbtxia72oGWfkT7WHJfmD/I/eeHPJyT"
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+    async
+    id="mermaid-script"
+  ></script>
+
+  <script>
+    /* ═══════════════════════════════════════════════════════
+       1. 다크모드 토글
+    ═══════════════════════════════════════════════════════ */
+    (function() {
+      var html = document.documentElement;
+      var btnTheme = document.getElementById('btn-theme');
+      var iconSun  = document.getElementById('icon-sun');
+      var iconMoon = document.getElementById('icon-moon');
+
+      function isDark() {
+        return html.getAttribute('data-theme') === 'dark';
+      }
+
+      function applyTheme(dark) {
+        if (dark) {
+          html.setAttribute('data-theme', 'dark');
+        } else {
+          html.removeAttribute('data-theme');
+        }
+        // 아이콘 전환
+        iconSun.style.display  = dark ? 'block' : 'none';
+        iconMoon.style.display = dark ? 'none'  : 'block';
+        // mermaid 재렌더링
+        reiInitMermaid(dark);
+      }
+
+      function toggleTheme() {
+        var dark = !isDark();
+        localStorage.setItem('handoverTheme', dark ? 'dark' : 'light');
+        applyTheme(dark);
+      }
+
+      btnTheme.addEventListener('click', toggleTheme);
+
+      // 초기 아이콘 설정
+      applyTheme(isDark());
+    })();
+
+    /* ═══════════════════════════════════════════════════════
+       2. mermaid 초기화 + 다크모드 연동
+    ═══════════════════════════════════════════════════════ */
+    function wrapMermaidBlocks() {
+      document.querySelectorAll('code.language-mermaid').forEach(function(code) {
+        var div = document.createElement('div');
+        div.className = 'mermaid';
+        div.textContent = code.textContent;
+        var pre = code.parentElement;
+        if (pre && pre.tagName === 'PRE') {
+          pre.replaceWith(div);
+        } else {
+          code.replaceWith(div);
+        }
+      });
+    }
+
+    function reiInitMermaid(dark) {
+      if (typeof mermaid === 'undefined') return;
+      var theme = dark ? 'dark' : 'default';
+      try {
+        mermaid.initialize({ startOnLoad: false, theme: theme });
+        // 기존 렌더링된 SVG 제거 후 원본 텍스트 복원 불가 — 대신 페이지 내 .mermaid 재실행
+        mermaid.run({ querySelector: '.mermaid' });
+      } catch(e) {
+        // mermaid 재렌더링 실패 — 무시
+      }
+    }
+
+    // mermaid CDN 로드 완료 후 실행
+    var mermaidScript = document.getElementById('mermaid-script');
+    if (mermaidScript) {
+      mermaidScript.addEventListener('load', function() {
+        if (typeof mermaid !== 'undefined') {
+          var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+          wrapMermaidBlocks();
+          mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' });
+          mermaid.run({ querySelector: '.mermaid' });
+        }
+      });
+      mermaidScript.addEventListener('error', function() {
+        console.warn('[handover] mermaid CDN 로드 실패 — 다이어그램은 코드블록으로 표시됩니다');
+        // offline fallback: mermaid 블록에 fallback 안내 표시
+        document.querySelectorAll('code.language-mermaid').forEach(function(code) {
+          var wrap = document.createElement('div');
+          wrap.className = 'mermaid-fallback';
+          wrap.textContent = '[다이어그램 — 오프라인 환경에서는 렌더링 불가] ' + code.textContent.slice(0, 80) + '…';
+          var pre = code.parentElement;
+          if (pre && pre.tagName === 'PRE') pre.after(wrap);
+        });
+      });
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       3. Ctrl+K 검색 모달
+    ═══════════════════════════════════════════════════════ */
+    (function() {
+      var overlay   = document.getElementById('search-overlay');
+      var input     = document.getElementById('search-input');
+      var results   = document.getElementById('search-results');
+      var btnSearch = document.getElementById('btn-search');
+      var index     = window.SEARCH_INDEX || [];
+      var focusIdx  = -1;
+
+      function openModal() {
+        overlay.classList.add('open');
+        input.value = '';
+        focusIdx = -1;
+        renderResults('');
+        input.focus();
+      }
+
+      function closeModal() {
+        overlay.classList.remove('open');
+      }
+
+      function highlight(text, query) {
+        if (!query) return escapeHtml(text);
+        var escaped = escapeHtml(text);
+        var escapedQuery = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return escaped.replace(new RegExp('(' + escapedQuery + ')', 'gi'), '<mark>$1</mark>');
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function getSnippet(text, query, contextLen) {
+        if (!text || !query) return '';
+        var lc = text.toLowerCase();
+        var qi = lc.indexOf(query.toLowerCase());
+        if (qi === -1) return escapeHtml(text.slice(0, contextLen));
+        var start = Math.max(0, qi - 30);
+        var end   = Math.min(text.length, qi + query.length + (contextLen - 30));
+        var snippet = (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+        return highlight(snippet, query);
+      }
+
+      function renderResults(query) {
+        focusIdx = -1;
+        if (!query.trim()) {
+          results.innerHTML = '<div id="search-empty">검색어를 입력하세요</div>';
+          return;
+        }
+
+        var q = query.trim().toLowerCase();
+        var matches = [];
+
+        index.forEach(function(item) {
+          var titleHit    = (item.title || '').toLowerCase().indexOf(q) !== -1;
+          var headingHit  = false;
+          var textHit     = (item.text || '').toLowerCase().indexOf(q) !== -1;
+          var matchedHeading = '';
+
+          if (Array.isArray(item.headings)) {
+            item.headings.forEach(function(h) {
+              if (h.toLowerCase().indexOf(q) !== -1) {
+                headingHit = true;
+                if (!matchedHeading) matchedHeading = h;
+              }
+            });
+          }
+
+          if (titleHit || headingHit || textHit) {
+            matches.push({
+              id:       item.id,
+              title:    item.title || '',
+              heading:  matchedHeading,
+              text:     item.text || '',
+              priority: headingHit ? 0 : (titleHit ? 1 : 2)
+            });
+          }
+        });
+
+        matches.sort(function(a, b) { return a.priority - b.priority; });
+        matches = matches.slice(0, 20);
+
+        if (!matches.length) {
+          results.innerHTML = '<div id="search-empty">검색 결과가 없습니다.</div>';
+          return;
+        }
+
+        var html = '';
+        matches.forEach(function(m, i) {
+          var sectionLabel = highlight(m.title, query);
+          var headingLabel = m.heading ? highlight(m.heading, query) : '';
+          var snippet      = getSnippet(m.text, query, 80);
+
+          html += '<a class="search-result-item" href="#' + escapeHtml(m.id) + '" role="option" data-idx="' + i + '">';
+          html += '<div class="result-section">' + sectionLabel + '</div>';
+          if (headingLabel) {
+            html += '<div class="result-title">' + headingLabel + '</div>';
+          }
+          if (snippet) {
+            html += '<div class="result-snippet">' + snippet + '</div>';
+          }
+          html += '</a>';
+        });
+
+        results.innerHTML = html;
+      }
+
+      function moveFocus(dir) {
+        var items = results.querySelectorAll('.search-result-item');
+        if (!items.length) return;
+        items.forEach(function(el) { el.classList.remove('keyboard-focus'); });
+        focusIdx = (focusIdx + dir + items.length) % items.length;
+        items[focusIdx].classList.add('keyboard-focus');
+        items[focusIdx].scrollIntoView({ block: 'nearest' });
+      }
+
+      function goToFocused() {
+        var items = results.querySelectorAll('.search-result-item');
+        if (focusIdx >= 0 && items[focusIdx]) {
+          var href = items[focusIdx].getAttribute('href');
+          if (href) {
+            var target = document.querySelector(href);
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+          closeModal();
+        }
+      }
+
+      // 이벤트: 검색 입력
+      input.addEventListener('input', function() {
+        renderResults(input.value);
+      });
+
+      // 이벤트: 키보드 네비게이션
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(-1); }
+        else if (e.key === 'Enter')   { e.preventDefault(); goToFocused(); }
+        else if (e.key === 'Escape')  { e.preventDefault(); closeModal(); }
+      });
+
+      // 이벤트: 결과 클릭
+      results.addEventListener('click', function(e) {
+        var item = e.target.closest('.search-result-item');
+        if (!item) return;
+        e.preventDefault();
+        var href = item.getAttribute('href');
+        if (href) {
+          var target = document.querySelector(href);
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        closeModal();
+      });
+
+      // 이벤트: 오버레이 외부 클릭 닫기
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) closeModal();
+      });
+
+      // 이벤트: 검색 버튼
+      btnSearch.addEventListener('click', openModal);
+
+      // 이벤트: 글로벌 단축키
+      document.addEventListener('keydown', function(e) {
+        var isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        var modKey = isMac ? e.metaKey : e.ctrlKey;
+        if (modKey && e.key === 'k') {
+          e.preventDefault();
+          if (overlay.classList.contains('open')) closeModal();
+          else openModal();
+        }
+        if (e.key === 'Escape' && overlay.classList.contains('open')) {
+          closeModal();
+        }
+      });
+    })();
+
+    /* ═══════════════════════════════════════════════════════
+       4. 사이드바 IntersectionObserver — active 섹션 하이라이트
+    ═══════════════════════════════════════════════════════ */
+    (function() {
+      var links    = document.querySelectorAll('#sidebar nav a');
+      var sections = document.querySelectorAll('.handover-section');
+
+      if (!sections.length || !links.length) return;
+
+      var activeId = null;
+
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) {
+            activeId = entry.target.id;
+          }
+        });
+        if (activeId) {
+          links.forEach(function(a) {
+            var isActive = a.getAttribute('href') === '#' + activeId;
+            a.classList.toggle('active', isActive);
+          });
+        }
+      }, { rootMargin: '-52px 0px -55% 0px', threshold: 0 });
+
+      sections.forEach(function(s) { observer.observe(s); });
+    })();
+  </script>
+
+</body>
+</html>

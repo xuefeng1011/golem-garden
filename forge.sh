@@ -187,6 +187,14 @@ Agent Skills (agentskills.io):
   skill-import <parent> --all
                         디렉토리 내 전체 Agent Skills 임포트
 
+Handover (인수인계 자동 생성):
+  handover                    M1.5 풀파이프 (--analyze 와 동일)
+  handover --analyze          Phase A+B 실행 + 메인 Claude에 Agent 4명 위임
+  handover --scan-only        Phase A만 (M1 raw 추출)
+  handover --prompts-only     Phase A+B (prompt 생성, Agent 호출은 수동)
+  handover --render-only      Phase D만 (HTML 재생성)
+  handover --output=DIR       산출물 디렉토리 (기본: ./handover)
+
 Examples:
   forge status
   forge prompt ryn "인증 API 구현"
@@ -1033,6 +1041,194 @@ case "${1:-}" in
     else
       skill_to_soul_main "$2" "${3:-${GOLEM_DIR}/souls}"
     fi
+    ;;
+
+  handover)
+    HANDOVER_OUTPUT_DIR="${GOLEM_PROJECT}/handover"
+    HANDOVER_MODE="analyze"  # 기본: M1.5 풀파이프
+    HANDOVER_NO_INTERVIEW=0
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --no-interview) HANDOVER_NO_INTERVIEW=1; shift ;;
+        --output=*)     HANDOVER_OUTPUT_DIR="${1#--output=}"; shift ;;
+        --output)       HANDOVER_OUTPUT_DIR="$2"; shift 2 ;;
+        --analyze)        HANDOVER_MODE="analyze"; shift ;;
+        --scan-only)      HANDOVER_MODE="scan"; shift ;;
+        --prompts-only)   HANDOVER_MODE="prompts"; shift ;;
+        --render-only)    HANDOVER_MODE="render"; shift ;;
+        --interview)      HANDOVER_MODE="interview"; shift ;;
+        --with-interview) HANDOVER_MODE="with_interview"; shift ;;
+        -h|--help)
+          cat <<'HELP'
+Usage: forge handover [MODE] [--output=DIR] [--no-interview]
+
+  자동 인수인계 자료 생성 (단일 HTML + MD 부산물)
+
+Modes:
+  (default)        --analyze 와 동일 (M1.5 풀파이프)
+  --analyze        Phase A→B 실행 + 메인 Claude에게 4 Agent 병렬 소환 위임 (M1.5)
+  --scan-only      Phase A만 — raw 추출만 (M1 동작)
+  --prompts-only   Phase A+B — prompt 생성까지 (사용자가 Agent 호출)
+  --render-only    Phase D만 — 기존 src/*.md로 HTML 재생성
+  --interview      Phase E만 — 인터뷰 prompt 생성 (메인 Claude가 AskUserQuestion 수행)
+  --with-interview M2 풀파이프 — A+B+(C 위임)+D+E+(F+D 위임)
+
+Options:
+  --output=DIR     산출물 디렉토리 (기본: ./handover)
+  --no-interview   (M2 이후) 인터뷰 단계 스킵
+
+Output:
+  DIR/src/00~07-*.md      raw 또는 분석본 (모드별)
+  DIR/.prompts/*.md       SOUL prompt 4개 (--analyze, --prompts-only)
+  DIR/ONBOARDING.html     단일 HTML (--render-only 또는 --analyze 후속)
+HELP
+          exit 0 ;;
+        *)
+          echo "[handover] 알 수 없는 인자: $1" >&2
+          exit 1 ;;
+      esac
+    done
+
+    # Python 인터프리터 탐색 (render 단계에서 필요)
+    HANDOVER_PYTHON_CMD=""
+    for cand in python python3 py; do
+      if command -v "$cand" >/dev/null 2>&1; then
+        if "$cand" -c "import sys; sys.exit(0 if sys.version_info[0]>=3 else 1)" >/dev/null 2>&1; then
+          HANDOVER_PYTHON_CMD="$cand"; break
+        fi
+      fi
+    done
+
+    mkdir -p "${HANDOVER_OUTPUT_DIR}/src"
+
+    # Phase A — scan (--scan-only, --prompts-only, --analyze)
+    if [ "$HANDOVER_MODE" = "scan" ] || [ "$HANDOVER_MODE" = "prompts" ] || [ "$HANDOVER_MODE" = "analyze" ]; then
+      echo "=== forge handover (mode: ${HANDOVER_MODE}) ==="
+      echo "[Phase A] 자동 추출 (handover-scan.sh)"
+      if ! bash "${GOLEM_ROOT}/lib/handover-scan.sh" "${GOLEM_PROJECT}" "${HANDOVER_OUTPUT_DIR}/src"; then
+        echo "[handover][ERROR] Phase A 실패." >&2
+        exit 1
+      fi
+      if [ "$HANDOVER_MODE" = "scan" ]; then
+        echo ""
+        echo "[OK] raw 추출 완료. 분석은 'forge handover --analyze' 또는 'forge handover'."
+        exit 0
+      fi
+    fi
+
+    # Phase B — analyze prompts (--prompts-only, --analyze)
+    if [ "$HANDOVER_MODE" = "prompts" ] || [ "$HANDOVER_MODE" = "analyze" ]; then
+      echo "[Phase B] 분석 prompt 생성 (handover-analyze.sh)"
+      if ! bash "${GOLEM_ROOT}/lib/handover-analyze.sh" "${HANDOVER_OUTPUT_DIR}"; then
+        echo "[handover][ERROR] Phase B 실패." >&2
+        exit 1
+      fi
+      echo ""
+      echo "=============================================================="
+      if [ "$HANDOVER_MODE" = "prompts" ]; then
+        echo "[handover-analyze] Phase B 완료 — prompt 4개 생성됨"
+        echo "=============================================================="
+        echo "Phase C는 사용자 또는 메인 Claude가 수동 수행:"
+      else
+        echo "[handover-analyze] Phase B 완료 — 메인 Claude에게 위임"
+        echo "=============================================================="
+        echo "Phase C: Agent 4개 병렬 소환 필요 (메인 Claude 컨텍스트가 수행)"
+      fi
+      echo ""
+      echo "  Agent #1: ${HANDOVER_OUTPUT_DIR}/.prompts/00-nex.md  → 텍스트 출력 → ${HANDOVER_OUTPUT_DIR}/src/00-overview.md 저장"
+      echo "  Agent #2: ${HANDOVER_OUTPUT_DIR}/.prompts/01-ryn.md  → ${HANDOVER_OUTPUT_DIR}/src/01-architecture.md 직접 Write"
+      echo "  Agent #3: ${HANDOVER_OUTPUT_DIR}/.prompts/02-sage.md → ${HANDOVER_OUTPUT_DIR}/src/02-directory.md 직접 Write"
+      echo "  Agent #4: ${HANDOVER_OUTPUT_DIR}/.prompts/03-bolt.md → ${HANDOVER_OUTPUT_DIR}/src/03-dev-guide.md 직접 Write"
+      echo ""
+      echo "Phase C 완료 후 'forge handover --render-only' 를 실행해 HTML 빌드."
+      echo "=============================================================="
+      exit 0
+    fi
+
+    # Phase D — render only
+    if [ "$HANDOVER_MODE" = "render" ] || [ "$HANDOVER_MODE" = "analyze_full_unused" ]; then
+      if [ -z "$HANDOVER_PYTHON_CMD" ]; then
+        echo "[handover][ERROR] Python 3 인터프리터를 찾을 수 없습니다." >&2
+        exit 1
+      fi
+      echo "[Phase D] HTML 빌드 (handover-render.py, python=${HANDOVER_PYTHON_CMD})"
+      if ! GOLEM_PROJECT="${GOLEM_PROJECT}" "$HANDOVER_PYTHON_CMD" "${GOLEM_ROOT}/lib/handover-render.py" "${HANDOVER_OUTPUT_DIR}/src" "${HANDOVER_OUTPUT_DIR}/ONBOARDING.html"; then
+        echo "[handover][ERROR] HTML 렌더링 실패. markdown 라이브러리 확인:" >&2
+        echo "  ${HANDOVER_PYTHON_CMD} -m pip install markdown" >&2
+        exit 1
+      fi
+      echo ""
+      echo "[OK] 인수인계 자료 생성 완료"
+      echo "  HTML:  ${HANDOVER_OUTPUT_DIR}/ONBOARDING.html"
+      echo "  부산물: ${HANDOVER_OUTPUT_DIR}/src/"
+      exit 0
+    fi
+
+    # Phase E — interview (--interview, --with-interview 모드에서)
+    if [ "$HANDOVER_MODE" = "interview" ] || [ "$HANDOVER_MODE" = "with_interview" ]; then
+      # with_interview: Phase A + B 먼저 실행
+      if [ "$HANDOVER_MODE" = "with_interview" ]; then
+        echo "=== forge handover (mode: with_interview) ==="
+        echo "[Phase A] 자동 추출 (handover-scan.sh)"
+        if ! bash "${GOLEM_ROOT}/lib/handover-scan.sh" "${GOLEM_PROJECT}" "${HANDOVER_OUTPUT_DIR}/src"; then
+          echo "[handover][ERROR] Phase A 실패." >&2
+          exit 1
+        fi
+        echo "[Phase B] 분석 prompt 생성 (handover-analyze.sh)"
+        if ! bash "${GOLEM_ROOT}/lib/handover-analyze.sh" "${HANDOVER_OUTPUT_DIR}"; then
+          echo "[handover][ERROR] Phase B 실패." >&2
+          exit 1
+        fi
+      fi
+
+      # src/*.md 존재 확인
+      if [ ! -f "${HANDOVER_OUTPUT_DIR}/src/04-pitfalls.md" ] || [ ! -f "${HANDOVER_OUTPUT_DIR}/src/06-glossary.md" ]; then
+        echo "[handover][ERROR] handover/src/ 없음. 먼저 'forge handover --scan-only' 실행." >&2
+        exit 1
+      fi
+
+      echo "[Phase E] 인터뷰 prompt 준비 (handover-interview.sh)"
+      if ! bash "${GOLEM_ROOT}/lib/handover-interview.sh" "${HANDOVER_OUTPUT_DIR}"; then
+        echo "[handover][ERROR] Phase E 실패." >&2
+        exit 1
+      fi
+
+      if [ "$HANDOVER_MODE" = "with_interview" ]; then
+        echo ""
+        echo "=================================================================="
+        echo "[handover --with-interview] Bash 단계 완료 — 메인 Claude에게 위임"
+        echo "=================================================================="
+        echo ""
+        echo "다음을 순차 수행:"
+        echo ""
+        echo "  1. (Phase C) Agent 4개 병렬 소환:"
+        echo "     - ${HANDOVER_OUTPUT_DIR}/.prompts/00-nex.md  → ${HANDOVER_OUTPUT_DIR}/src/00-overview.md (architect, opus)"
+        echo "     - ${HANDOVER_OUTPUT_DIR}/.prompts/01-ryn.md  → ${HANDOVER_OUTPUT_DIR}/src/01-architecture.md (executor, sonnet)"
+        echo "     - ${HANDOVER_OUTPUT_DIR}/.prompts/02-sage.md → ${HANDOVER_OUTPUT_DIR}/src/02-directory.md (executor, opus)"
+        echo "     - ${HANDOVER_OUTPUT_DIR}/.prompts/03-bolt.md → ${HANDOVER_OUTPUT_DIR}/src/03-dev-guide.md (executor, sonnet)"
+        echo ""
+        echo "  2. (Phase D) bash forge.sh handover --render-only"
+        echo ""
+        echo "  3. (Phase F) AskUserQuestion 4 라운드:"
+        echo "     - ${HANDOVER_OUTPUT_DIR}/.questions/questions.md Read 후 4 라운드 진행"
+        echo "     - 답변을 ${HANDOVER_OUTPUT_DIR}/.interview/answers.md 에 누적"
+        echo "     - ${HANDOVER_OUTPUT_DIR}/src/04-pitfalls.md, 06-glossary.md 새로 Write"
+        echo ""
+        echo "  4. (Phase D 재실행) bash forge.sh handover --render-only"
+        echo ""
+        echo "=================================================================="
+      else
+        echo ""
+        echo "[OK] Phase E 완료. 메인 Claude가 AskUserQuestion 4 라운드를 수행하고"
+        echo "     답변을 ${HANDOVER_OUTPUT_DIR}/.interview/answers.md 에 누적한 후"
+        echo "     'forge handover --render-only' 로 HTML 재생성."
+      fi
+      exit 0
+    fi
+
+    echo "[handover][ERROR] 알 수 없는 mode: $HANDOVER_MODE" >&2
+    exit 1
     ;;
 
   help|--help|-h)
