@@ -54,53 +54,47 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session log {worker}
 리뷰 대상: {파일 목록}
 ```
 
-### Step 3: 리뷰 실행
+### Step 3: 리뷰 실행 (`forge run`)
 
-리뷰어 SOUL의 role에 따른 OMC 에이전트로 실행:
+리뷰어 SOUL을 엔진 네이티브 `forge run`으로 직접 소환한다 (model/tools는 리뷰어 SOUL frontmatter에서 자동 적용 — OMC `code-reviewer` 매핑 폐기):
 
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh run {reviewer} "{리뷰 프롬프트}
+
+리뷰 대상 파일을 읽고 다음 관점에서 리뷰하라:
+1. 버그 및 로직 오류
+2. 성능 이슈
+3. 보안 취약점
+4. 코드 컨벤션 준수
+5. 리뷰어 SOUL의 전문 지식 기반 도메인 체크
+
+결과를 다음 형식으로 반환:
+- result: pass 또는 fail
+- issues_found: 발견된 이슈 수
+- severity: none, minor, major, critical
+- details: 상세 피드백"
 ```
-Agent(
-  subagent_type = "oh-my-claudecode:code-reviewer",
-  model = "{리뷰어 SOUL의 model}",
-  prompt = "{리뷰 프롬프트}\n\n리뷰 대상 파일을 읽고 다음 관점에서 리뷰하라:
-    1. 버그 및 로직 오류
-    2. 성능 이슈
-    3. 보안 취약점
-    4. 코드 컨벤션 준수
-    5. 리뷰어 SOUL의 전문 지식 기반 도메인 체크
 
-    결과를 다음 형식으로 반환:
-    - result: pass 또는 fail
-    - issues_found: 발견된 이슈 수
-    - severity: none, minor, major, critical
-    - details: 상세 피드백",
-  description = "Review: {worker}의 코드를 {reviewer}가 리뷰"
-)
-```
+- 반환값: 리뷰 산출물(stdout) + 마지막 `<usage> ... result=...` 라인
+- **리뷰어의 성장/비용은 `forge run`이 자동 기록**한다 (Step 4에서 별도 `log-add` 금지)
 
 **에러 처리:**
-- Review Agent 실패 시: "리뷰 실행 오류. `forge review {worker}`로 재시도하세요" 안내
-- Agent 응답에 result/issues_found/severity 형식이 없을 시: Agent 원문 응답을 보여주고 사용자에게 pass/fail 수동 판정 요청
+- `forge run {reviewer}` 실패 시: "리뷰 실행 오류. `forge review {worker}`로 재시도하세요" 안내
+- 응답에 result/issues_found/severity 형식이 없을 시: 원문 응답을 보여주고 사용자에게 pass/fail 수동 판정 요청
 - 리뷰 대상 파일이 없을 시 (git diff 비어있음): "변경 사항 없음. 리뷰 건너뜀" 안내
 
-### Step 4: 리뷰 결과 기록 (비용 포함)
+### Step 4: 리뷰 결과 기록 (판정만 — 비용은 자동)
 
-리뷰 에이전트의 결과를 파싱하여:
+리뷰 판정 결과를 파싱하여 워커의 리뷰 이력에 기록한다:
 
 ```bash
 GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record {worker} {reviewer} "{target}" {result} {issues_found} {severity}
 ```
 
-**리뷰어 SOUL의 비용도 반드시 기록한다** (누락 금지):
-1. Agent 결과에서 `<usage>` 태그의 `total_tokens`, `duration_ms`를 추출
-2. `log-add-usage`로 리뷰어 비용 기록:
-   ```bash
-   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add-usage {reviewer} "{worker} 코드 리뷰" success 0 0 {reviewer_model} {total_tokens} {duration_ms}
-   ```
-   - usage 추출 불가 시 `log-add`로 폴백:
-   ```bash
-   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {reviewer} "{worker} 코드 리뷰" success 0 0
-   ```
+- `review-record`는 **워커**의 리뷰-통과 이벤트를 기록한다 (랭크 승급 판정용 — 리뷰어 실행 비용과는 별개).
+
+**리뷰어 SOUL의 성장/비용은 Step 3의 `forge run`이 이미 자동 기록**했다.
+→ 따라서 **여기서 `log-add` / `log-add-usage`를 다시 호출하지 마라 (중복 기록됨)**. `<usage>` 라인은 표시용으로만 사용한다.
 
 ### Step 5: 이슈 수정 (fail인 경우)
 
@@ -147,7 +141,7 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh promote {worker}
 AI 실행:
 1. 리뷰어 자동 선정 → Zen (qa-tester)
 2. 리뷰 프롬프트 생성 (Zen의 전문 지식 기반)
-3. Agent(code-reviewer, haiku, 리뷰 프롬프트) 실행
+3. forge run zen "{리뷰 프롬프트}" 실행 (Zen model/tools 자동, 비용 자동 기록)
 4. 결과: pass, 0건 이슈
 5. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh review-record ryn zen "전체 변경사항" pass 0 none
 6. GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh rank ryn → "novice 유지 (tasks=5, streak=3)"

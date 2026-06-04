@@ -64,6 +64,8 @@ Project Init:
   init trading        트레이딩 팩 바로 설치
 
 Commands:
+  run <name> <task> [session_id]
+                      엔진 네이티브 SOUL 소환 (OMC 비의존, claude CLI 직접 호출)
   overview (ov)       통합 대시보드 — 팀 전체를 한눈에
   status              팀 상태 + SOUL 랭크 확인
   souls               등록된 SOUL 목록
@@ -197,6 +199,7 @@ Handover (인수인계 자동 생성):
 
 Examples:
   forge status
+  forge run zen "Reply with one word: PONG"
   forge prompt ryn "인증 API 구현"
   forge rank ryn
   forge log-add ryn "REST API 설계" success 5 12
@@ -244,6 +247,18 @@ case "${1:-}" in
       echo "팩 설치: forge init fullstack | gamedev | trading"
       echo "개별 생성: forge soul-create <role>"
     fi
+    ;;
+
+  run)
+    # 엔진 네이티브 SOUL 소환 (OMC 비의존) — lib/agent-runner.sh 의 agent_run
+    # forge run <soul> <task> [session_id]
+    if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+      echo "Usage: forge run <soul_name> <task> [session_id]"
+      exit 1
+    fi
+    source "${GOLEM_ROOT}/lib/agent-runner.sh"
+    agent_run "$2" "$3" "${4:-}"
+    exit $?
     ;;
 
   status)

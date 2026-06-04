@@ -1,6 +1,6 @@
 ---
 name: forge-team
-description: GolemGarden 팀 단위 작업 실행. SOUL 컨텍스트를 OMC 에이전트에 주입하고 실행한다.
+description: GolemGarden 팀 단위 작업 실행. SOUL을 엔진 네이티브 `forge run`으로 직접 소환한다.
 trigger: forge build, forge quick, forge save, forge assign, forge 빌드, 포지 빌드, forge 퀵, 포지 퀵, forge 간단, forge 빠르게
 ---
 
@@ -49,40 +49,48 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
 #### 자동 분배 (forge build)
 
 1. `.golem/analysis.md`가 존재하면 Read로 읽어 아키텍처 컨텍스트를 확보한다
-2. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt-director "{task}"` 실행하여 Director 프롬프트 생성
-3. Director(Nex)를 Agent(subagent_type=architect, model=opus)로 실행:
-   - 프롬프트에 가용 SOUL 목록(tools/maxTurns/isolation 포함) + 태스크 포함
-   - `.golem/analysis.md` 아키텍처 소견이 있으면 추가 컨텍스트로 주입
-   - Director가 서브태스크 분배 결과를 반환 (각 SOUL별 isolation 모드 포함)
-4. **Director 비용 기록**: Agent 결과에서 `<usage>` 태그의 `total_tokens`, `duration_ms`를 추출하여 기록
+2. 가용 SOUL 목록을 확보한다 (`forge status` 또는 `.golem/souls/` 스캔 — tools/maxTurns/isolation 포함)
+3. Director(Nex)를 엔진 네이티브 `forge run`으로 직접 소환하여 분배를 받는다:
    ```bash
-   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add-usage nex "{task} 분배" success 0 0 opus {total_tokens} {duration_ms}
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh run nex "다음 태스크를 서브태스크로 분해하고 각 서브태스크를 가용 SOUL에 배정하라.
+
+   태스크: {task}
+
+   가용 SOUL (역할 / 랭크 / isolation):
+   {soul1} ({role}, {rank}, isolation={none|worktree})
+   {soul2} (...)
+   ...
+
+   {.golem/analysis.md 아키텍처 소견이 있으면 여기에 주입}
+
+   다음 형식으로 분배 결과만 반환하라 (각 줄: SOUL: 서브태스크):
+   {soul}: {subtask}"
    ```
-   - usage 추출 불가 시 `log-add`로 폴백:
-   ```bash
-   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add nex "{task} 분배" success 0 0
-   ```
-5. 반환된 분배 결과에 따라 각 SOUL에 태스크 배정
+   - `forge run`은 SOUL frontmatter의 model(opus 등)/tools를 자동 적용하므로 Agent 매핑이 불필요하다
+   - **비용/성장 기록은 `forge run`이 자동 수행**한다 (내부 growth_log_append). 별도 `log-add` / `log-add-usage` 호출 금지 — 중복 기록됨
+   - Nex의 stdout 마지막 `<usage> ...` 라인은 표시용이며 별도 기록 불필요
+4. **호스트가 인라인 분배해도 무방**: 태스크가 단순해 분배가 자명하면 위 `forge run nex` 단계를 생략하고 호스트가 직접 SOUL 배정을 결정해도 된다 (불필요한 Nex 소환 비용 절감). 분배가 복잡하거나 아키텍처 판단이 필요하면 반드시 `forge run nex`로 위임한다
+5. 분배 결과에 따라 각 SOUL에 태스크 배정
 6. **메일박스 통지**: Director가 각 SOUL에게 task_assign 메시지 전송
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send nex {soul} task_assign "{subtask}"
    ```
 
 **에러 처리:**
-- Director Agent 실패 시: `forge recover nex "{task}" "Director 분배 실패"` 실행
+- `forge run nex` 실패 시: `forge recover nex "{task}" "Director 분배 실패"` 실행
 - Director 응답이 SOUL 이름을 포함하지 않을 시: 가용 SOUL 목록 보여주고 사용자에게 선택 요청
-- forge.sh prompt-director 실행 실패 시: "GolemGarden 미설치 또는 경로 오류. `forge status`로 확인하세요" 안내
+- `forge run` 실행 실패(명령 없음/경로 오류) 시: "GolemGarden 미설치 또는 경로 오류. `forge status`로 확인하세요" 안내
 
 #### 수동 지정 (forge assign)
 
 1. 지정된 SOUL 이름으로 바로 Step 3 진행
 
-### Step 3: SOUL 컨텍스트 주입 + OMC 에이전트 실행
+### Step 3: SOUL 직접 소환 (`forge run`)
 
 각 배정된 SOUL에 대해:
 
 0. **SOUL 실행 가시성 (필수 — 생략 금지)**:
-   Agent 호출 **전에** 반드시 아래 형식으로 사용자에게 표시한다:
+   `forge run` 호출 **전에** 반드시 아래 형식으로 사용자에게 표시한다:
    ```
    ──────────────────────────────────
    >> {SOUL_NAME} ({role}) 작업 시작
@@ -90,69 +98,48 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
       모델: {model} | 랭크: {rank} | 도구: {tools}
    ──────────────────────────────────
    ```
-   병렬 실행 시 각 SOUL마다 개별 표시. 이 메시지 없이 Agent를 호출하지 마라.
+   병렬 실행 시 각 SOUL마다 개별 표시. 이 메시지 없이 `forge run`을 호출하지 마라.
 
 1. **세션 업데이트**: SOUL 상태를 "working"으로 변경
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session log {soul_name} task_start "{task}"
    ```
 
-2. `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh prompt {soul_name} "{task}"` 실행하여 프롬프트 생성
+2. **SOUL 소환**: 엔진 네이티브 `forge run`으로 SOUL 에이전트를 직접 실행한다.
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh run {soul_name} "{실제 태스크 내용}" {session_id}
+   ```
+   - `forge run`이 SOUL frontmatter를 읽어 **model / tools / maxTurns / 시스템 프롬프트를 자동 조립**한다 (OMC 에이전트 매핑 불필요 — `soul_to_omc_agent`는 폐기됨)
+   - SOUL은 self-describing: backend/frontend/qa/devops 등 role 구분 없이 동일하게 `forge run {soul}`로 소환
+   - 반환값: SOUL의 최종 산출물(stdout) + 마지막 줄 `<usage> soul=... model=... result=... tokens_in=... tokens_out=... duration_ms=...`
+   - **성장 기록/비용은 `forge run`이 내부적으로 자동 기록**한다 (growth_log_append). Step 5에서 별도 `log-add` 금지
 
-3. SOUL의 role에 따른 OMC 에이전트 결정:
-
-| SOUL Role | Agent subagent_type | model |
-|-----------|-------------------|-------|
-| director | architect | opus |
-| backend-developer | executor | sonnet |
-| frontend-developer | designer | sonnet |
-| qa-tester | test-engineer | haiku |
-| devops-engineer | executor | sonnet |
-| data-analyst | scientist | sonnet |
-| technical-writer | writer | haiku |
-| security-auditor | security-reviewer | opus |
-| knowledge-auditor | executor | sonnet |
-| game-logic-developer | executor | sonnet |
-| game-designer | planner | sonnet |
-
-4. **Worktree 격리** (SOUL의 isolation=worktree일 때):
+3. **Worktree 격리** (SOUL의 isolation=worktree일 때):
    - ultrapilot 모드에서 SOUL의 `isolation` 필드가 `worktree`이면:
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree create {soul_name} "{task}"
    ```
-   - Agent 실행 시 worktree 경로를 작업 디렉토리로 전달
+   - `forge run` 실행 시 worktree 경로에서 작업하도록 `GOLEM_PROJECT`를 worktree 경로로 전달
    - 현재 novice/junior는 `isolation: none`이므로 동일 디렉토리에서 작업
    - senior 이상 승급 시 자동으로 worktree 격리 활성화
 
-5. **도구 제한**: SOUL의 `tools` frontmatter를 Agent의 도구 풀로 전달
-   ```
-   Agent(
-     subagent_type = "{매핑된 에이전트}",
-     model = "{SOUL의 model 필드}",
-     prompt = "{forge.sh prompt로 생성된 프롬프트}\n\n태스크:\n{실제 태스크 내용}",
-     description = "{soul_name}: {task 요약}",
-     isolation = "{worktree일 때만 지정}"
-   )
-   ```
-   프롬프트에 이미 `허용 도구: [...]`, `최대 턴: N`이 포함되어 있으므로 Agent가 이를 준수한다.
-
-6. **병렬 실행** (forge build):
+4. **병렬 실행** (forge build):
    - 병렬 실행 전 도구 성격 체크: `forge tool-char parallel {soul1} {soul2}`
      - `yes` → 안전하게 병렬
      - `conditional` → 파일 영역 분리 필요
      - `worktree_required` → worktree 격리 후 병렬
-   - 독립적인 서브태스크는 Agent를 병렬로 호출 (한 메시지에 여러 Agent 호출)
+   - 독립적인 서브태스크는 `forge run`을 병렬로 호출 (한 메시지에 여러 Bash 호출)
    - 의존성 있는 태스크는 순차 실행
-   - **Fork 캐시 최적화**: 병렬 SOUL 소환 시 `prompt_build_fork`로 byte-identical prefix 공유
+   - **Novice/Junior SOUL은 동일 파일 병렬 쓰기 금지** — 파일 충돌 위험. 파일 영역을 분리하거나 순차 실행한다
 
 **에러 처리 (3단계 복구 프로토콜):**
-- Worker Agent 1회 실패 시: 같은 SOUL로 재시도 (실패 원인 주입)
+- `forge run` 1회 실패 시 (`<usage> ... result=fail` 또는 비정상 종료): 같은 SOUL로 재시도 (실패 원인 주입)
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh recover {soul_name} "{task}" "{failure_reason}"
    ```
-- Worker Agent 2회 실패 시: 대체 SOUL에 위임 (specialty 매칭)
-- Worker Agent 3회 실패 시: Director에게 에스컬레이션 → 사용자에게 보고
-- forge.sh prompt 실행 실패 시: 해당 SOUL 건너뛰고 사용자에게 알림
+- 2회 실패 시: 대체 SOUL에 위임 (specialty 매칭) → `forge run {대체_soul} "{task}"`
+- 3회 실패 시: Director에게 에스컬레이션 → 사용자에게 보고
+- `forge run` 명령 자체가 실패(미설치/경로 오류) 시: 해당 SOUL 건너뛰고 사용자에게 알림
 - 코드 충돌(동일 파일 수정) 시: 사용자에게 충돌 파일 보여주고 수동 해결 요청
 
 ### Step 4: Worktree 머지 (격리 모드일 때)
@@ -164,41 +151,18 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
 - 변경사항 없으면 자동 정리
 - 충돌 시 사용자에게 보고
 
-### Step 5: 결과 기록 (비용 자동 추적)
+### Step 5: 결과 처리 (비용·성장 기록은 `forge run`이 자동 수행)
 
 각 SOUL의 태스크 완료 후:
 
-1. **Agent 결과에서 usage 데이터 추출**: Agent 결과 끝에 포함된 `<usage>` 태그에서 값을 파싱한다.
-   ```
-   <usage>total_tokens: 50000, tool_uses: 15, duration_ms: 120000</usage>
-   ```
-   - `total_tokens`: 총 사용 토큰
-   - `duration_ms`: 실행 시간 (밀리초)
+1. **성장/비용 기록은 자동** — 별도 호출 금지:
+   `forge run`은 SOUL 실행 성공 시 내부적으로 `growth_log_append`를 호출하여 **성장 기록 + 비용(토큰×모델 가격) + 예산 추적 + 자동 승급 + 업적 체크 + forge-board 갱신을 모두 자동 수행**한다.
+   - 따라서 **여기서 `log-add` / `log-add-usage`를 다시 호출하면 중복 기록된다 → 절대 호출하지 마라.**
+   - usage 값(`<usage>` 라인)은 사용자 표시용으로만 파싱한다 (Step 7 완료 배너).
+   - 단, `forge run`은 files_changed / tests_passed를 알 수 없어 성장 로그에는 0으로 기록된다. 사용자 보고용 파일/테스트 수치는 호스트가 `git diff --stat` 및 테스트 출력에서 직접 집계하여 표시한다 (성장 로그 재기록 아님).
 
-2. **`log-add-usage`로 비용 포함 기록** (log-add 대신 사용):
-   ```bash
-   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add-usage {soul_name} "{task}" {result} {files_changed} {tests_passed} {model} {total_tokens} {duration_ms}
-   ```
-   - result: "success" 또는 "fail"
-   - files_changed: 변경된 파일 수 (git diff --stat로 확인)
-   - tests_passed: 통과한 테스트 수
-   - model: SOUL의 model 필드 (opus, sonnet, haiku)
-   - total_tokens: Agent usage에서 추출한 값
-   - duration_ms: Agent usage에서 추출한 값
-   - **비용은 자동 계산됨** (모델별 가격 × 토큰 수)
-   - **예산 추적도 자동 실행됨** (budget_record)
-   - **자동 승급 실행됨** (조건 충족 시 rank + tools + maxTurns + isolation 모두 갱신)
-   - **업적 자동 체크됨** (새 뱃지 달성 시 자동 기록)
-
-   **usage 데이터를 추출할 수 없는 경우** (Agent 실패 등): 기존 `log-add`로 폴백
-   ```bash
-   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh log-add {soul_name} "{task}" {result} {files_changed} {tests_passed}
-   ```
-
-   **⚠️ 비용 기록 필수 원칙**: 모든 Agent 호출(Director 분배, Worker 실행, 리뷰)은 반드시 `log-add-usage`로 비용을 기록한다. `log-add`(비용 없음)는 usage 추출 불가 시에만 폴백으로 사용한다.
-
-3. **자동 학습 추출 (lesson-extractor)**:
-   Agent 결과를 분석하여 의미 있는 학습만 자동 기록한다.
+2. **자동 학습 추출 (lesson-extractor)**:
+   SOUL의 산출물을 분석하여 의미 있는 학습만 자동 기록한다.
    
    **추출 기준** (아래 중 하나라도 해당하면 기록):
    - 버그 패턴: 근본 원인 + 해결법 발견
@@ -219,12 +183,12 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
    - 한 태스크에서 최대 2개 학습까지
    - 실패 태스크도 추출 (실패 원인 자체가 학습)
 
-4. **메일박스 통지**: SOUL이 Director에게 완료 보고
+3. **메일박스 통지**: SOUL이 Director에게 완료 보고
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send {soul_name} nex task_done "{task} 완료"
    ```
 
-5. **세션 업데이트**: SOUL 상태를 "done"으로 변경
+4. **세션 업데이트**: SOUL 상태를 "done"으로 변경
 
 ### Step 6: 자동 리뷰 트리거 (선택적)
 
@@ -238,8 +202,8 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
 
 ### Step 6.5: forge-board.md 자동 업데이트
 
-**Step 5의 `log-add` / `log-add-usage` 호출 시 forge-board.md가 자동 업데이트된다.**
-별도 호출 불필요 — forge.sh 내부에서 `board_add_task`가 자동 실행됨.
+**Step 3의 `forge run` 실행 시 (내부 `growth_log_append` → `board_add_task`) forge-board.md가 자동 업데이트된다.**
+별도 호출 불필요 — `forge run` 내부에서 자동 실행됨.
 
 업데이트되는 항목:
 - **태스크 히스토리**: 각 SOUL의 작업 결과 + 비용이 자동 누적
@@ -259,6 +223,10 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
    ```
    << {SOUL_NAME} 완료 — {result} ({files}파일, {tests}테스트, ${cost})
    ```
+   - {result}: `forge run`의 `<usage> ... result=` 값
+   - {files}/{tests}: `git diff --stat` / 테스트 출력에서 호스트가 집계
+   - {cost}: `forge run`이 자동 기록한 값 (`forge dashboard --cost`로 확인 가능 — 표시 생략 가능)
+
    각 SOUL마다 개별 표시 후 전체 요약:
    - 변경된 파일 목록
    - 테스트 결과
@@ -292,12 +260,10 @@ AI 실행:
       태스크: 로그인 화면 구현
       모델: sonnet | 랭크: novice | 도구: Read, Edit, Grep, Glob
    ──────────────────────────────────
-   - Agent(executor, sonnet, Ryn 프롬프트 + "인증 API 구현")
-   - Agent(designer, sonnet, Kai 프롬프트 + "로그인 화면 구현")
+   - forge run ryn "인증 API 구현"   (model/tools 자동, 성장·비용 자동 기록)
+   - forge run kai "로그인 화면 구현"  (병렬 — 파일 영역 분리됨)
 4. (Worktree 머지 — novice이므로 해당 없음)
-5. 완료 후:
-   - forge log-add-usage ryn "인증 API" success 8 15 sonnet 50000 120000
-   - forge log-add-usage kai "로그인 화면" success 3 6 sonnet 35000 80000
+5. 완료 후 (성장/비용은 forge run이 이미 자동 기록 — log-add 호출 안 함):
    - mailbox send ryn nex task_done "인증 API 완료"
    - mailbox send kai nex task_done "로그인 화면 완료"
 6. 리뷰 권고 (둘 다 Novice이므로):

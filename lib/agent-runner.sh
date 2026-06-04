@@ -14,6 +14,24 @@
 #     -- <USER_INPUT>
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# GOLEM_DIR 정규화 — forge.sh 로직 미러.
+# 단독 source(forge.sh 경유 아님) 시 GOLEM_DIR 이 비었거나 .golem 이 아닌
+# 경로(루트 등)로 잘못 설정돼 있을 수 있어, 세션 마커 write/check 가 어긋난다.
+# 항상 실제 .golem/ 을 가리키도록 보정한다.
+case "${GOLEM_DIR:-}" in
+  */.golem) : ;;  # 이미 .golem 으로 끝나면 그대로 신뢰
+  *)
+    if [ -n "${GOLEM_PROJECT:-}" ]; then
+      GOLEM_DIR="${GOLEM_PROJECT}/.golem"
+    elif [ -d "$(pwd)/.golem" ]; then
+      GOLEM_DIR="$(pwd)/.golem"
+    else
+      GOLEM_DIR="${GOLEM_ROOT}/.golem"
+    fi
+    ;;
+esac
+
 source "${GOLEM_ROOT}/lib/soul-parser.sh"
 source "${GOLEM_ROOT}/lib/prompt-builder.sh"
 source "${GOLEM_ROOT}/lib/growth-log.sh"
@@ -32,10 +50,16 @@ _gen_uuid() {
     cat /proc/sys/kernel/random/uuid
     return
   fi
-  local py
+  local py uuid_out
   py=$(command -v python3 || command -v python)
   if [ -n "$py" ]; then
-    "$py" -c 'import uuid;print(uuid.uuid4())' && return
+    # Windows WindowsApps python3 스텁은 stderr 로 "Python" 배너를 흘리므로 2>/dev/null
+    # stdout(UUID)만 캡처해 비어있지 않을 때만 사용 (스텁/미설치 시 빈 출력 → 폴백)
+    uuid_out=$("$py" -c 'import uuid;print(uuid.uuid4())' 2>/dev/null)
+    if [ -n "$uuid_out" ]; then
+      printf '%s\n' "$uuid_out"
+      return
+    fi
   fi
   # /dev/urandom 폴백 — RFC 4122 형태로 조립
   if [ -r /dev/urandom ]; then
@@ -276,6 +300,15 @@ ${_ar_body}"
   [ "$_AR_IS_ERROR" -eq 1 ] && result="fail"
   [ "$rc" -ne 0 ] && result="fail"
 
+  # 세션 마커 기록 — 성공 소환 후 .claude 마커를 써서 후속 호출이 --resume 을 타게 함
+  # (_agent_session_has_turns 가 읽는 파일. 지금까지 아무도 쓰지 않아 --resume 갭 존재)
+  if [ "$result" = "success" ]; then
+    local _ar_sess_dir="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/sessions"
+    mkdir -p "$_ar_sess_dir" 2>/dev/null
+    : > "${_ar_sess_dir}/${session_id}.claude" 2>/dev/null \
+      || touch "${_ar_sess_dir}/${session_id}.claude" 2>/dev/null
+  fi
+
   local total_tokens=$(( _AR_TOKENS_IN + _AR_TOKENS_OUT ))
   if [ "$total_tokens" -gt 0 ] 2>/dev/null; then
     source "${GOLEM_ROOT}/lib/budget.sh" 2>/dev/null
@@ -290,11 +323,55 @@ ${_ar_body}"
     growth_log_append "$soul_name" "$task_text" "$result" 0 0 >&2
   fi
 
+  # (g) 스킬 증류 — 임계 도달 시 기존 soul-memory 라이브러리로 lesson 1건 압축 기록
+  # (stdout 오염 방지를 위해 stderr 로. 성공 태스크에서만.)
+  if [ "$result" = "success" ]; then
+    _agent_maybe_distill "$soul_name" >&2
+  fi
+
   # usage 요약 라인 (파싱 가능)
   echo "<usage> soul=${soul_name} model=${model_arg} result=${result} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} duration_ms=${_AR_DURATION_MS}"
 
   [ "$result" = "fail" ] && return 1
   return 0
+}
+
+# ─────────────────────────────────────────────────────────
+# 스킬 증류 (D4) — 기존 soul-memory 라이브러리에 lesson 1건 연결만 함
+# ─────────────────────────────────────────────────────────
+# 임계: 마지막 증류 이후 성공 태스크 5건 누적 시 distilled lesson 1건 기록.
+# 새 인프라를 만들지 않고 growth_log_task_count + memory_record 를 재사용한다.
+# distilled lesson 은 tags 에 "distilled" 를 달아 카운트 기준으로 삼는다.
+_AGENT_DISTILL_THRESHOLD="${AGENT_DISTILL_THRESHOLD:-5}"
+
+_agent_maybe_distill() {
+  local soul_name="$1"
+  [ -z "$soul_name" ] && return 0
+
+  # soul-memory 라이브러리(memory_record / MEMORY_DIR) 보장
+  command -v memory_record >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/soul-memory.sh"
+
+  # 누적 성공 태스크 수 (메타 이벤트 제외 — growth-log 가 알아서 필터)
+  local success_count
+  success_count=$(growth_log_task_count "$soul_name")
+  success_count=${success_count:-0}
+  [ "$success_count" -ge "$_AGENT_DISTILL_THRESHOLD" ] 2>/dev/null || return 0
+
+  # 이미 증류된 lesson 수 (tags 에 distilled 포함)
+  local mem_file="${MEMORY_DIR}/${soul_name}.jsonl"
+  local distilled_count=0
+  if [ -f "$mem_file" ]; then
+    distilled_count=$(grep -c '"tags":"[^"]*distilled' "$mem_file" 2>/dev/null | tr -d ' \r')
+    distilled_count=${distilled_count:-0}
+  fi
+
+  # 임계: 증류 1건당 성공 5건. (distilled+1)*5 도달했을 때만 새로 기록.
+  local need=$(( (distilled_count + 1) * _AGENT_DISTILL_THRESHOLD ))
+  [ "$success_count" -ge "$need" ] 2>/dev/null || return 0
+
+  # 기존 memory_record 로 압축 lesson 1건 기록 (새 시스템 아님)
+  local lesson="${success_count}건 성공 누적 — 안정적으로 처리해온 태스크 패턴을 우선 재사용하고, 검증된 접근을 기본값으로 삼는다."
+  memory_record "$soul_name" "distillation@${success_count}-tasks" "$lesson" "distilled,milestone"
 }
 
 # 세션이 이전 턴을 가지고 있는지 판단 (--resume vs --session-id)

@@ -1,18 +1,18 @@
 ---
 name: forge-init
-description: GolemGarden 프로젝트 초기화. OMC 심층 분석 후 최적의 SOUL 팀을 구성한다.
+description: GolemGarden 프로젝트 초기화. 엔진 네이티브 심층 분석 후 최적의 SOUL 팀을 구성한다.
 trigger: forge-init, forge init, forge 초기화, 포지 init, 포지 초기화, forge 시작, 포지 시작, forge 셋업, forge setup team, forge 팀 구성, forge 팀구성
 ---
 
 # forge-init — 프로젝트 초기화 실행 스킬
 
 사용자가 `forge-init` 또는 `forge-init: {설명}` 형태로 입력하면 이 스킬이 실행된다.
-설명이 없어도 **OMC 심층 분석**을 통해 프로젝트를 파악하고 팀을 구성한다.
+설명이 없어도 **엔진 네이티브 심층 분석**을 통해 프로젝트를 파악하고 팀을 구성한다.
 
 ## 실행 개요 (2-Phase)
 
 ```
-Phase 1: OMC 심층 분석 (explore + architect)
+Phase 1: 심층 분석 (호스트 직접 스캔 + Nex 아키텍처 판단)
   → 기술스택, 아키텍처, 의존성, 코드 컨벤션, 기술 부채 파악
   → analysis_result 생성
 
@@ -23,64 +23,57 @@ Phase 2: SOUL 팀 구성 (forge-init 본체)
 
 ---
 
-## Phase 1: OMC 심층 분석
+## Phase 1: 심층 분석
 
 **사용자가 기술스택을 직접 알려준 경우 Phase 1을 건너뛰고 Phase 2로 이동한다.**
 
-### Step 1-1: Explore 에이전트로 프로젝트 탐색
+> Phase 1은 아직 SOUL 팀이 구성되기 전이므로 `forge run`으로 워커 SOUL을 소환할 수 없다.
+> 따라서 **탐색은 호스트(Claude)가 Glob/Grep/Read로 직접 수행**하고, 아키텍처 심화 판단만 Director(Nex)에게 `forge run nex`로 위임한다 (Nex는 forge-init 시점에 항상 존재).
 
-Agent tool을 사용하여 explore 에이전트를 실행한다:
+### Step 1-1: 호스트 직접 프로젝트 탐색
 
+호스트가 Glob/Grep/Read로 프로젝트를 직접 스캔한다. 다음을 반드시 포함:
+
+1. 프로젝트 유형 (웹앱, API, 게임, 데이터, 모노레포 등)
+2. 언어 및 프레임워크 (정확한 버전 포함 — package.json, pom.xml, requirements.txt 등 확인)
+3. 백엔드: 프레임워크, DB, ORM, 인증 방식
+4. 프론트엔드: 프레임워크, 상태관리, UI 라이브러리
+5. 인프라: Docker, K8s, CI/CD, 클라우드
+6. 테스트: 프레임워크, 커버리지, 테스트 전략
+7. 패키지 구조 및 아키텍처 패턴 (레이어드, 클린, 헥사고날 등)
+8. 코드 컨벤션 (린터, 포매터, 네이밍 규칙)
+9. 주요 설정 파일 목록 및 내용 요약
+10. 외부 의존성 및 API 연동
+
+매우 철저하게(very thorough) 스캔한다. 결과를 `scan_result`로 정리한다.
+
+### Step 1-2: Nex(Director)로 아키텍처 심화 분석
+
+`scan_result`를 Director(Nex)에게 `forge run`으로 넘겨 아키텍처 심화 판단을 받는다 (Nex의 model=opus가 frontmatter에서 자동 적용됨):
+
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh run nex "아래 프로젝트 스캔 결과를 바탕으로 아키텍처 심화 분석을 수행하라.
+
+{scan_result}
+
+다음을 판단하라:
+1. 현재 아키텍처의 강점과 약점
+2. 기술 부채 식별 (있으면)
+3. 모듈 간 의존성 그래프 (핵심 모듈 위주)
+4. 핵심 도메인 및 비즈니스 로직 위치
+5. 확장 포인트 (어디를 건드리면 영향 범위가 큰지)
+6. 보안 고려사항
+7. 성능 병목 가능 지점
+
+결과를 구조화하여 반환하라."
 ```
-Agent(
-  subagent_type = "Explore",
-  prompt = "이 프로젝트를 심층 분석하라. 다음을 반드시 포함:
 
-    1. 프로젝트 유형 (웹앱, API, 게임, 데이터, 모노레포 등)
-    2. 언어 및 프레임워크 (정확한 버전 포함)
-    3. 백엔드: 프레임워크, DB, ORM, 인증 방식
-    4. 프론트엔드: 프레임워크, 상태관리, UI 라이브러리
-    5. 인프라: Docker, K8s, CI/CD, 클라우드
-    6. 테스트: 프레임워크, 커버리지, 테스트 전략
-    7. 패키지 구조 및 아키텍처 패턴 (레이어드, 클린, 헥사고날 등)
-    8. 코드 컨벤션 (린터, 포매터, 네이밍 규칙)
-    9. 주요 설정 파일 목록 및 내용 요약
-    10. 외부 의존성 및 API 연동
-
-    매우 철저하게(very thorough) 분석하라.",
-  description = "forge-init: 프로젝트 심층 탐색"
-)
-```
-
-### Step 1-2: Architect 에이전트로 아키텍처 심화 분석
-
-Explore 결과를 받아서 architect 에이전트를 실행한다:
-
-```
-Agent(
-  subagent_type = "architect",
-  model = "opus",
-  prompt = "아래 Explore 분석 결과를 바탕으로 아키텍처 심화 분석을 수행하라:
-
-    {explore_result}
-
-    다음을 판단하라:
-    1. 현재 아키텍처의 강점과 약점
-    2. 기술 부채 식별 (있으면)
-    3. 모듈 간 의존성 그래프 (핵심 모듈 위주)
-    4. 핵심 도메인 및 비즈니스 로직 위치
-    5. 확장 포인트 (어디를 건드리면 영향 범위가 큰지)
-    6. 보안 고려사항
-    7. 성능 병목 가능 지점
-
-    결과를 구조화하여 반환하라.",
-  description = "forge-init: 아키텍처 심화 분석"
-)
-```
+- `forge run`이 성장/비용을 자동 기록하므로 별도 `log-add` 불필요
+- 마지막 `<usage> ...` 라인은 표시용
 
 ### Step 1-3: 분석 결과 통합 (analysis_result)
 
-Explore + Architect 결과를 통합하여 다음 형식으로 정리한다:
+호스트 스캔(scan_result) + Nex 아키텍처 분석 결과를 통합하여 다음 형식으로 정리한다:
 
 ```
 === GolemGarden 프로젝트 분석 결과 ===
@@ -139,8 +132,8 @@ Explore + Architect 결과를 통합하여 다음 형식으로 정리한다:
 사용자가 수정을 요청하면 반영 후 Phase 2 진행.
 
 **Phase 1 에러 처리:**
-- Explore Agent 실패/빈 결과 시: 기본 파일 스캔(`ls`, `find`)으로 폴백하여 최소 정보 수집
-- Architect Agent 실패 시: Explore 결과만으로 Phase 2 진행 (아키텍처 소견 없이)
+- 호스트 스캔이 빈약/실패 시: 기본 파일 스캔(`ls`, `find`)으로 폴백하여 최소 정보 수집
+- `forge run nex` 실패 시: 호스트 스캔 결과(scan_result)만으로 Phase 2 진행 (아키텍처 소견 없이)
 - 사용자가 분석 결과를 거부 시: 사용자 입력으로 직접 기술스택 지정 → Phase 2 진행
 
 ---
@@ -231,7 +224,7 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh soul-create qa-teste
 
 forge-board.md에 반영할 Phase 1 정보:
 - 프로젝트명, 기술스택 (실제 버전)
-- 각 SOUL의 역할 + OMC 에이전트 매핑
+- 각 SOUL의 역할 + model/tools (SOUL frontmatter 기준 — `forge run`이 소비)
 - 아키텍처 소견에서 도출된 우선순위
 
 ### Step 2-4: .golem/analysis.md 저장 (분석 결과 영구 보존)
@@ -242,7 +235,7 @@ Phase 1의 전체 분석 결과를 `.golem/analysis.md`로 저장한다.
 ```markdown
 ---
 analyzed: {날짜}
-analyzer: OMC explore + architect
+analyzer: host scan + forge run nex
 ---
 
 {Phase 1 Step 1-3의 전체 analysis_result}
@@ -275,10 +268,10 @@ analyzer: OMC explore + architect
 사용자: forge-init
 
 AI 실행:
-[Phase 1 — OMC 심층 분석]
-1. Agent(Explore): 프로젝트 파일 구조, 설정 파일, 소스 코드 전체 탐색
+[Phase 1 — 심층 분석]
+1. 호스트 직접 스캔(Glob/Grep/Read): 프로젝트 파일 구조, 설정 파일, 소스 코드 전체 탐색
    → "Spring Boot 3.2, React 18, MariaDB, Docker, GitHub Actions"
-2. Agent(architect, opus): 아키텍처 분석
+2. forge run nex "{scan_result} 아키텍처 분석": (Nex model=opus 자동)
    → "레이어드 아키텍처, JPA N+1 위험 3건, 인증 미구현"
 
 3. 사용자에게 분석 결과 보고 + 확인 요청
@@ -329,7 +322,7 @@ AI 실행:
 
 AI 실행:
 [Phase 1]
-1. Agent(Explore): 파일 거의 없음 → 빈 프로젝트 판단
+1. 호스트 직접 스캔: 파일 거의 없음 → 빈 프로젝트 판단
 
 2. 사용자에게 질문:
    "새 프로젝트인 것 같습니다.

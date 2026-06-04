@@ -10,7 +10,7 @@ SESSION_DIR="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/sessions"
 
 # 세션 디렉토리 초기화
 _session_ensure_dir() {
-  [ ! -d "$SESSION_DIR" ] && mkdir -p "$SESSION_DIR"
+  [ -d "$SESSION_DIR" ] || mkdir -p "$SESSION_DIR"
 }
 
 # 태스크 설명 → 파일시스템 안전한 슬러그 변환
@@ -45,7 +45,7 @@ session_create() {
   local date_prefix=$(date +%Y-%m-%d)
   local slug=$(_task_slug "$task")
   local session_name="${date_prefix}_${slug}"
-  local session_id="sess_$(date +%s)"
+  local session_id="sess_$(date +%s)_${RANDOM}"
   local ts=$(_session_ts)
 
   # SOUL 목록을 JSON 배열로 변환
@@ -378,7 +378,7 @@ session_fork() {
     session_name="${session_name}-$(date +%s)"
   fi
   local session_id
-  session_id="sess_$(date +%s)"
+  session_id="sess_$(date +%s)_${RANDOM}"
   local ts
   ts=$(_session_ts)
 

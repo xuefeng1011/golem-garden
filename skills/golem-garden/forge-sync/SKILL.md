@@ -45,51 +45,47 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync pending
 
 대기열이 비어있으면 종료.
 
-### Step 2: Sage(심사관) 실행
+### Step 2: Sage(심사관) 실행 (`forge run`)
 
-대기열의 각 항목에 대해 Sage SOUL을 Agent로 실행:
+대기열의 각 항목에 대해 Sage SOUL을 엔진 네이티브 `forge run`으로 직접 소환한다 (Sage의 model=opus가 frontmatter에서 자동 적용 — OMC `code-reviewer` 매핑 폐기):
 
+```bash
+GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh run sage "[GolemGarden Knowledge Audit — Sage]
+
+심사 대상:
+- SOUL: {soul_name}
+- 학습 내용: {learning}
+- 분류: {scope} / 신뢰도: {confidence}
+- 출처 태스크: {source_task}
+
+기존 글로벌 전문 지식:
+{글로벌 souls/{name}.md의 전문 지식 섹션 내용}
+
+심사 체크리스트:
+1. 오염 체크: 특정 프로젝트에서만 유효한가? (포트, 경로, 환경변수, 프로젝트명 포함 여부)
+2. 충돌 체크: 기존 글로벌 지식과 모순되는가?
+3. 품질 체크: 다른 프로젝트에서도 바로 적용 가능한가?
+4. 중복 체크: 이미 글로벌에 비슷한 지식이 있는가?
+5. 구체성 체크: 구체적 기술/수치/패턴이 포함되어 있는가?
+
+판정:
+- ✅ promote: 5개 모두 통과 → 글로벌 승격
+- ⚠️ hold: 1~2개 불확실 → 보류
+- ❌ reject: 프로젝트 전용 / 추상적 / 충돌 → 기각
+
+반드시 다음 형식으로 응답:
+VERDICT: {promote|hold|reject}
+REASON: {한 줄 사유}"
 ```
-Agent(
-  subagent_type = "oh-my-claudecode:code-reviewer",
-  model = "opus",
-  prompt = "[GolemGarden Knowledge Audit — Sage]
 
-  심사 대상:
-  - SOUL: {soul_name}
-  - 학습 내용: {learning}
-  - 분류: {scope} / 신뢰도: {confidence}
-  - 출처 태스크: {source_task}
-
-  기존 글로벌 전문 지식:
-  {글로벌 souls/{name}.md의 전문 지식 섹션 내용}
-
-  심사 체크리스트:
-  1. 오염 체크: 특정 프로젝트에서만 유효한가? (포트, 경로, 환경변수, 프로젝트명 포함 여부)
-  2. 충돌 체크: 기존 글로벌 지식과 모순되는가?
-  3. 품질 체크: 다른 프로젝트에서도 바로 적용 가능한가?
-  4. 중복 체크: 이미 글로벌에 비슷한 지식이 있는가?
-  5. 구체성 체크: 구체적 기술/수치/패턴이 포함되어 있는가?
-
-  판정:
-  - ✅ promote: 5개 모두 통과 → 글로벌 승격
-  - ⚠️ hold: 1~2개 불확실 → 보류
-  - ❌ reject: 프로젝트 전용 / 추상적 / 충돌 → 기각
-
-  반드시 다음 형식으로 응답:
-  VERDICT: {promote|hold|reject}
-  REASON: {한 줄 사유}
-  ",
-  description = "Sage: 지식 승격 심사"
-)
-```
+- Sage의 성장/비용은 `forge run`이 자동 기록한다 (별도 `log-add` 불필요).
 
 ### Step 3: 판정 적용
 
-Sage의 응답에서 `VERDICT:` 라인을 파싱한다.
+Sage의 응답(stdout)에서 `VERDICT:` 라인을 파싱한다 (`<usage>` 라인은 표시용).
 
 **에러 처리:**
-- Sage Agent 실패 시: "심사 실행 오류. `forge sync`로 재시도하세요" 안내
+- `forge run sage` 실패 시: "심사 실행 오류. `forge sync`로 재시도하세요" 안내
 - `VERDICT:` 형식이 응답에 없을 시: Sage 원문 응답을 사용자에게 보여주고 수동 판정 요청 (`forge sync-judge {번호} {판정} {사유}`)
 - 대기열 항목이 이미 처리됨(라인 없음) 시: 건너뛰고 다음 항목 진행
 
