@@ -68,7 +68,7 @@
 | **프로젝트 DNA** | Claude Code 대화창 | `forge dna show` |
 
 **bash 터미널이 아닙니다. Claude Code 대화창에서 치는 겁니다.**
-Claude가 스킬을 인식하고 `forge.sh` + OMC Agent를 자동으로 호출합니다.
+Claude가 스킬을 인식하고 `forge.sh` + Agent를 자동으로 호출합니다.
 
 ### 수동으로도 쓸 수 있나요?
 
@@ -93,7 +93,7 @@ bash forge.sh log-add ryn "JWT 구현" success 8 15
 | 항목 | 필수 여부 | 설명 |
 |------|----------|------|
 | **Claude Code CLI** | 필수 | Claude Max ($100/월) 구독 필요 |
-| **oh-my-claudecode (OMC)** | 필수 | 멀티 에이전트 오케스트레이션 레이어 |
+| **oh-my-claudecode (OMC)** | 선택 | 멀티 에이전트 오케스트레이션 확장 레이어 |
 | **Git Bash** | 필수 (Windows) | forge CLI가 bash 기반 |
 | **Git** | 권장 | 버전 관리 및 협업 |
 
@@ -103,15 +103,14 @@ bash forge.sh log-add ryn "JWT 구현" success 8 15
 claude --version
 ```
 
-### 1-2. OMC 설치 확인
+### 1-2. OMC 설치 (선택 사항)
 
-Claude Code 안에서:
+OMC는 추가 오케스트레이션 기능을 제공하지만 GolemGarden 엔진 실행에 필수가 아닙니다.
+설치를 원할 경우 Claude Code 안에서:
 ```
 /plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
 /plugin install oh-my-claudecode
 ```
-
-설치 확인: Claude Code 대화에서 `setup omc` 또는 `/oh-my-claudecode:omc-setup` 실행.
 
 ---
 

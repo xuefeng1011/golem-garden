@@ -1,0 +1,312 @@
+#!/bin/bash
+# agent-runner.sh — OMC 비의존 SOUL 에이전트 실행기 (engine-native)
+# Usage: source lib/agent-runner.sh && agent_run ryn "REST API 구현"
+#
+# 웹 게이트웨이(session_manager.py)와 동일한 패턴으로 `claude` CLI를 직접 호출하여
+# SOUL 에이전트를 소환한다. OMC의 Agent(subagent_type=...) 메커니즘이나
+# soul_to_omc_agent 매핑에 의존하지 않는다.
+#
+# 게이트웨이 호출 형태(미러):
+#   claude --print --output-format=stream-json --verbose \
+#     ( --session-id <uuid> | --resume <uuid> ) \
+#     --append-system-prompt <SYSTEM_PROMPT> \
+#     --model <model> --allowedTools <csv> \
+#     -- <USER_INPUT>
+
+GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${GOLEM_ROOT}/lib/soul-parser.sh"
+source "${GOLEM_ROOT}/lib/prompt-builder.sh"
+source "${GOLEM_ROOT}/lib/growth-log.sh"
+
+# 게이트웨이 CLAUDE_ARGS_BASE 미러 (config.py)
+_AGENT_CLAUDE_BASE=(--print --output-format=stream-json --verbose)
+
+# ─────────────────────────────────────────────────────────
+# 헬퍼
+# ─────────────────────────────────────────────────────────
+
+# 이식성 있는 UUID 생성 (게이트웨이 uuid.uuid4 대체)
+# 우선순위: /proc → python → /dev/urandom 폴백
+_gen_uuid() {
+  if [ -r /proc/sys/kernel/random/uuid ]; then
+    cat /proc/sys/kernel/random/uuid
+    return
+  fi
+  local py
+  py=$(command -v python3 || command -v python)
+  if [ -n "$py" ]; then
+    "$py" -c 'import uuid;print(uuid.uuid4())' && return
+  fi
+  # /dev/urandom 폴백 — RFC 4122 형태로 조립
+  if [ -r /dev/urandom ]; then
+    local hex
+    hex=$(od -An -tx1 -N16 /dev/urandom 2>/dev/null | tr -d ' \n')
+    if [ ${#hex} -eq 32 ]; then
+      printf '%s-%s-4%s-%s-%s\n' \
+        "${hex:0:8}" "${hex:8:4}" "${hex:13:3}" \
+        "8${hex:17:3}" "${hex:20:12}"
+      return
+    fi
+  fi
+  # 최후 폴백 — 시각 + PID (충돌 가능성 낮음, 디버그 전용)
+  printf '%s-%s-%s\n' "$(date +%s)" "$$" "$RANDOM"
+}
+
+# SOUL.model → claude --model 값 매핑
+# opus/sonnet/haiku 별칭은 그대로, 전체 모델 id(claude-...)는 통과
+_map_model() {
+  local model="$1"
+  case "$model" in
+    opus|sonnet|haiku)  echo "$model" ;;
+    claude-*)           echo "$model" ;;   # 전체 id 통과
+    "")                 echo "sonnet" ;;   # 기본값
+    *)                  echo "$model" ;;   # 알 수 없으면 통과 (CLI가 검증)
+  esac
+}
+
+# SOUL_TOOLS("Read, Edit, Write") → claude --allowedTools CSV("Read,Edit,Write")
+# 공백 제거만 수행 (frontmatter는 ", " 구분, CLI는 "," 구분)
+_tools_csv() {
+  printf '%s' "$1" | tr -d ' '
+}
+
+# stream-json 한 줄에서 키 값 추출 (jq 미사용 — 프로젝트 컨벤션)
+# _json_field <json_line> <key> → 값 (숫자/문자열)
+_json_num_field() {
+  local line="$1"
+  local key="$2"
+  printf '%s' "$line" | grep -o "\"${key}\":[0-9]*" | head -1 | cut -d: -f2
+}
+
+# ─────────────────────────────────────────────────────────
+# stream-json 결과 파싱
+# ─────────────────────────────────────────────────────────
+# claude --output-format=stream-json 출력에서:
+#   - type=result 라인 → is_error, duration_ms, usage(input/output/cache tokens)
+#   - type=assistant text 블록 → 최종 어시스턴트 텍스트 누적
+# events.py parse_stream_event 의 bash 미러. jq 미사용.
+#
+# stdin 으로 stream-json 을 받아 다음을 전역에 설정:
+#   _AR_RESULT_TEXT, _AR_IS_ERROR, _AR_DURATION_MS,
+#   _AR_TOKENS_IN, _AR_TOKENS_OUT, _AR_TOKENS_CACHE
+_parse_stream() {
+  _AR_RESULT_TEXT=""
+  _AR_IS_ERROR=0
+  _AR_DURATION_MS=0
+  _AR_TOKENS_IN=0
+  _AR_TOKENS_OUT=0
+  _AR_TOKENS_CACHE=0
+  local result_field=""
+
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+
+    # result 라인 (terminal) — usage + 에러 + duration
+    if printf '%s' "$line" | grep -q '"type":"result"'; then
+      _AR_DURATION_MS=$(_json_num_field "$line" "duration_ms")
+      _AR_DURATION_MS=${_AR_DURATION_MS:-0}
+      if printf '%s' "$line" | grep -q '"is_error":true'; then
+        _AR_IS_ERROR=1
+      fi
+      # usage 객체 내 토큰 카운트 (input_tokens, output_tokens,
+      # cache_read_input_tokens, cache_creation_input_tokens)
+      local in_t out_t cr_t cc_t
+      in_t=$(_json_num_field "$line" "input_tokens")
+      out_t=$(_json_num_field "$line" "output_tokens")
+      cr_t=$(_json_num_field "$line" "cache_read_input_tokens")
+      cc_t=$(_json_num_field "$line" "cache_creation_input_tokens")
+      _AR_TOKENS_IN=${in_t:-0}
+      _AR_TOKENS_OUT=${out_t:-0}
+      _AR_TOKENS_CACHE=$(( ${cr_t:-0} + ${cc_t:-0} ))
+      # result 라인은 보통 "result" 키에 최종 텍스트를 담음 — 폴백용
+      result_field=$(printf '%s' "$line" | sed -n 's/.*"result":"\(\([^"\\]\|\\.\)*\)".*/\1/p')
+    fi
+  done
+
+  # assistant 누적 텍스트가 있으면 우선, 없으면 result 필드
+  if [ -n "$_AR_RESULT_TEXT" ]; then
+    :
+  elif [ -n "$result_field" ]; then
+    # \n, \" 디코드 (최소)
+    _AR_RESULT_TEXT=$(printf '%s' "$result_field" | sed 's/\\n/\n/g; s/\\"/"/g; s/\\\\/\\/g')
+  fi
+}
+
+# assistant 텍스트 블록 누적 (stream 전체에서 별도 추출)
+# stream-json 의 assistant 메시지 content[].text 를 이어붙인다.
+_extract_assistant_text() {
+  # 입력: stream-json 전체(파일). grep 으로 assistant 라인만 추려 text 추출.
+  local stream_file="$1"
+  grep '"type":"assistant"' "$stream_file" 2>/dev/null \
+    | sed -n 's/.*"text":"\(\([^"\\]\|\\.\)*\)".*/\1/p' \
+    | sed 's/\\n/\n/g; s/\\"/"/g; s/\\t/\t/g; s/\\\\/\\/g'
+}
+
+# ─────────────────────────────────────────────────────────
+# 시스템 프롬프트 조립
+# ─────────────────────────────────────────────────────────
+# 게이트웨이 _build_system_prompt 미러: identity 헤더 + SOUL 본문.
+# prompt_build 를 재사용해 3-tier(프로젝트 컨텍스트 + SOUL 컨텍스트 + 태스크)를
+# 그대로 살린다. 게이트웨이는 raw SOUL body 만 쓰지만, bash 경로는
+# prompt_build 가 이미 캐시 최적화된 SOUL 컨텍스트를 만들어 주므로 재사용한다.
+_build_agent_system_prompt() {
+  local soul_name="$1"
+  # identity 헤더 (게이트웨이와 동일 톤)
+  local specialty="${SOUL_SPECIALTY:-—}"
+  cat <<HEADER
+# SOUL Identity
+You are **${SOUL_NAME:-$soul_name}** (${SOUL_RANK:-unknown}). Specialty: ${specialty}.
+Respond as ${SOUL_NAME:-$soul_name}, staying in your area of expertise. Keep your voice consistent across turns.
+
+HEADER
+}
+
+# ─────────────────────────────────────────────────────────
+# 메인: agent_run
+# ─────────────────────────────────────────────────────────
+# agent_run <soul_name> <task_text> [session_id] [--dry-run]
+#   - SOUL 파싱 → 시스템 프롬프트 조립 → claude 소환 → 결과/usage 파싱
+#   - 성공 시 growth-log 에 비용 포함 기록 (budget_estimate_cost 재사용)
+#   - --dry-run: claude argv 만 출력하고 소환하지 않음 (오프라인 테스트)
+#   stdout: 최종 어시스턴트 텍스트
+#   마지막 줄: <usage> 요약 (파싱 가능)
+agent_run() {
+  local soul_name="$1"
+  local task_text="$2"
+  local session_id=""
+  local dry_run=0
+
+  # 나머지 인자 파싱 (session_id, --dry-run 순서 무관)
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) dry_run=1 ;;
+      *)         [ -z "$session_id" ] && session_id="$1" ;;
+    esac
+    shift
+  done
+
+  if [ -z "$soul_name" ] || [ -z "$task_text" ]; then
+    echo "[agent-runner] Usage: agent_run <soul_name> <task_text> [session_id] [--dry-run]" >&2
+    return 1
+  fi
+
+  # claude CLI 가드 (게이트웨이 CLAUDE_CMD is None 체크 미러)
+  if [ "$dry_run" -eq 0 ] && ! command -v claude >/dev/null 2>&1; then
+    echo "[agent-runner] ERROR: 'claude' CLI를 PATH에서 찾을 수 없습니다." >&2
+    echo "[agent-runner] Claude Code CLI를 설치하고 PATH에 추가하세요." >&2
+    return 127
+  fi
+
+  # (a) SOUL 파싱
+  local soul_file
+  soul_file=$(_resolve_soul_file "$soul_name")
+  if [ -z "$soul_file" ] || [ ! -f "$soul_file" ]; then
+    echo "[agent-runner] ERROR: SOUL 파일 없음: ${soul_name}" >&2
+    return 1
+  fi
+  soul_parse "$soul_file"
+
+  # (b) 시스템 프롬프트 = identity 헤더 + prompt_build(SOUL 컨텍스트 + 태스크)
+  # 명령 치환은 trailing newline 을 제거하므로 헤더/본문 사이에 명시적 개행 삽입
+  local _ar_header _ar_body
+  _ar_header="$(_build_agent_system_prompt "$soul_name")"
+  _ar_body="$(prompt_build "$soul_name" "$task_text")"
+  local system_prompt
+  system_prompt="${_ar_header}
+
+${_ar_body}"
+
+  # (c) 모델 매핑 + (d 일부) 도구 CSV
+  local model_arg tools_csv
+  model_arg=$(_map_model "$SOUL_MODEL")
+  tools_csv=$(_tools_csv "$SOUL_TOOLS")
+
+  # 세션 인자 결정: 없거나 0턴이면 --session-id, 기존 세션이면 --resume
+  # (게이트웨이 prior_count==0 분기 미러). bash 경로는 세션 메타에 의존하지 않고
+  # session_id 전달 여부 + 메타 존재 여부로 판단한다.
+  local session_args
+  if [ -z "$session_id" ]; then
+    session_id=$(_gen_uuid)
+    session_args=(--session-id "$session_id")
+  elif _agent_session_has_turns "$session_id"; then
+    session_args=(--resume "$session_id")
+  else
+    session_args=(--session-id "$session_id")
+  fi
+
+  # (d) claude argv 조립 — 게이트웨이와 동일 + bash 경로 전용 --model/--allowedTools
+  local -a argv
+  argv=(claude "${_AGENT_CLAUDE_BASE[@]}" "${session_args[@]}"
+        --append-system-prompt "$system_prompt"
+        --model "$model_arg")
+  if [ -n "$tools_csv" ]; then
+    argv+=(--allowedTools "$tools_csv")
+  fi
+  argv+=(-- "$task_text")
+
+  # --dry-run: argv 만 출력 (각 인자 한 줄, 따옴표로 가독성)
+  if [ "$dry_run" -eq 1 ]; then
+    echo "[agent-runner] DRY-RUN argv (소환 안 함):"
+    local a
+    for a in "${argv[@]}"; do
+      printf '  %q\n' "$a"
+    done
+    echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]}"
+    return 0
+  fi
+
+  # (e) 소환 + stream-json 캡처
+  local stream_file
+  stream_file=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/agent_run_$$_$RANDOM")
+  local rc=0
+  "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
+
+  # 어시스턴트 텍스트 + result usage 파싱
+  _AR_RESULT_TEXT=$(_extract_assistant_text "$stream_file")
+  _parse_stream < "$stream_file"
+
+  rm -f "$stream_file"
+
+  # 결과 텍스트 출력
+  printf '%s\n' "$_AR_RESULT_TEXT"
+
+  # (f) 성공 시 growth-log 기록 (cost 수학은 budget.sh 재사용 — 중복 금지)
+  local result="success"
+  [ "$_AR_IS_ERROR" -eq 1 ] && result="fail"
+  [ "$rc" -ne 0 ] && result="fail"
+
+  local total_tokens=$(( _AR_TOKENS_IN + _AR_TOKENS_OUT ))
+  if [ "$total_tokens" -gt 0 ] 2>/dev/null; then
+    source "${GOLEM_ROOT}/lib/budget.sh" 2>/dev/null
+    # budget_estimate_cost 는 "tokens_in tokens_out cost" 를 출력하지만
+    # 우리는 result usage 의 실제 토큰을 쓰므로 cost 만 취한다.
+    local cost_data cost
+    cost_data=$(budget_estimate_cost "$model_arg" "$total_tokens" "$_AR_DURATION_MS")
+    cost=$(printf '%s' "$cost_data" | awk '{print $3}')
+    growth_log_append "$soul_name" "$task_text" "$result" 0 0 "" "" \
+      "$_AR_TOKENS_IN" "$_AR_TOKENS_OUT" "$_AR_TOKENS_CACHE" "$cost" "$model_arg" "$_AR_DURATION_MS" >&2
+  else
+    growth_log_append "$soul_name" "$task_text" "$result" 0 0 >&2
+  fi
+
+  # usage 요약 라인 (파싱 가능)
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} duration_ms=${_AR_DURATION_MS}"
+
+  [ "$result" = "fail" ] && return 1
+  return 0
+}
+
+# 세션이 이전 턴을 가지고 있는지 판단 (--resume vs --session-id)
+# .golem/sessions/ 메타 또는 claude 세션 존재 여부로 근사.
+# 게이트웨이는 sqlite message_count 를 쓰지만 bash 경로는 파일 기반.
+_agent_session_has_turns() {
+  local sid="$1"
+  [ -z "$sid" ] && return 1
+  local sess_dir="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/sessions"
+  # claude 세션 마커 파일(있으면) 또는 우리 트랜스크립트에 해당 sid 기록이 있으면 턴 있음
+  if [ -f "${sess_dir}/${sid}.claude" ]; then
+    return 0
+  fi
+  return 1
+}

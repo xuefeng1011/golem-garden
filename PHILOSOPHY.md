@@ -46,7 +46,7 @@ GolemGarden의 가치는 개별 SOUL이 아니라 **팀 조합**에서 나온다
 ### 1.4 OMC를 대체하지 않고 얹는다
 
 GolemGarden은 독자 프레임워크가 아니다.
-**oh-my-claudecode(OMC) 위에 올라타는 커스텀 레이어**다.
+**Claude Code CLI 위에서 독립적으로 동작하는 커스텀 레이어**다 (OMC는 선택적 확장).
 
 ```
 GolemGarden이 하는 것    ← SOUL 관리, 성장, 팀 역학
@@ -275,7 +275,7 @@ Claude Code나 OMC에는 없고, GolemGarden만 가진 것들:
 │  SOUL Parser │ Prompt Builder │ Mailbox │ Session    │
 │  Error Recovery │ Worktree │ Hook Guards             │
 ├──────────────────────────────────────────────────────┤
-│              oh-my-claudecode (OMC)                   │
+│         oh-my-claudecode (OMC) — 선택 사항             │
 │  32 agents │ 5 exec modes │ Model routing │ HUD      │
 ├──────────────────────────────────────────────────────┤
 │              Claude Code CLI                         │

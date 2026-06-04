@@ -1,7 +1,4 @@
 {
-  "enabledPlugins": {
-    "oh-my-claudecode@omc": true
-  },
   "hooks": {
     "PreToolUse": [
       {

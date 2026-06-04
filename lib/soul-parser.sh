@@ -207,7 +207,42 @@ soul_get() {
   soul_get_field "$soul_file" "$field"
 }
 
-# SOUL role → OMC agent 매핑
+# ─────────────────────────────────────────────────────────
+# Engine-native 디스패치 스펙 (OMC 비의존)
+# ─────────────────────────────────────────────────────────
+# soul_agent_spec <soul_name_or_file>
+#   SOUL 을 claude CLI 로 직접 소환하는 데 필요한 engine-native 정보를 출력한다.
+#   OMC agent 이름이 아니라 model / tool allowlist / identity 를 반환한다.
+#   agent-runner.sh 가 이 경로를 사용한다 (soul_to_omc_agent 대체).
+#
+#   출력(개행 구분 key=value): model / tools / disallowed / rank / role / coordinator
+soul_agent_spec() {
+  local target="$1"
+  local soul_file="$target"
+  if [ ! -f "$soul_file" ]; then
+    soul_file=$(_resolve_soul_file "$target")
+  fi
+  if [ -z "$soul_file" ] || [ ! -f "$soul_file" ]; then
+    echo "[ERROR] SOUL 파일 없음: ${target}" >&2
+    return 1
+  fi
+
+  soul_save 2>/dev/null
+  soul_parse "$soul_file"
+  printf 'model=%s\n'       "${SOUL_MODEL:-sonnet}"
+  printf 'tools=%s\n'       "${SOUL_TOOLS}"
+  printf 'disallowed=%s\n'  "${SOUL_DISALLOWED_TOOLS}"
+  printf 'rank=%s\n'        "${SOUL_RANK}"
+  printf 'role=%s\n'        "${SOUL_ROLE}"
+  printf 'coordinator=%s\n' "${SOUL_IS_COORDINATOR}"
+  soul_restore 2>/dev/null
+}
+
+# [DEPRECATED] SOUL role → OMC agent 매핑
+# OMC 의존 제거(독립 엔진 전환)로 더 이상 디스패치에 사용하지 않는다.
+# engine-native 경로는 soul_agent_spec 을 사용하라.
+# 기존 호출자(prompt-builder.sh, error-recovery.sh, forge-board.sh)의 표시용
+# 호환을 위해 thin shim 으로 유지한다. 신규 코드에서 사용 금지.
 soul_to_omc_agent() {
   local role="$1"
   case "$role" in

@@ -611,8 +611,21 @@ case "${1:-}" in
         fi
         session_log "$3" "$4" "$5"
         ;;
+      fork)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge session fork <session_id>"
+          exit 1
+        fi
+        session_fork "$3"
+        ;;
+      branch)
+        session_branch
+        ;;
+      tree)
+        session_tree
+        ;;
       *)
-        echo "Usage: forge session <create|status|list|resume|end|log>"
+        echo "Usage: forge session <create|status|list|resume|end|log|fork|branch|tree>"
         exit 1
         ;;
     esac

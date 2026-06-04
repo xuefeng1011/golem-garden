@@ -1,22 +1,14 @@
-# GolemGarden — oh-my-claudecode 기반 AI 에이전트 육성 시스템
+# GolemGarden — 독립형 AI 에이전트 육성 엔진
 
 > *AI는 널렸다. 우리는 장인을 만든다.*
 
 ## 컨셉
 
-GolemGarden은 독자 프레임워크가 아니다.
-**oh-my-claudecode(OMC) 위에 올라타는 커스텀 에이전트 + 스킬 + 설정 패키지**다.
+GolemGarden은 Claude Code CLI 위에서 직접 동작하는 독립 에이전트 엔진이다.
 골렘을 심고, 키우고, 팀으로 엮는 정원.
+oh-my-claudecode(OMC)는 선택적 확장이다 — 엔진 실행에 필수가 아니다.
 
-OMC가 이미 제공하는 것 (재발명 하지 않는다):
-- 32개 특화 에이전트 + 5가지 실행 모드
-- 스마트 모델 라우팅 (Haiku ↔ Opus 자동)
-- HUD 실시간 모니터링
-- 토큰 최적화 (Ecomode)
-- 병렬 실행 (Ultrapilot, Swarm)
-- 학습 패턴 자동 추출
-
-GolemGarden가 얹는 것:
+GolemGarden이 제공하는 것:
 - **SOUL 시스템**: 에이전트 페르소나 + 성장 기록
 - **포지 보드**: 프로젝트 단위 에이전트 팀 구성 + 역할 분배
 - **커스텀 SOUL 생성기**: 대화형으로 새 에이전트 페르소나 생성
@@ -61,11 +53,11 @@ GolemGarden가 얹는 것:
 │  ├── forge-init/ forge-team/ forge-review/       │
 │  └── forge-sync/                                │
 ├─────────────────────────────────────────────────┤
-│         oh-my-claudecode (OMC)                  │
+│         oh-my-claudecode (OMC) — 선택 사항       │
 │  32 agents | 31+ skills | 5 exec modes          │
 │  Model routing | HUD | Token optimization       │
 ├─────────────────────────────────────────────────┤
-│            Claude Code CLI                      │
+│            Claude Code CLI (필수)                │
 │         Claude Max $100/월 구독                  │
 └─────────────────────────────────────────────────┘
 ```
@@ -246,16 +238,12 @@ OMC 실행 모드 매핑:
 | Python | 3.13+ | web/gateway (FastAPI) |
 | Node | 23+ | web/client (Vite/Vue) |
 | uv | 최신 | Python 의존성 관리 |
-| Claude CLI | 최신 | OMC + agent 실행 |
+| Claude CLI | 최신 | agent 실행 |
 
-### 설치 (OMC 위에)
+### 설치
 
 ```bash
-# 1. OMC 설치 (전제조건)
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
-/plugin install oh-my-claudecode
-
-# 2. GolemGarden Bash 코어 설치
+# 1. GolemGarden Bash 코어 설치
 git clone https://github.com/xuefeng1011/golem-garden.git
 cd golem-garden
 bash install.sh
