@@ -48,6 +48,20 @@ forje build
 포지 빌드
 ```
 
+### forge mission (단일 목표 완주 — 자율 실행)
+
+아래 입력은 모두 `forge-mission` 스킬을 실행한다:
+```
+forge mission: 로그인 API 완성해줘
+forge mission 결제 플로우 완주
+포지 미션: 검색 기능
+forge 미션 대시보드 완성
+끝까지 해줘: 회원가입
+완주: 알림 시스템
+하나의 목적으로: 마이그레이션
+하나의 목표 완주: 리팩터링
+```
+
 ### forge quick (간단한 작업 — 단독 실행)
 
 ```
@@ -154,6 +168,7 @@ forge 팩 설치 풀스택
 |---------|--------|------|
 | 1 | `init`, `초기화`, `셋업`, `setup`, `시작`, `팀 구성` | → forge-init 스킬 |
 | 2 | `build`, `빌드`, `구현`, `개발` | → forge-team (ultrapilot) |
+| 2.5 | `mission`, `미션`, `끝까지`, `완주`, `하나의 목적`, `하나의 목표` | → forge-mission (단일 목표 완주) |
 | 3 | `quick`, `퀵`, `간단`, `빠르게` | → forge-team (autopilot) |
 | 4 | `assign` 또는 SOUL이름 + 태스크 | → forge-team (수동) |
 | 5 | `review`, `리뷰`, `검토`, `코드리뷰` | → forge-review |
@@ -273,6 +288,7 @@ forge.sh는 `~/.claude/golem-garden/forge.sh` 에 설치되어 있다.
 |------------|--------------|
 | `forge-init` | `forge build: {작업}` — 팀 빌드 시작 / `forge status` — 팀 현황 확인 |
 | `forge build` | `forge review {soul}` — 코드 리뷰 / `forge status` — 결과 확인 / `forge dashboard --cost` — 비용 확인 |
+| `forge mission` | `forge status` — 전체 현황 / `forge mission status {id}` — 미션 상세 / `forge review {soul}` — 산출물 리뷰 |
 | `forge quick` | `forge review` — 코드 리뷰 / `forge build: {작업}` — 팀 빌드로 확장 |
 | `forge assign` | `forge review {soul}` — 코드 리뷰 / `forge mailbox inbox {soul}` — 메일 확인 |
 | `forge review` | `forge assign {soul}: 리뷰 피드백 반영` — 수정 (fail 시) / `forge sync` — 지식 승격 / `forge rank {soul}` — 랭크 확인 |

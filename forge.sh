@@ -136,6 +136,18 @@ Session (세션 지속성):
   session log <soul> <action> <detail>
                       세션 이벤트 기록
 
+Mission (목표 완수 모드 — 디스크 상태 레이어):
+  mission init <goal> [criteria] [constraints] [out_of_scope]
+                      미션 스펙(spec.md + state.json) 생성, id 반환
+  mission set-tasks <id> "<t1>|<t2>|<t3>"
+                      파이프 구분 태스크 등록 (체크리스트 + state)
+  mission task <id> <idx> <pending|in_progress|done|failed> [soul]
+                      태스크 상태/담당 SOUL 갱신
+  mission status [id] 미션 스펙 + 태스크 진행도 (id 생략 시 최근 active)
+  mission list        전체 미션 목록 (진행도 n/m)
+  mission complete <id>
+                      미션 완료 처리 (검증 후 호출)
+
 Recovery (에러 복구):
   recover <soul> <task> <reason>
                       3단계 복구 실행
@@ -207,6 +219,9 @@ Examples:
   forge review ryn                      # 리뷰어 자동 선정
   forge export ryn /path/to/other/project
   forge import /path/to/source ryn
+  forge mission init "결제 모듈 구현" "테스트 통과" "기존 API 유지" "UI 변경"
+  forge mission set-tasks msn_... "스키마 설계|핸들러 구현|테스트 작성"
+  forge mission status
 EOF
 }
 
@@ -641,6 +656,50 @@ case "${1:-}" in
         ;;
       *)
         echo "Usage: forge session <create|status|list|resume|end|log|fork|branch|tree>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  mission)
+    _load mission.sh
+    case "${2:-}" in
+      init)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge mission init <goal> [criteria] [constraints] [out_of_scope]"
+          exit 1
+        fi
+        mission_init "$3" "${4:-}" "${5:-}" "${6:-}"
+        ;;
+      set-tasks)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge mission set-tasks <id> \"<t1>|<t2>|<t3>\""
+          exit 1
+        fi
+        mission_set_tasks "$3" "$4"
+        ;;
+      task)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
+          echo "Usage: forge mission task <id> <idx> <pending|in_progress|done|failed> [soul]"
+          exit 1
+        fi
+        mission_task "$3" "$4" "$5" "${6:-}"
+        ;;
+      status)
+        mission_status "${3:-}"
+        ;;
+      list)
+        mission_list
+        ;;
+      complete)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge mission complete <id>"
+          exit 1
+        fi
+        mission_complete "$3"
+        ;;
+      *)
+        echo "Usage: forge mission <init|set-tasks|task|status|list|complete>"
         exit 1
         ;;
     esac
