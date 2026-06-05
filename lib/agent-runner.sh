@@ -158,11 +158,16 @@ _parse_stream() {
 
 # assistant 텍스트 블록 누적 (stream 전체에서 별도 추출)
 # stream-json 의 assistant 메시지 content[].text 를 이어붙인다.
+#
+# [Fix C] 이전 구현: sed 's/.*"text":"\(...\)".*/\1/' 는 greedy 라서
+# 한 줄에 text 블록이 여러 개 있을 때 마지막 블록만 반환했다.
+# 수정: grep -o 로 각 블록을 개별 추출한 뒤 이어붙인다.
 _extract_assistant_text() {
   # 입력: stream-json 전체(파일). grep 으로 assistant 라인만 추려 text 추출.
   local stream_file="$1"
   grep '"type":"assistant"' "$stream_file" 2>/dev/null \
-    | sed -n 's/.*"text":"\(\([^"\\]\|\\.\)*\)".*/\1/p' \
+    | grep -o '"text":"\(\([^"\\]\|\\.\)*\)"' \
+    | sed 's/^"text":"//; s/"$//' \
     | sed 's/\\n/\n/g; s/\\"/"/g; s/\\t/\t/g; s/\\\\/\\/g'
 }
 
@@ -264,6 +269,33 @@ ${_ar_body}"
   argv=(claude "${_AGENT_CLAUDE_BASE[@]}" "${session_args[@]}"
         --append-system-prompt "$system_prompt"
         --model "$model_arg")
+
+  # [Fix B] disallowedTools 시행 — `--disallowedTools` / `--disallowed-tools` 플래그가
+  # 설치된 claude CLI 에 존재함을 확인 (`claude --help 2>&1 | grep -i disallowed`).
+  # SOUL_DISALLOWED_TOOLS 가 비어있지 않으면 CLI 에 전달한다.
+  local disallowed_csv
+  disallowed_csv=$(_tools_csv "$SOUL_DISALLOWED_TOOLS")
+  if [ -n "$disallowed_csv" ]; then
+    argv+=(--disallowedTools "$disallowed_csv")
+  fi
+
+  # [Fix A] maxTurns 시행 — `--max-turns` 플래그가 현재 설치된 claude CLI 에
+  # 존재하지 않는다 (`claude --help 2>&1 | grep -iE 'max.?turn'` → 빈 출력).
+  # 따라서 SOUL_MAX_TURNS 를 CLI 에 전달할 수 없다.
+  # CLAUDE.md "Novice SOUL은 maxTurns 제한 적용 (기본 15턴)" 는 현재 비시행 상태다.
+  # CLI 가 해당 플래그를 추가하면 아래 블록을 활성화하라:
+  #
+  #   if printf '%s' "$SOUL_MAX_TURNS" | grep -qE '^[0-9]+$'; then
+  #     argv+=(--max-turns "$SOUL_MAX_TURNS")
+  #   fi
+  #
+  # DOC-CHANGE REQUIRED (다른 에이전트가 처리):
+  #   - CLAUDE.md (프로젝트): "Novice SOUL은 maxTurns 제한 적용 (기본 15턴)"
+  #     → "maxTurns는 SOUL 메타데이터에 기록되나 CLI 플래그 미지원으로 현재 비시행 (advisory only)"
+  #   - skills/README.md 또는 SKILL.md 에 동일 주장이 있을 경우 동일하게 수정.
+
+  # --allowedTools: tools_csv 가 비어 있으면 전달하지 않음 → claude 기본 도구셋 상속.
+  # (의도적 동작 — SOUL 에 tools: 가 없으면 제한 없이 실행됨을 허용한다.)
   if [ -n "$tools_csv" ]; then
     argv+=(--allowedTools "$tools_csv")
   fi

@@ -109,7 +109,7 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh run {soul_name} "{실제 태스크 내용}" {session_id}
    ```
-   - `forge run`이 SOUL frontmatter를 읽어 **model / tools / maxTurns / 시스템 프롬프트를 자동 조립**한다 (OMC 에이전트 매핑 불필요 — `soul_to_omc_agent`는 폐기됨)
+   - `forge run`이 SOUL frontmatter를 읽어 **model / tools / 시스템 프롬프트를 자동 조립**한다 (OMC 에이전트 매핑 불필요 — `soul_to_omc_agent`는 폐기됨). `maxTurns`는 claude CLI 플래그 미지원으로 프롬프트 내 권고 텍스트로만 전달된다 (강제 아님)
    - SOUL은 self-describing: backend/frontend/qa/devops 등 role 구분 없이 동일하게 `forge run {soul}`로 소환
    - 반환값: SOUL의 최종 산출물(stdout) + 마지막 줄 `<usage> soul=... model=... result=... tokens_in=... tokens_out=... duration_ms=...`
    - **성장 기록/비용은 `forge run`이 내부적으로 자동 기록**한다 (growth_log_append). Step 5에서 별도 `log-add` 금지

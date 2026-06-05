@@ -28,6 +28,48 @@ source "${GOLEM_ROOT}/lib/soul-parser.sh"
 
 MISSION_DIR="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/missions"
 
+# JSON 문자열 값 추출 (escape-aware) — agent-runner.sh 의 정규식과 동일한
+# `\([^"\\]\|\\.\)*` 패턴으로 이스케이프된 `\"` 를 값 내부로 올바르게 포함한다.
+# quote-naive `grep -o '"key":"[^"]*"'` 가 `\"` 에서 잘리던 버그(데이터 손상)를 막는다.
+# 출력은 RAW(이스케이프된) JSON 문자열 — 표시용으로는 _json_unescape 를 거친다.
+# _json_get_string <json_line> <key>
+_json_get_string() {
+  printf '%s' "$1" | sed -n "s/.*\"$2\":\"\\(\\([^\"\\\\]\\|\\\\.\\)*\\)\".*/\\1/p"
+}
+
+# _json_escape 의 역연산 — 표시용 디코드 (\\n→개행, \\t→탭, \\\"→\", \\\\→\\)
+# 순서 중요: 백슬래시 시퀀스를 먼저 해석하되 \\\\ 는 마지막에 풀어 이중 해석 방지.
+# _json_unescape <raw_json_string>
+_json_unescape() {
+  printf '%s' "$1" | awk '
+    {
+      out=""
+      n=length($0)
+      i=1
+      while (i<=n) {
+        c=substr($0,i,1)
+        if (c=="\\" && i<n) {
+          d=substr($0,i+1,1)
+          if (d=="n")      { out=out "\n"; i+=2; continue }
+          else if (d=="t") { out=out "\t"; i+=2; continue }
+          else if (d=="r") { out=out "\r"; i+=2; continue }
+          else if (d=="\""){ out=out "\""; i+=2; continue }
+          else if (d=="\\"){ out=out "\\"; i+=2; continue }
+          else if (d=="/") { out=out "/";  i+=2; continue }
+          else             { out=out d;    i+=2; continue }
+        }
+        out=out c; i++
+      }
+      printf "%s", out
+    }'
+}
+
+# 단일 state.json scalar 필드(이스케이프 없는 id/status/created/seq 등) 추출.
+# _json_scalar <json_line> <key>
+_json_scalar() {
+  grep -o "\"$2\":\"[^\"]*\"" <<<"$1" | head -1 | sed "s/\"$2\":\"//;s/\"$//"
+}
+
 _mission_ensure_dir() {
   [ -d "$MISSION_DIR" ] || mkdir -p "$MISSION_DIR"
 }
@@ -141,15 +183,20 @@ STATEEOF
 # _mission_rewrite_tasks <mdir> <tasks_json_array>
 _mission_rewrite_tasks() {
   local mdir="$1" tasks="$2"
-  local id goal status created seq
-  id=$(grep -o '"id":"[^"]*"' "${mdir}/state.json" | head -1 | sed 's/"id":"//;s/"//')
-  goal=$(grep -o '"goal":"[^"]*"' "${mdir}/state.json" | head -1 | sed 's/"goal":"//;s/"//')
-  status=$(grep -o '"status":"[^"]*"' "${mdir}/state.json" | head -1 | sed 's/"status":"//;s/"//')
-  created=$(grep -o '"created":"[^"]*"' "${mdir}/state.json" | head -1 | sed 's/"created":"//;s/"//')
-  seq=$(grep -o '"seq":"[^"]*"' "${mdir}/state.json" | head -1 | sed 's/"seq":"//;s/"//')
-  cat > "${mdir}/state.json" <<STATEEOF
+  local line id goal status created seq tmp
+  line=$(head -1 "${mdir}/state.json")
+  # goal 은 escape-aware 추출 (이미 _json_escape 된 RAW 값 — 그대로 재기록).
+  # 나머지 id/status/created/seq 는 이스케이프 없는 scalar.
+  id=$(_json_scalar "$line" id)
+  goal=$(_json_get_string "$line" goal)
+  status=$(_json_scalar "$line" status)
+  created=$(_json_scalar "$line" created)
+  seq=$(_json_scalar "$line" seq)
+  tmp="${mdir}/state.json.tmp"
+  cat > "$tmp" <<STATEEOF
 {"id":"${id}","goal":"${goal}","status":"${status}","created":"${created}","seq":"${seq}","tasks":${tasks}}
 STATEEOF
+  mv "$tmp" "${mdir}/state.json"
 }
 
 # mission_set_tasks <id> "<t1>|<t2>|<t3>"
@@ -197,37 +244,76 @@ mission_task() {
   local mdir
   mdir=$(_mission_resolve "$id")
   if [ -z "$mdir" ]; then echo "[mission] ERROR: 미션 없음: ${id}" >&2; return 1; fi
+  # idx 는 반드시 음이 아닌 정수 — 비정수 idx 가 grep/sed 정규식·JSON 으로
+  # 흘러들어가 state.json 을 손상시키던 버그(예: '0\|1', '.*')를 차단한다.
+  case "$idx" in
+    ''|*[!0-9]*) echo "[mission] ERROR: idx must be a non-negative integer: ${idx}" >&2; return 1 ;;
+  esac
   case "$status" in
     pending|in_progress|done|failed) : ;;
     *) echo "[mission] ERROR: 잘못된 status: ${status}" >&2; return 1 ;;
   esac
 
   local state="${mdir}/state.json"
-  # 대상 태스크 객체 추출
-  local obj
-  obj=$(grep -o "{\"idx\":${idx},[^}]*}" "$state" | head -1)
-  if [ -z "$obj" ]; then echo "[mission] ERROR: 태스크 idx 없음: ${idx}" >&2; return 1; fi
+  local line
+  line=$(head -1 "$state")
 
-  local task_text cur_soul new_obj
-  task_text=$(printf '%s' "$obj" | grep -o '"task":"[^"]*"' | sed 's/"task":"//;s/"//')
-  cur_soul=$(printf '%s' "$obj" | grep -o '"soul":"[^"]*"' | sed 's/"soul":"//;s/"//')
-  [ -n "$soul" ] && cur_soul=$(_json_escape "$soul")
-  new_obj="{\"idx\":${idx},\"task\":\"${task_text}\",\"soul\":\"${cur_soul}\",\"status\":\"${status}\"}"
+  # 대상 idx 존재 확인 (grep -o 로 객체 추출 — 매칭 여부만 검사).
+  if [ -z "$(grep -o "{\"idx\":${idx},[^}]*}" <<<"$line" | head -1)" ]; then
+    echo "[mission] ERROR: 태스크 idx 없음: ${idx}" >&2; return 1
+  fi
 
-  # state.json 내 해당 객체 치환 (_sed_i — sed -i 금지)
-  local esc_old esc_new
-  esc_old=$(printf '%s' "$obj" | sed 's/[&/\]/\\&/g')
-  esc_new=$(printf '%s' "$new_obj" | sed 's/[&/\]/\\&/g')
-  _sed_i "s/${esc_old}/${esc_new}/" "$state"
+  local soul_esc=""
+  [ -n "$soul" ] && soul_esc=$(_json_escape "$soul")
 
-  # spec.md 체크박스 반영: done → [x], 그 외 → [ ]
-  local spec="${mdir}/spec.md" mark="[ ]"
-  [ "$status" = "done" ] && mark="[x]"
-  local plain_task
-  plain_task=$(printf '%s' "$task_text" | sed 's/\\n/ /g')
-  local esc_task
-  esc_task=$(printf '%s' "$plain_task" | sed 's/[][\.*^$/]/\\&/g')
-  _sed_i "s/^- \[[ x]\] ${esc_task}$/- ${mark} ${plain_task}/" "$spec"
+  # 렌더된 JSON 에 sed 치환을 가하는 대신 태스크 배열을 통째로 재구성한다
+  # (set-tasks/_mission_rewrite_tasks 의 안전 패턴 미러). 각 객체를 escape-aware
+  # 로 디코드 → 대상 idx 의 status(+soul)만 바꿔 _json_escape 로 재방출.
+  # 이로써 따옴표/슬래시/이스케이프가 포함된 task/goal 이 안전하게 round-trip 된다.
+  local tasks_json="[" first=true obj
+  local checklist=""
+  while IFS= read -r obj; do
+    [ -z "$obj" ] && continue
+    local o_idx o_task_raw o_soul_raw o_status o_task_plain o_status_out o_soul_out
+    o_idx=$(grep -o '"idx":[0-9]*' <<<"$obj" | sed 's/"idx"://')
+    o_task_raw=$(_json_get_string "$obj" task)
+    o_soul_raw=$(_json_get_string "$obj" soul)
+    o_status=$(_json_scalar "$obj" status)
+    o_task_plain=$(_json_unescape "$o_task_raw")
+    if [ "$o_idx" = "$idx" ]; then
+      o_status_out="$status"
+      if [ -n "$soul" ]; then o_soul_out="$soul_esc"; else o_soul_out="$o_soul_raw"; fi
+    else
+      o_status_out="$o_status"
+      o_soul_out="$o_soul_raw"
+    fi
+    if [ "$first" = true ]; then first=false; else tasks_json="${tasks_json},"; fi
+    # task/soul 은 이미 RAW(이스케이프된) 값 — _json_escape 재적용 시 이중
+    # 이스케이프되므로 디코드한 plain 값을 다시 _json_escape 한다.
+    local task_re soul_re
+    task_re=$(_json_escape "$o_task_plain")
+    soul_re=$(_json_escape "$(_json_unescape "$o_soul_out")")
+    tasks_json="${tasks_json}{\"idx\":${o_idx},\"task\":\"${task_re}\",\"soul\":\"${soul_re}\",\"status\":\"${o_status_out}\"}"
+  done < <(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' <<<"$line")
+  tasks_json="${tasks_json}]"
+
+  _mission_rewrite_tasks "$mdir" "$tasks_json"
+
+  # spec.md ## 태스크 섹션을 체크리스트로 재구성 (set-tasks 와 동일 패턴).
+  # 타깃 sed 치환(데이터에 &,\,/ 포함 시 깨짐) 대신 배열 기준 전체 재작성.
+  local spec="${mdir}/spec.md" tmp="${mdir}/spec.md.tmp"
+  awk '/^## 태스크$/{print; exit} {print}' "$spec" > "$tmp"
+  while IFS= read -r obj; do
+    [ -z "$obj" ] && continue
+    local o_status o_task_raw o_task_plain mark
+    o_status=$(_json_scalar "$obj" status)
+    o_task_raw=$(_json_get_string "$obj" task)
+    o_task_plain=$(_json_unescape "$o_task_raw" | sed 's/\\n/ /g')
+    mark="[ ]"
+    [ "$o_status" = "done" ] && mark="[x]"
+    printf -- '- %s %s\n' "$mark" "$o_task_plain" >> "$tmp"
+  done < <(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' "$state")
+  mv "$tmp" "$spec"
 }
 
 # 태스크 진행도 n/m 계산 → stdout "done total"
@@ -253,16 +339,16 @@ mission_status() {
   echo ""
   echo "── 태스크 상태 ──"
   local state="${mdir}/state.json"
-  printf '%s\n' "$(grep -o '{"idx":[0-9]*,"task":"[^"]*","soul":"[^"]*","status":"[^"]*"}' "$state")" | while IFS= read -r obj; do
+  while IFS= read -r obj; do
     [ -z "$obj" ] && continue
     local i tk sl st
     i=$(printf '%s' "$obj" | grep -o '"idx":[0-9]*' | sed 's/"idx"://')
-    tk=$(printf '%s' "$obj" | grep -o '"task":"[^"]*"' | sed 's/"task":"//;s/"//')
-    sl=$(printf '%s' "$obj" | grep -o '"soul":"[^"]*"' | sed 's/"soul":"//;s/"//')
-    st=$(printf '%s' "$obj" | grep -o '"status":"[^"]*"' | sed 's/"status":"//;s/"//')
+    tk=$(_json_unescape "$(_json_get_string "$obj" task)")
+    sl=$(_json_unescape "$(_json_get_string "$obj" soul)")
+    st=$(_json_scalar "$obj" status)
     [ -z "$sl" ] && sl="-"
     printf "  [%s] %-10s %-12s %s\n" "$i" "$st" "$sl" "$tk"
-  done
+  done < <(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' "$state")
   local prog
   prog=$(_mission_progress "$state")
   echo "  진행도: ${prog% *}/${prog#* }"
@@ -282,8 +368,8 @@ mission_list() {
     [ -f "$state" ] || continue
     local id goal status prog
     id=$(basename "$d")
-    goal=$(grep -o '"goal":"[^"]*"' "$state" | head -1 | sed 's/"goal":"//;s/"//' | cut -c1-40)
-    status=$(grep -o '"status":"[^"]*"' "$state" | head -1 | sed 's/"status":"//;s/"//')
+    goal=$(_json_unescape "$(_json_get_string "$(head -1 "$state")" goal)" | cut -c1-40)
+    status=$(_json_scalar "$(head -1 "$state")" status)
     prog=$(_mission_progress "$state")
     printf "%-26s %-10s %-7s %s\n" "$id" "$status" "${prog% *}/${prog#* }" "$goal"
   done <<EOF
@@ -297,7 +383,9 @@ mission_complete() {
   local mdir
   mdir=$(_mission_resolve "$id")
   if [ -z "$mdir" ]; then echo "[mission] ERROR: 미션 없음: ${id}" >&2; return 1; fi
-  _sed_i 's/"status":"active"/"status":"completed"/' "${mdir}/state.json"
+  # 원자적 치환 (tmp+mv) — 인터럽트 시에도 state.json 유효 보장.
+  local st_tmp="${mdir}/state.json.tmp"
+  sed 's/"status":"active"/"status":"completed"/' "${mdir}/state.json" > "$st_tmp" && mv "$st_tmp" "${mdir}/state.json"
   echo "[mission] 미션 완료: ${id}"
 }
 
@@ -315,17 +403,17 @@ mission_next() {
   while IFS= read -r obj; do
     [ -z "$obj" ] && continue
     local st
-    st=$(printf '%s' "$obj" | grep -o '"status":"[^"]*"' | sed 's/"status":"//;s/"//')
+    st=$(_json_scalar "$obj" status)
     if [ "$st" = "pending" ]; then
       local i tk
       i=$(printf '%s' "$obj" | grep -o '"idx":[0-9]*' | sed 's/"idx"://')
-      tk=$(printf '%s' "$obj" | grep -o '"task":"[^"]*"' | sed 's/"task":"//;s/"//')
+      tk=$(_json_unescape "$(_json_get_string "$obj" task)")
       printf '%s\t%s\n' "$i" "$tk"
       found=true
       break
     fi
   done <<EOF
-$(grep -o '{"idx":[0-9]*,"task":"[^"]*","soul":"[^"]*","status":"[^"]*"}' "$state")
+$(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' "$state")
 EOF
 
   if [ "$found" = false ]; then echo "none"; fi

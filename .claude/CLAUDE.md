@@ -45,7 +45,7 @@ Agent 호출 전에 이 메시지를 출력해야 한다. 생략 금지.
 - 모든 `forge.sh` 호출 시 반드시 `GOLEM_PROJECT="$(pwd)"` 환경변수를 전달하라
 - `.golem/souls/` 오버라이드가 `souls/` 글로벌보다 우선 적용됨
 - SOUL 소환 시 `tools` frontmatter를 OMC agent `allowed_tools`로 전달
-- Novice SOUL은 `maxTurns` 제한 적용 (기본 15턴)
+- Novice SOUL은 `maxTurns`를 프롬프트 가이드로 안내 (claude CLI에 턴 제한 플래그 부재 — 강제 아님, 기본 15턴 권고)
 - Director(Nex)는 코드를 직접 작성하지 않음 — 반드시 SOUL에 위임
 - Novice/Junior SOUL은 병렬 쓰기 금지 — 파일 충돌 위험
 </golem_rules>

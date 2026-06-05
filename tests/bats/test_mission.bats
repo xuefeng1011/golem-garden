@@ -415,15 +415,14 @@ _source_mission() {
 
 @test "mission: mission_next — pending 태스크가 있으면 첫 pending의 'idx<TAB>text' 출력" {
   _source_mission
-  local id output
+  local id
   id=$(mission_init "next 테스트" "기준" "제약" "비범위")
   mission_set_tasks "$id" "첫번째 태스크|두번째 태스크"
 
   run mission_next "$id"
   [ "$status" -eq 0 ]
-  # 출력이 '0\t첫번째 태스크' 형태인지 확인
-  [[ "$output" == 0* ]]
-  [[ "$output" =~ "첫번째 태스크" ]]
+  # 출력이 정확히 '0<TAB>첫번째 태스크' 형태인지 확인 (탭 분리 강화)
+  [ "$output" = $'0\t첫번째 태스크' ]
 }
 
 @test "mission: mission_next — idx 0을 done 처리 후 mission_next가 '1'로 시작" {
@@ -459,4 +458,207 @@ _source_mission() {
 
   run mission_next "msn_nonexistent_12345"
   [ "$status" -ne 0 ]
+}
+
+# ─────────────────────────────────────────────────────────
+# mission_task / goal — 손상 방지 (regression)
+# 버그: task/goal 에 특수문자(", /, \) 포함 시 state.json 손상 또는
+#       비정수 idx 가 정규식으로 흘러들어가 state.json 오염
+# ─────────────────────────────────────────────────────────
+
+# Bug 1a: task 에 쌍따옴표 — state.json 유효 + 텍스트 보존 + 진행도 정확
+@test "regression: task 쌍따옴표 — mission_task done 후 state.json 유효, 텍스트 무결" {
+  _source_mission
+  local id state
+  id=$(mission_init "따옴표 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" 'implement "login" API|second task'
+  state="${MISSION_DIR}/${id}/state.json"
+
+  # 수행 전: task 텍스트가 이스케이프되어 JSON 에 기록돼 있음
+  grep -q 'implement' "$state"
+
+  run mission_task "$id" 0 done ryn
+  [ "$status" -eq 0 ]
+
+  # 진행도: 1/2 (태스크 2개 중 1개 done)
+  run mission_status "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "1/2" ]]
+
+  # state.json 에 두 번째 태스크(idx:1)가 여전히 pending 으로 남아 있어야 함 — 손상 없음
+  grep -q '"idx":1' "$state"
+  grep -q '"status":"pending"' "$state"
+
+  # 첫 번째 태스크 객체가 done 상태여야 함
+  local obj0
+  obj0=$(grep -o '{"idx":0,[^}]*}' "$state")
+  echo "$obj0" | grep -q '"status":"done"'
+
+  # spec.md 체크박스: idx 0은 [x], idx 1은 [ ]
+  grep -q -- '- \[x\]' "${MISSION_DIR}/${id}/spec.md"
+  local unchecked
+  unchecked=$(grep -c -- '^- \[ \]' "${MISSION_DIR}/${id}/spec.md")
+  [ "$unchecked" -eq 1 ]
+}
+
+# Bug 1b: task 쌍따옴표 텍스트 round-trip — mission_status 출력에 원본 텍스트 포함
+@test "regression: task 쌍따옴표 — mission_status 출력에 따옴표 텍스트 보존" {
+  _source_mission
+  local id
+  id=$(mission_init "따옴표 round-trip 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" 'implement "login" API|check "logout" flow'
+  mission_task "$id" 0 done ryn
+
+  run mission_status "$id"
+  [ "$status" -eq 0 ]
+  # 원본 따옴표 텍스트가 출력에 표시돼야 함
+  [[ "$output" =~ 'implement "login" API' ]]
+  [[ "$output" =~ 'check "logout" flow' ]]
+}
+
+# Bug 2a: task 에 슬래시 — rc=0, 상태 실제로 done, state.json 유효
+@test "regression: task 슬래시 — mission_task done rc=0, 상태 done 확인" {
+  _source_mission
+  local id state
+  id=$(mission_init "슬래시 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" 'use a/b/c path|second task'
+  state="${MISSION_DIR}/${id}/state.json"
+
+  run mission_task "$id" 0 done ryn
+  [ "$status" -eq 0 ]
+
+  # idx 0 이 실제로 done 으로 변경됐는지 확인 (이전 버그: rc=0 이지만 stale 상태)
+  local obj0
+  obj0=$(grep -o '{"idx":0,[^}]*}' "$state")
+  echo "$obj0" | grep -q '"status":"done"'
+
+  # 진행도: 1/2
+  run mission_status "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "1/2" ]]
+}
+
+# Bug 2b: task 슬래시 — mission_status 에 슬래시 텍스트 노출
+@test "regression: task 슬래시 — mission_status 출력에 슬래시 텍스트 보존" {
+  _source_mission
+  local id
+  id=$(mission_init "슬래시 round-trip 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" 'use a/b/c path|other task'
+  mission_task "$id" 0 done ryn
+
+  run mission_status "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "a/b/c path" ]]
+}
+
+# Bug 3a: 비정수 idx (0\|1 패턴) — rc≠0, state.json 무변경
+@test "regression: 비정수 idx '0\\|1' — rc≠0, state.json 오염 없음" {
+  _source_mission
+  local id state before after
+  id=$(mission_init "비정수 idx 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" "태스크A|태스크B|태스크C"
+  state="${MISSION_DIR}/${id}/state.json"
+  before=$(cat "$state")
+
+  run mission_task "$id" '0\|1' done ryn
+  [ "$status" -ne 0 ]
+
+  after=$(cat "$state")
+  [ "$before" = "$after" ]
+}
+
+# Bug 3b: 비정수 idx (.*) — rc≠0, state.json 무변경
+@test "regression: 비정수 idx '.*' — rc≠0, state.json 오염 없음" {
+  _source_mission
+  local id state before after
+  id=$(mission_init "와일드카드 idx 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" "태스크A|태스크B|태스크C"
+  state="${MISSION_DIR}/${id}/state.json"
+  before=$(cat "$state")
+
+  run mission_task "$id" '.*' done ryn
+  [ "$status" -ne 0 ]
+
+  after=$(cat "$state")
+  [ "$before" = "$after" ]
+}
+
+# Bug 3c: 비정수 idx (abc) — rc≠0, state.json 무변경
+@test "regression: 비정수 idx 'abc' — rc≠0, state.json 오염 없음" {
+  _source_mission
+  local id state before after
+  id=$(mission_init "문자열 idx 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" "태스크A|태스크B|태스크C"
+  state="${MISSION_DIR}/${id}/state.json"
+  before=$(cat "$state")
+
+  run mission_task "$id" 'abc' done ryn
+  [ "$status" -ne 0 ]
+
+  after=$(cat "$state")
+  [ "$before" = "$after" ]
+}
+
+# Bug 3d: 비정수 idx (빈 문자열) — rc≠0, state.json 무변경
+@test "regression: 빈 idx '' — rc≠0, state.json 오염 없음" {
+  _source_mission
+  local id state before after
+  id=$(mission_init "빈 idx 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" "태스크A|태스크B"
+  state="${MISSION_DIR}/${id}/state.json"
+  before=$(cat "$state")
+
+  run mission_task "$id" '' done ryn
+  [ "$status" -ne 0 ]
+
+  after=$(cat "$state")
+  [ "$before" = "$after" ]
+}
+
+# Bug 4: goal 에 쌍따옴표와 슬래시 — _mission_rewrite_tasks 후 goal 무결
+@test "regression: goal 쌍따옴표+슬래시 — set_tasks 후 goal 텍스트 무결" {
+  _source_mission
+  local id state
+  id=$(mission_init 'add "/login" endpoint' "기준" "제약" "비범위")
+  state="${MISSION_DIR}/${id}/state.json"
+
+  # 초기 state.json 에 goal 이스케이프 확인
+  grep -q '"goal":' "$state"
+
+  # set_tasks 가 _mission_rewrite_tasks 를 통해 state.json 을 재작성
+  mission_set_tasks "$id" "task one|task two"
+
+  # goal 이 손상되지 않고 원본 텍스트를 포함해야 함
+  run mission_status "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "/login" ]]
+
+  # mission_task 이후에도 goal 보존
+  mission_task "$id" 0 done ryn
+  run mission_status "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "/login" ]]
+  # 진행도 1/2 유지
+  [[ "$output" =~ "1/2" ]]
+}
+
+# Bug 5: task 에 백슬래시 (Windows 경로) — round-trip 후 state.json 유효
+@test "regression: task 백슬래시 (Windows 경로) — round-trip 후 state.json 유효" {
+  _source_mission
+  local id state
+  id=$(mission_init "백슬래시 경로 테스트" "기준" "제약" "비범위")
+  # Windows 경로를 태스크 텍스트로 사용
+  mission_set_tasks "$id" 'copy C:\Users\x\file.txt|second task'
+  state="${MISSION_DIR}/${id}/state.json"
+
+  run mission_task "$id" 0 done ryn
+  [ "$status" -eq 0 ]
+
+  # 진행도 1/2 — 두 번째 태스크가 사라지지 않아야 함 (state.json 유효)
+  run mission_status "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "1/2" ]]
+
+  # idx 1 (second task) 이 여전히 state.json 에 남아 있어야 함
+  grep -q '"idx":1' "$state"
 }
