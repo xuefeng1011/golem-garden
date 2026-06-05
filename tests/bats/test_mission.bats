@@ -408,3 +408,55 @@ _source_mission() {
   [ "$status" -eq 0 ]
   [[ "$output" =~ "completed" ]]
 }
+
+# ─────────────────────────────────────────────────────────
+# mission_next
+# ─────────────────────────────────────────────────────────
+
+@test "mission: mission_next — pending 태스크가 있으면 첫 pending의 'idx<TAB>text' 출력" {
+  _source_mission
+  local id output
+  id=$(mission_init "next 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" "첫번째 태스크|두번째 태스크"
+
+  run mission_next "$id"
+  [ "$status" -eq 0 ]
+  # 출력이 '0\t첫번째 태스크' 형태인지 확인
+  [[ "$output" == 0* ]]
+  [[ "$output" =~ "첫번째 태스크" ]]
+}
+
+@test "mission: mission_next — idx 0을 done 처리 후 mission_next가 '1'로 시작" {
+  _source_mission
+  local id output
+  id=$(mission_init "next idx 전환 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" "첫번째 태스크|두번째 태스크"
+  mission_task "$id" 0 done zen
+
+  run mission_next "$id"
+  [ "$status" -eq 0 ]
+  # 출력이 '1\t두번째 태스크' 형태인지 확인
+  [[ "$output" == 1* ]]
+  [[ "$output" =~ "두번째 태스크" ]]
+}
+
+@test "mission: mission_next — 모든 태스크 done이면 정확히 'none' 출력" {
+  _source_mission
+  local id
+  id=$(mission_init "all done 테스트" "기준" "제약" "비범위")
+  mission_set_tasks "$id" "첫번째 태스크|두번째 태스크"
+  mission_task "$id" 0 done zen
+  mission_task "$id" 1 done zen
+
+  run mission_next "$id"
+  [ "$status" -eq 0 ]
+  # 출력이 정확히 'none'
+  [ "$output" = "none" ]
+}
+
+@test "mission: mission_next — 존재하지 않는 id 면 return 1(에러)" {
+  _source_mission
+
+  run mission_next "msn_nonexistent_12345"
+  [ "$status" -ne 0 ]
+}

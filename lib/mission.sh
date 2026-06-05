@@ -300,3 +300,34 @@ mission_complete() {
   _sed_i 's/"status":"active"/"status":"completed"/' "${mdir}/state.json"
   echo "[mission] 미션 완료: ${id}"
 }
+
+# mission_next <id> — pending 상태인 첫 번째 태스크를 'idx\ttext' 형식으로 출력.
+# pending 없으면 정확히 'none', 미션 없으면 stderr 에러 + return 1.
+mission_next() {
+  local id="$1"
+  local mdir
+  mdir=$(_mission_resolve "$id")
+  if [ -z "$mdir" ]; then echo "[mission] ERROR: 미션 없음: ${id}" >&2; return 1; fi
+
+  local state="${mdir}/state.json"
+  local found=false obj
+
+  while IFS= read -r obj; do
+    [ -z "$obj" ] && continue
+    local st
+    st=$(printf '%s' "$obj" | grep -o '"status":"[^"]*"' | sed 's/"status":"//;s/"//')
+    if [ "$st" = "pending" ]; then
+      local i tk
+      i=$(printf '%s' "$obj" | grep -o '"idx":[0-9]*' | sed 's/"idx"://')
+      tk=$(printf '%s' "$obj" | grep -o '"task":"[^"]*"' | sed 's/"task":"//;s/"//')
+      printf '%s\t%s\n' "$i" "$tk"
+      found=true
+      break
+    fi
+  done <<EOF
+$(grep -o '{"idx":[0-9]*,"task":"[^"]*","soul":"[^"]*","status":"[^"]*"}' "$state")
+EOF
+
+  if [ "$found" = false ]; then echo "none"; fi
+  return 0
+}
