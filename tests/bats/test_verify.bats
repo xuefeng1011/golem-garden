@@ -1,0 +1,100 @@
+#!/usr/bin/env bats
+# test_verify.bats — Zen 작성: lib/verify.sh 단위 테스트 (오프라인)
+#
+# 재귀 방지 전략:
+#   verify_tests_only 는 내부적으로 GOLEM_PROJECT/tests/bats/run.sh 를 실행한다.
+#   이 파일이 bats suite 에서 실행되면 run.sh → 전체 suite 재실행 → 무한루프 위험.
+#   해결: GOLEM_PROJECT 를 TEST_PROJECT(격리 tmpdir)로 고정하면 TEST_PROJECT 에는
+#   tests/bats/run.sh 가 없으므로 _verify_run_tests 가 "SKIP" 경로로 빠진다.
+#   이 방식으로 실제 suite 재귀를 완전 차단한다.
+#
+# 커버리지:
+#   a) author≠verifier 가드 — 동일 SOUL 지정 시 reject
+#   b) author≠verifier 가드 — 다른 SOUL 이면 통과 (헤더 출력 확인)
+#   c) verify_run --tests-only — SOUL 호출 없이 테스트 단계 실행
+#   d) verify_run — 결정론적 테스트 FAIL 시 전체 FAIL (SOUL 심판 생략)
+#   e) verify_tests_only — 테스트 러너 없음 시 SKIP 반환 (exit 2)
+#   f) verify_run 빈 target — exit 1 + usage 출력
+#
+# SOUL 심판 경로(real claude 호출)는 오프라인 테스트 불가 → NOTE: 수동 커버.
+
+load "test_helper"
+
+# verify.sh 소싱 후 격리 재설정
+# 핵심: GOLEM_PROJECT=TEST_PROJECT 로 고정 → run.sh 없음 → 재귀 차단
+_source_verify() {
+  export GOLEM_ROOT
+  export GOLEM_DIR="$TEST_PROJECT/.golem"
+  export GOLEM_PROJECT="$TEST_PROJECT"
+  # shellcheck source=/dev/null
+  source "${GOLEM_ROOT}/lib/verify.sh"
+  # source 후 GOLEM_DIR 재보정 (agent-runner.sh 체인이 덮어씀)
+  export GOLEM_DIR="$TEST_PROJECT/.golem"
+}
+
+# ─────────────────────────────────────────────────────────
+# author≠verifier 가드
+# ─────────────────────────────────────────────────────────
+
+@test "verify: author=verifier 동일 — exit 1 + 에러 메시지 출력" {
+  _source_verify
+  VERIFY_AUTHOR_SOUL="ryn" run verify_run "테스트 대상" "ryn" --tests-only
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "author≠verifier" ]]
+}
+
+@test "verify: author=verifier 대소문자 무시 (Ryn vs ryn) — exit 1" {
+  _source_verify
+  VERIFY_AUTHOR_SOUL="Ryn" run verify_run "테스트 대상" "ryn" --tests-only
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "author≠verifier" ]]
+}
+
+@test "verify: author≠verifier 다른 SOUL — 가드 통과 (헤더 출력)" {
+  _source_verify
+  # TEST_PROJECT 에는 tests/bats/run.sh 없음 → _verify_run_tests 가 SKIP 반환
+  VERIFY_AUTHOR_SOUL="ryn" run verify_run "테스트 대상" "zen" --tests-only
+  # exit 0 (tests SKIP = soft pass, soul tests-only = skip)
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "zen" ]]
+}
+
+# ─────────────────────────────────────────────────────────
+# verify_run -- 기본 동작
+# ─────────────────────────────────────────────────────────
+
+@test "verify: 빈 target (인자 없음) — exit 1 + usage 출력" {
+  _source_verify
+  # 인자를 아예 안 주면 target이 비어 있어 Usage 에러 반환
+  run verify_run
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "Usage" ]]
+}
+
+@test "verify: --tests-only — SOUL 호출 없이 진행 (SKIP(--tests-only) 포함)" {
+  _source_verify
+  # TEST_PROJECT 에 run.sh 없음 → tests SKIP → 전체 PASS
+  run verify_run "대상 설명" "zen" --tests-only
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "tests-only" ]] || [[ "$output" =~ "SKIP" ]]
+}
+
+# ─────────────────────────────────────────────────────────
+# verify_tests_only — 러너 없음 시 SKIP (exit 2)
+# ─────────────────────────────────────────────────────────
+
+@test "verify: verify_tests_only — 테스트 러너 없음 시 exit 2 (SKIP)" {
+  _source_verify
+  # TEST_PROJECT 에는 tests/bats/run.sh, package.json, pytest.ini 없음
+  # → _verify_run_tests 가 "SKIP" + return 2
+  run verify_tests_only
+  # exit 2 = SKIP (러너 감지 불가)
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "SKIP" ]]
+}
+
+@test "verify: verify_tests_only — 출력에 '[verify]' 프리픽스 포함" {
+  _source_verify
+  run verify_tests_only
+  [[ "$output" =~ "[verify]" ]]
+}

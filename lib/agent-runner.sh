@@ -40,6 +40,38 @@ source "${GOLEM_ROOT}/lib/growth-log.sh"
 _AGENT_CLAUDE_BASE=(--print --output-format=stream-json --verbose)
 
 # ─────────────────────────────────────────────────────────
+# RUNAWAY PROTECTION — 폭주 방지 가드 (게이트웨이 MAX_RUN_SECONDS 미러)
+# ─────────────────────────────────────────────────────────
+# 게이트웨이(config.py)는 MAX_RUN_SECONDS=300 으로 claude 자식 프로세스에
+# 벽시계 타임아웃을 건다. 디커플된 bash 경로(agent_run)에는 이 가드가 없어
+# 행 걸리거나 루프 도는 claude 자식이 미션을 무한정 막거나 비용을 무한 소진할 수
+# 있었다(크로스 리뷰 지적). 아래 가드로 이를 미러한다.
+#
+# AGENT_MAX_SECONDS  — claude 소환 벽시계 타임아웃(초). 기본 300(게이트웨이와 동일).
+# AGENT_MAX_COST_USD — 단일 run 비용 상한(USD). 빈 값=비활성(기본). 초과 시 stderr 경고
+#                      (사후 트립와이어 — 가시성 가드일 뿐 사전 차단 아님).
+AGENT_MAX_SECONDS="${AGENT_MAX_SECONDS:-300}"
+AGENT_MAX_COST_USD="${AGENT_MAX_COST_USD:-}"
+
+# timeout 명령 프리픽스 배열을 stdout 으로 출력한다.
+# - GNU coreutils `timeout` (리눅스/Git-bash) 또는 `gtimeout` (macОS coreutils) 탐지.
+# - 둘 다 없으면 빈 출력 → 호출부가 무가드로 폴백(한 번 경고).
+# 사용: read -r -a _pfx < <(_agent_timeout_cmd) ; "${_pfx[@]}" claude ...
+# 단위 테스트 가능: AGENT_MAX_SECONDS=5 _agent_timeout_cmd → "timeout 5"
+_agent_timeout_cmd() {
+  local secs="${AGENT_MAX_SECONDS:-300}"
+  # 정수 검증 — 비정상 값이면 기본 300
+  printf '%s' "$secs" | grep -qE '^[0-9]+$' || secs=300
+  if command -v timeout >/dev/null 2>&1; then
+    printf '%s %s\n' "timeout" "$secs"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    printf '%s %s\n' "gtimeout" "$secs"
+  else
+    printf '\n'  # 빈 출력 — 가드 없음
+  fi
+}
+
+# ─────────────────────────────────────────────────────────
 # 헬퍼
 # ─────────────────────────────────────────────────────────
 
@@ -204,6 +236,8 @@ agent_run() {
   local task_text="$2"
   local session_id=""
   local dry_run=0
+  # 표시용 max_seconds — AGENT_MAX_SECONDS 가 소환 후 unset 돼도 기본값 유지
+  local max_secs="${AGENT_MAX_SECONDS:-300}"
 
   # 나머지 인자 파싱 (session_id, --dry-run 순서 무관)
   shift 2
@@ -301,28 +335,58 @@ ${_ar_body}"
   fi
   argv+=(-- "$task_text")
 
+  # 타임아웃 프리픽스 결정 (D1) — dry-run 에서는 가시화만, 실제 소환 시에는 prepend.
+  local -a _ar_timeout_pfx=()
+  read -r -a _ar_timeout_pfx < <(_agent_timeout_cmd)
+  local _ar_guard_desc
+  if [ "${#_ar_timeout_pfx[@]}" -gt 0 ]; then
+    _ar_guard_desc="${_ar_timeout_pfx[*]} (max_seconds=${max_secs})"
+  else
+    _ar_guard_desc="DISABLED (no timeout/gtimeout — unbounded, max_seconds=${max_secs})"
+  fi
+
   # --dry-run: argv 만 출력 (각 인자 한 줄, 따옴표로 가독성)
   if [ "$dry_run" -eq 1 ]; then
     echo "[agent-runner] DRY-RUN argv (소환 안 함):"
+    echo "[agent-runner] runaway guard: timeout=${_ar_guard_desc} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
     local a
-    for a in "${argv[@]}"; do
+    # 실제 소환 시 prepend 될 타임아웃 프리픽스를 명시 (가시성 D3)
+    for a in "${_ar_timeout_pfx[@]}" "${argv[@]}"; do
       printf '  %q\n' "$a"
     done
-    echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]}"
+    echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
     return 0
   fi
 
   # (e) 소환 + stream-json 캡처
+  # D1 — 벽시계 타임아웃 가드. timeout 프리픽스를 prepend (없으면 한 번 경고).
   local stream_file
   stream_file=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/agent_run_$$_$RANDOM")
   local rc=0
-  "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
+  local _ar_timed_out=0
+  if [ "${#_ar_timeout_pfx[@]}" -gt 0 ]; then
+    # timeout 124 → 타임아웃, 137 → KILL(타임아웃 후 강제 종료). 둘 다 타임아웃으로 처리.
+    "${_ar_timeout_pfx[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+      _ar_timed_out=1
+    fi
+  else
+    echo "[agent-runner] WARNING: timeout/gtimeout 미존재 — claude 소환에 벽시계 가드 없음 (무한정 실행 가능)." >&2
+    "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
+  fi
 
   # 어시스턴트 텍스트 + result usage 파싱
   _AR_RESULT_TEXT=$(_extract_assistant_text "$stream_file")
   _parse_stream < "$stream_file"
 
   rm -f "$stream_file"
+
+  # D1 — 타임아웃 시: 결과 텍스트를 명확한 사유로 덮어쓰고 fail 처리.
+  # (child 는 timeout(1) 이 SIGTERM/SIGKILL 로 이미 종료시킴 — 추가 kill 불필요.)
+  if [ "$_ar_timed_out" -eq 1 ]; then
+    _AR_RESULT_TEXT="[agent-runner] TIMEOUT after ${AGENT_MAX_SECONDS}s"
+    _AR_IS_ERROR=1
+  fi
 
   # 결과 텍스트 출력
   printf '%s\n' "$_AR_RESULT_TEXT"
@@ -342,15 +406,33 @@ ${_ar_body}"
   fi
 
   local total_tokens=$(( _AR_TOKENS_IN + _AR_TOKENS_OUT ))
+  local cost="0.000"
   if [ "$total_tokens" -gt 0 ] 2>/dev/null; then
     source "${GOLEM_ROOT}/lib/budget.sh" 2>/dev/null
     # budget_estimate_cost 는 "tokens_in tokens_out cost" 를 출력하지만
     # 우리는 result usage 의 실제 토큰을 쓰므로 cost 만 취한다.
-    local cost_data cost
+    local cost_data
     cost_data=$(budget_estimate_cost "$model_arg" "$total_tokens" "$_AR_DURATION_MS")
     cost=$(printf '%s' "$cost_data" | awk '{print $3}')
     growth_log_append "$soul_name" "$task_text" "$result" 0 0 "" "" \
       "$_AR_TOKENS_IN" "$_AR_TOKENS_OUT" "$_AR_TOKENS_CACHE" "$cost" "$model_arg" "$_AR_DURATION_MS" >&2
+
+    # D2 — 단일 run 비용 상한 트립와이어 (사후 경고, 사전 차단 아님).
+    # AGENT_MAX_COST_USD 설정 시 단일 run 비용이 초과하면 stderr 로 경고.
+    # 새 예산 서브시스템을 만들지 않고 budget.sh(budget_estimate_cost)만 재사용한다.
+    if [ -n "$AGENT_MAX_COST_USD" ]; then
+      local _ar_cost_exceeded
+      _ar_cost_exceeded=$(awk "BEGIN {print ($cost > $AGENT_MAX_COST_USD) ? 1 : 0}" 2>/dev/null)
+      if [ "${_ar_cost_exceeded:-0}" = "1" ]; then
+        echo "[agent-runner] WARNING: run 비용 \$${cost} 가 상한 \$${AGENT_MAX_COST_USD} 를 초과 (soul=${soul_name}, model=${model_arg})." >&2
+        # 누적 세션 비용 가시화 (budget.sh 상태 파일이 있으면 — 선택적, 신규 인프라 아님).
+        if command -v budget_status >/dev/null 2>&1; then
+          local _ar_cum
+          _ar_cum=$(budget_status 2>/dev/null | grep -i '비용' | head -1 | tr -s ' ')
+          [ -n "$_ar_cum" ] && echo "[agent-runner] 누적 세션:${_ar_cum}" >&2
+        fi
+      fi
+    fi
   else
     growth_log_append "$soul_name" "$task_text" "$result" 0 0 >&2
   fi
@@ -361,8 +443,8 @@ ${_ar_body}"
     _agent_maybe_distill "$soul_name" >&2
   fi
 
-  # usage 요약 라인 (파싱 가능)
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} duration_ms=${_AR_DURATION_MS}"
+  # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
 
   [ "$result" = "fail" ] && return 1
   return 0

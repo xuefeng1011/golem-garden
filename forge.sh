@@ -66,6 +66,11 @@ Project Init:
 Commands:
   run <name> <task> [session_id]
                       엔진 네이티브 SOUL 소환 (OMC 비의존, claude CLI 직접 호출)
+  doctor [--verbose]  엔진 헬스체크 (claude CLI·SOUL·.golem·의존성 진단)
+  verify <target> [reviewer] | --tests-only
+                      전용 검증 레인 (결정론 테스트 + verifier SOUL, author≠verifier)
+  explore <query> [path] | --files <query> [path]
+                      grep-우선 코드 컨텍스트 (관련 코드 한 번에 번들)
   overview (ov)       통합 대시보드 — 팀 전체를 한눈에
   status              팀 상태 + SOUL 랭크 확인
   souls               등록된 SOUL 목록
@@ -212,6 +217,11 @@ Handover (인수인계 자동 생성):
 Examples:
   forge status
   forge run zen "Reply with one word: PONG"
+  forge doctor                          # 엔진 상태 진단
+  forge verify --tests-only             # 결정론 테스트만 (무료)
+  forge verify "mission_next 구현" zen   # 테스트 + verifier SOUL 판정
+  forge explore agent_run               # agent_run 관련 코드 한눈에
+  forge explore --files mission_        # 관련 파일 랭크 목록
   forge prompt ryn "인증 API 구현"
   forge rank ryn
   forge log-add ryn "REST API 설계" success 5 12
@@ -273,6 +283,47 @@ case "${1:-}" in
     fi
     source "${GOLEM_ROOT}/lib/agent-runner.sh"
     agent_run "$2" "$3" "${4:-}"
+    exit $?
+    ;;
+
+  doctor)
+    # 엔진 헬스체크 (omc-doctor 대체) — lib/doctor.sh 의 doctor_run
+    # forge doctor [--verbose]
+    source "${GOLEM_ROOT}/lib/doctor.sh"
+    doctor_run "${2:-}"
+    exit $?
+    ;;
+
+  verify)
+    # 전용 검증 레인 (결정론 테스트 + verifier SOUL) — lib/verify.sh
+    # forge verify <target> [verifier_soul]  |  forge verify --tests-only
+    source "${GOLEM_ROOT}/lib/verify.sh"
+    if [ "${2:-}" = "--tests-only" ]; then
+      verify_tests_only
+    elif [ -z "${2:-}" ]; then
+      echo "Usage: forge verify <target_description> [verifier_soul]"
+      echo "       forge verify --tests-only   (결정론 테스트만, SOUL 호출 없음)"
+      exit 1
+    else
+      verify_run "$2" "${3:-}"
+    fi
+    exit $?
+    ;;
+
+  explore)
+    # grep-우선 코드 컨텍스트 (CodeGraph 경량판) — lib/explore.sh
+    # forge explore <query> [path]  |  forge explore-files <query> [path]
+    if [ -z "${2:-}" ]; then
+      echo "Usage: forge explore <query> [path]"
+      echo "       forge explore --files <query> [path]   (랭크된 파일 목록만)"
+      exit 1
+    fi
+    source "${GOLEM_ROOT}/lib/explore.sh"
+    if [ "$2" = "--files" ]; then
+      explore_files "${3:-}" "${4:-}"
+    else
+      explore_run "$2" "${3:-}"
+    fi
     exit $?
     ;;
 
