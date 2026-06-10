@@ -42,6 +42,7 @@ pack_list() {
       gamedev)   desc="게임 개발 (디자인+그래픽+로직)" ;;
       trading)   desc="주식/크립토 (TA+리스크+뉴스)" ;;
       fullstack) desc="풀스택 웹앱 (BE+FE+QA+DevOps)" ;;
+      physical-ai) desc="피지컬 AI (임베디드+엣지AI+Go+로보틱스)" ;;
       *)         desc="커스텀 도메인 팩" ;;
     esac
 
