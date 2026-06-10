@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { NSpin } from 'naive-ui'
+import { NIcon } from 'naive-ui'
+import { FolderOpenOutline, AlertCircleOutline, PeopleOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchSouls } from '@/api/hermes/souls'
 import type { Soul } from '@/api/hermes/souls'
 import SoulCard from '@/components/hermes/souls/SoulCard.vue'
 import SoulDetailModal from '@/components/hermes/souls/SoulDetailModal.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonCard from '@/components/common/SkeletonCard.vue'
 
 const { t } = useI18n()
+const router = useRouter()
 const profilesStore = useProfilesStore()
 
 const souls = ref<Soul[]>([])
@@ -39,6 +44,16 @@ function closeModal() {
   modalOpen.value = false
 }
 
+function onRetry() {
+  const id = profilesStore.activeProfile?.id
+  if (!id) return
+  loadSouls(id)
+}
+
+function goToProfiles() {
+  router.push({ name: 'hermes.profiles' })
+}
+
 onMounted(() => {
   if (profilesStore.activeProfile?.id) {
     loadSouls(profilesStore.activeProfile.id)
@@ -67,28 +82,49 @@ watch(
     </header>
 
     <div class="souls-content">
-      <div v-if="!profilesStore.activeProfile" class="empty-state">
-        {{ t('souls.noProject') }}
+      <EmptyState
+        v-if="!profilesStore.activeProfile"
+        :title="t('souls.noProject')"
+        :description="t('souls.noProjectDescription')"
+        :action="{ label: t('souls.selectProject'), handler: goToProfiles }"
+      >
+        <template #icon>
+          <NIcon><FolderOpenOutline /></NIcon>
+        </template>
+      </EmptyState>
+
+      <div v-else-if="loading" class="souls-grid" data-testid="souls-skeleton">
+        <SkeletonCard v-for="i in 6" :key="i" :rows="3" show-avatar />
       </div>
 
-      <NSpin v-else :show="loading">
-        <div v-if="error" class="empty-state">
-          {{ t('souls.loadFailed') }}
-        </div>
+      <EmptyState
+        v-else-if="error"
+        :title="t('souls.loadFailed')"
+        :action="{ label: t('common.retry'), handler: onRetry }"
+      >
+        <template #icon>
+          <NIcon><AlertCircleOutline /></NIcon>
+        </template>
+      </EmptyState>
 
-        <div v-else-if="!loading && souls.length === 0" class="empty-state">
-          {{ t('souls.empty') }}
-        </div>
+      <EmptyState
+        v-else-if="souls.length === 0"
+        :title="t('souls.empty')"
+        :description="t('souls.emptyDescription')"
+      >
+        <template #icon>
+          <NIcon><PeopleOutline /></NIcon>
+        </template>
+      </EmptyState>
 
-        <div v-else class="souls-grid">
-          <SoulCard
-            v-for="soul in souls"
-            :key="soul.id"
-            :soul="soul"
-            @click="openSoul(soul)"
-          />
-        </div>
-      </NSpin>
+      <div v-else class="souls-grid">
+        <SoulCard
+          v-for="soul in souls"
+          :key="soul.id"
+          :soul="soul"
+          @click="openSoul(soul)"
+        />
+      </div>
     </div>
 
     <SoulDetailModal
@@ -147,12 +183,5 @@ watch(
   @media (max-width: $breakpoint-mobile) {
     grid-template-columns: 1fr;
   }
-}
-
-.empty-state {
-  padding: 60px 0;
-  text-align: center;
-  color: $text-muted;
-  font-size: 14px;
 }
 </style>

@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { NTag } from 'naive-ui'
+import { NIcon } from 'naive-ui'
+import { CheckmarkCircle, CloseCircle, InformationCircle, PulseOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
 import type { ActivityEntry } from '@/api/hermes/overview'
+import EmptyState from '@/components/common/EmptyState.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 defineProps<{ activities: ActivityEntry[] }>()
 
-function formatDate(ts: string): string {
+function relativeTime(ts: string): string {
   if (!ts) return ''
-  // ts may be YYYY-MM-DD or ISO
   const d = new Date(ts)
   if (isNaN(d.getTime())) return ts
-  const month = d.getMonth() + 1
-  const day = d.getDate()
-  return `${month}월 ${day}일`
+  const diffMs = Date.now() - d.getTime()
+  if (diffMs < 0) return d.toLocaleDateString(locale.value, { month: 'short', day: 'numeric' })
+  const minutes = Math.floor(diffMs / 60000)
+  if (minutes < 1) return t('overview.timeJustNow')
+  if (minutes < 60) return t('overview.timeMinutesAgo', { n: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('overview.timeHoursAgo', { n: hours })
+  const days = Math.floor(hours / 24)
+  if (days < 7) return t('overview.timeDaysAgo', { n: days })
+  return d.toLocaleDateString(locale.value, { month: 'short', day: 'numeric' })
 }
 
 function truncateTask(task: string, max = 60): string {
@@ -22,22 +30,29 @@ function truncateTask(task: string, max = 60): string {
   return task.length > max ? task.slice(0, max) + '…' : task
 }
 
-function resultType(result: string): 'success' | 'error' | 'warning' | 'default' {
-  if (!result) return 'default'
+type ResultKind = 'success' | 'fail' | 'info'
+
+function resultKind(result: string): ResultKind {
+  if (!result) return 'info'
   const r = result.toLowerCase()
   if (r === 'success' || r === '성공') return 'success'
-  if (r === 'error' || r === 'fail' || r === 'failed' || r === '실패') return 'error'
-  if (r === 'partial' || r === 'warning') return 'warning'
-  return 'default'
+  if (r === 'error' || r === 'fail' || r === 'failed' || r === '실패') return 'fail'
+  return 'info'
 }
 </script>
 
 <template>
   <div class="activity-wrap">
     <h3 class="section-title">{{ t('overview.activityTitle') }}</h3>
-    <div v-if="activities.length === 0" class="empty-state">
-      {{ t('overview.activityEmpty') }}
-    </div>
+    <EmptyState
+      v-if="activities.length === 0"
+      :title="t('overview.activityEmpty')"
+      :description="t('overview.activityEmptyDescription')"
+    >
+      <template #icon>
+        <NIcon><PulseOutline /></NIcon>
+      </template>
+    </EmptyState>
     <div v-else class="activity-list">
       <div
         v-for="(entry, idx) in activities.slice(0, 8)"
@@ -45,18 +60,21 @@ function resultType(result: string): 'success' | 'error' | 'warning' | 'default'
         class="activity-item"
       >
         <div class="activity-header">
-          <span class="soul-name">{{ entry.soul }}</span>
-          <NTag
-            size="small"
-            :bordered="false"
-            :type="resultType(entry.result)"
-            class="result-tag"
+          <span
+            class="result-icon"
+            :class="`icon-${resultKind(entry.result)}`"
+            :title="entry.result || t('overview.resultUnknown')"
           >
-            {{ entry.result || t('overview.resultUnknown') }}
-          </NTag>
+            <NIcon size="14">
+              <CheckmarkCircle v-if="resultKind(entry.result) === 'success'" />
+              <CloseCircle v-else-if="resultKind(entry.result) === 'fail'" />
+              <InformationCircle v-else />
+            </NIcon>
+          </span>
+          <span class="soul-name">{{ entry.soul }}</span>
+          <span class="activity-ts">{{ relativeTime(entry.ts) }}</span>
         </div>
         <div class="activity-task">{{ truncateTask(entry.task) }}</div>
-        <div class="activity-ts">{{ formatDate(entry.ts) }}</div>
       </div>
     </div>
   </div>
@@ -89,42 +107,50 @@ function resultType(result: string): 'success' | 'error' | 'warning' | 'default'
   border: 1px solid $border-color;
   border-radius: $radius-md;
   padding: 10px 14px;
+  transition: box-shadow 0.2s $ease-out;
+
+  &:hover {
+    box-shadow: $shadow-sm;
+  }
 }
 
 .activity-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   margin-bottom: 4px;
+}
+
+.result-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+
+  &.icon-success { color: $success; }
+  &.icon-fail    { color: $error; }
+  &.icon-info    { color: var(--accent-info); }
 }
 
 .soul-name {
   font-size: 13px;
   font-weight: 600;
   color: $text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.result-tag {
-  font-size: 11px;
+.activity-ts {
+  margin-left: auto;
   flex-shrink: 0;
+  font-size: 11px;
+  color: $text-muted;
 }
 
 .activity-task {
   font-size: 12px;
   color: $text-secondary;
   line-height: 1.4;
-  margin-bottom: 4px;
-}
-
-.activity-ts {
-  font-size: 11px;
-  color: $text-muted;
-}
-
-.empty-state {
-  padding: 40px 0;
-  text-align: center;
-  color: $text-muted;
-  font-size: 13px;
+  padding-left: 20px;
 }
 </style>

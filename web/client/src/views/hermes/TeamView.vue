@@ -6,7 +6,12 @@ import { useI18n } from 'vue-i18n'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchBoard } from '@/api/hermes/overview'
 import type { ProjectBoard, HistoryEntry } from '@/api/hermes/overview'
+import { fetchChemistry } from '@/api/hermes/chemistry'
+import type { ChemistryPair } from '@/api/hermes/chemistry'
 import MarkdownRenderer from '@/components/hermes/chat/MarkdownRenderer.vue'
+import ChemistryPairCard from '@/components/hermes/team/ChemistryPairCard.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonCard from '@/components/common/SkeletonCard.vue'
 
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
@@ -36,9 +41,44 @@ async function load(projectId: string) {
   }
 }
 
+// ── Chemistry ─────────────────────────────────────────────────────
+
+const chemPairs = ref<ChemistryPair[]>([])
+const chemLoading = ref(false)
+const chemError = ref(false)
+
+async function loadChemistry(projectId: string) {
+  chemLoading.value = true
+  chemError.value = false
+  try {
+    const data = await fetchChemistry(projectId)
+    chemPairs.value = data.pairs
+  } catch {
+    chemError.value = true
+    chemPairs.value = []
+  } finally {
+    chemLoading.value = false
+  }
+}
+
+// score DESC (nulls last), then interactions DESC
+const sortedPairs = computed<ChemistryPair[]>(() =>
+  [...chemPairs.value].sort((a, b) => {
+    if (a.score === null && b.score === null) return b.interactions - a.interactions
+    if (a.score === null) return 1
+    if (b.score === null) return -1
+    return b.score - a.score || b.interactions - a.interactions
+  })
+)
+
+const maxScore = computed(() =>
+  Math.max(0, ...chemPairs.value.map((p) => p.score ?? 0))
+)
+
 onMounted(() => {
   if (profilesStore.activeProfile?.id) {
     load(profilesStore.activeProfile.id)
+    loadChemistry(profilesStore.activeProfile.id)
   }
 })
 
@@ -47,8 +87,10 @@ watch(
   (id) => {
     if (id) {
       load(id)
+      loadChemistry(id)
     } else {
       board.value = null
+      chemPairs.value = []
     }
   }
 )
@@ -207,6 +249,28 @@ const historyData = computed<HistoryEntry[]>(() =>
           </template>
         </template>
       </NSpin>
+
+      <!-- Section 4: Team Chemistry -->
+      <section v-if="profilesStore.activeProfile" class="board-section">
+        <h3 class="section-title">{{ t('team.sectionChemistry') }}</h3>
+        <SkeletonCard v-if="chemLoading" :rows="2" />
+        <p v-else-if="chemError" class="chem-error">
+          {{ t('team.chemistryLoadFailed') }}
+        </p>
+        <EmptyState
+          v-else-if="sortedPairs.length === 0"
+          :title="t('team.chemistryEmpty')"
+          :description="t('team.chemistryEmptyHint')"
+        />
+        <div v-else class="chemistry-grid">
+          <ChemistryPairCard
+            v-for="pair in sortedPairs"
+            :key="pair.souls.join('+')"
+            :pair="pair"
+            :max-score="maxScore"
+          />
+        </div>
+      </section>
     </div>
 
     <!-- Raw MD modal -->
@@ -456,6 +520,21 @@ const historyData = computed<HistoryEntry[]>(() =>
 
 .debt-text {
   line-height: 1.5;
+}
+
+// ── Chemistry ─────────────────────────────────────────────────────
+
+.chemistry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.chem-error {
+  font-size: 13px;
+  color: $text-muted;
+  text-align: center;
+  padding: 16px 0;
 }
 
 // ── History Table ─────────────────────────────────────────────────

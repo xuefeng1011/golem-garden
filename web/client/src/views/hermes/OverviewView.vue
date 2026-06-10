@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import { NSpin, NButton, NModal } from 'naive-ui'
+import { NModal, NIcon } from 'naive-ui'
+import { FolderOpenOutline, AlertCircleOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchOverview, fetchBoard } from '@/api/hermes/overview'
 import type { ProjectOverview, ProjectBoard } from '@/api/hermes/overview'
 import StatCards from '@/components/hermes/overview/StatCards.vue'
 import TeamGrid from '@/components/hermes/overview/TeamGrid.vue'
 import RecentActivity from '@/components/hermes/overview/RecentActivity.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonCard from '@/components/common/SkeletonCard.vue'
 
 const { t } = useI18n()
+const router = useRouter()
 const profilesStore = useProfilesStore()
 
 const overview = ref<ProjectOverview | null>(null)
@@ -22,6 +27,10 @@ const onRetry = () => {
   const id = profilesStore.activeProfile?.id
   if (!id) return
   loadData(id)
+}
+
+function goToProfiles() {
+  router.push({ name: 'hermes.profiles' })
 }
 
 async function loadData(projectId: string) {
@@ -75,41 +84,62 @@ watch(
 
     <div class="overview-content">
       <!-- No project selected -->
-      <div v-if="!profilesStore.activeProfile" class="empty-state">
-        {{ t('overview.noProject') }}
-      </div>
+      <EmptyState
+        v-if="!profilesStore.activeProfile"
+        :title="t('overview.noProject')"
+        :description="t('overview.noProjectDescription')"
+        :action="{ label: t('overview.selectProject'), handler: goToProfiles }"
+      >
+        <template #icon>
+          <NIcon><FolderOpenOutline /></NIcon>
+        </template>
+      </EmptyState>
 
-      <NSpin v-else :show="loading">
-        <!-- Error state -->
-        <div v-if="error" class="error-card">
-          <p class="error-message">{{ t('overview.loadFailed') }}</p>
-          <NButton size="small" @click="onRetry">
-            {{ t('common.retry') }}
-          </NButton>
+      <!-- Loading skeleton -->
+      <template v-else-if="loading">
+        <StatCards loading />
+        <div class="two-col">
+          <div class="col-left">
+            <SkeletonCard :rows="6" show-avatar />
+          </div>
+          <div class="col-right">
+            <SkeletonCard :rows="6" show-avatar />
+          </div>
+        </div>
+      </template>
+
+      <!-- Error state -->
+      <EmptyState
+        v-else-if="error"
+        :title="t('overview.loadFailed')"
+        :action="{ label: t('common.retry'), handler: onRetry }"
+      >
+        <template #icon>
+          <NIcon><AlertCircleOutline /></NIcon>
+        </template>
+      </EmptyState>
+
+      <template v-else-if="overview">
+        <!-- Stat row -->
+        <StatCards :overview="overview" />
+
+        <!-- Two-column body -->
+        <div class="two-col">
+          <div class="col-left">
+            <TeamGrid :team="board?.team ?? []" />
+          </div>
+          <div class="col-right">
+            <RecentActivity :activities="overview.recent_activity ?? []" />
+          </div>
         </div>
 
-        <template v-else-if="!loading && overview">
-          <!-- Stat row -->
-          <StatCards :overview="overview" />
-
-          <!-- Two-column body -->
-          <div class="two-col">
-            <div class="col-left">
-              <TeamGrid :team="board?.team ?? []" />
-            </div>
-            <div class="col-right">
-              <RecentActivity :activities="overview.recent_activity ?? []" />
-            </div>
-          </div>
-
-          <!-- Footer: tech debt -->
-          <div v-if="board && board.tech_debt.length > 0" class="footer-bar">
-            <button class="debt-link" @click="showDebtModal = true">
-              {{ t('overview.techDebt', { count: board.tech_debt.length }) }}
-            </button>
-          </div>
-        </template>
-      </NSpin>
+        <!-- Footer: tech debt -->
+        <div v-if="board && board.tech_debt.length > 0" class="footer-bar">
+          <button class="debt-link" @click="showDebtModal = true">
+            {{ t('overview.techDebt', { count: board.tech_debt.length }) }}
+          </button>
+        </div>
+      </template>
     </div>
 
     <!-- Tech debt modal -->
@@ -162,27 +192,6 @@ watch(
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-}
-
-.empty-state {
-  padding: 60px 0;
-  text-align: center;
-  color: $text-muted;
-  font-size: 14px;
-}
-
-.error-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 60px 0;
-  text-align: center;
-}
-
-.error-message {
-  font-size: 14px;
-  color: $text-secondary;
 }
 
 .two-col {

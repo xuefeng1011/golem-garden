@@ -5,6 +5,7 @@ import { CheckmarkCircle, CloseCircle, InformationCircle } from '@vicons/ionicon
 import type { SoulDetail, SoulActivity } from '@/api/hermes/souls'
 import { fetchSoul, fetchSoulActivity } from '@/api/hermes/souls'
 import MarkdownRenderer from '@/components/hermes/chat/MarkdownRenderer.vue'
+import RankProgress from '@/components/common/RankProgress.vue'
 import { useI18n } from 'vue-i18n'
 import { effortTagType, isolationTagType, formatMaxTurns, showDisallowedTools } from './soulDetailHelpers'
 
@@ -16,7 +17,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const detail = ref<SoulDetail | null>(null)
 const loading = ref(false)
@@ -25,25 +26,11 @@ const error = ref(false)
 const activity = ref<SoulActivity | null>(null)
 const activityLoading = ref(false)
 
-// rank promotion thresholds: tasks needed to reach next rank
-const RANK_THRESHOLD: Record<string, number> = {
-  novice: 10,
-  junior: 30,
-  senior: 60,
-}
-
-function rankProgressPct(rp: SoulActivity['rank_progress']): number {
-  if (!rp.next) return 100
-  const threshold = RANK_THRESHOLD[rp.current] ?? 10
-  const done = threshold - rp.tasks_to_promote
-  return Math.min(100, Math.max(0, Math.round((done / threshold) * 100)))
-}
-
 function formatDate(ts: string): string {
   if (!ts) return ''
   const d = new Date(ts)
   if (isNaN(d.getTime())) return ts
-  return `${d.getMonth() + 1}월 ${d.getDate()}일`
+  return d.toLocaleDateString(locale.value, { month: 'short', day: 'numeric' })
 }
 
 function truncateTask(task: string, max = 60): string {
@@ -131,6 +118,7 @@ watch(
         </div>
 
         <!-- N3: Capability & Isolation Fields -->
+        <h4 class="section-label">{{ t('souls.sectionCapabilities') }}</h4>
         <div class="capability-panel" :class="{ 'coordinator-panel': isCoordinator }">
           <!-- Director badge -->
           <div v-if="isCoordinator" class="capability-row">
@@ -199,7 +187,7 @@ watch(
         <!-- /N3 Capability Fields -->
 
         <!-- Activity Panel -->
-        <div class="activity-divider" />
+        <h4 class="section-label">{{ t('souls.sectionActivity') }}</h4>
 
         <div v-if="activityLoading" class="activity-skeleton">
           <NSkeleton text style="width: 60%; height: 14px; margin-bottom: 8px;" />
@@ -211,43 +199,31 @@ watch(
           <!-- Counters line -->
           <div class="activity-counters">
             <span class="counter-item">
-              총 태스크 <strong>{{ activity.tasks_total }}</strong>
+              {{ t('souls.statsTotal') }} <strong>{{ activity.tasks_total }}</strong>
             </span>
             <span class="counter-sep">·</span>
             <span class="counter-item">
-              성공 <strong>{{ activity.tasks_success }}</strong>
+              {{ t('souls.statsSuccess') }} <strong>{{ activity.tasks_success }}</strong>
               <span class="counter-pct">
                 ({{ activity.tasks_total > 0 ? Math.round((activity.tasks_success / activity.tasks_total) * 100) : 0 }}%)
               </span>
             </span>
             <span class="counter-sep">·</span>
             <span class="counter-item">
-              연속 <strong>{{ activity.streak }}</strong>건
+              {{ t('souls.statsStreak') }} <strong>{{ activity.streak }}</strong>
             </span>
           </div>
 
           <!-- Rank progress -->
-          <div class="rank-progress">
-            <div class="rank-progress-label">
-              <span class="rp-current">{{ activity.rank_progress.current }}</span>
-              <span v-if="activity.rank_progress.next" class="rp-arrow">→</span>
-              <span v-if="activity.rank_progress.next" class="rp-next">{{ activity.rank_progress.next }}</span>
-              <span v-else class="rp-max">최고 등급 달성</span>
-              <span v-if="activity.rank_progress.next" class="rp-remaining">
-                남은 태스크 {{ activity.rank_progress.tasks_to_promote }}
-              </span>
-            </div>
-            <div class="rp-bar-track">
-              <div
-                class="rp-bar-fill"
-                :style="{ width: rankProgressPct(activity.rank_progress) + '%' }"
-              />
-            </div>
-          </div>
+          <RankProgress
+            :current="activity.rank_progress.current"
+            :next="activity.rank_progress.next"
+            :tasks-to-promote="activity.rank_progress.tasks_to_promote"
+          />
 
           <!-- Recent tasks -->
           <div v-if="activity.recent_tasks?.length" class="recent-tasks">
-            <div class="recent-tasks-title">최근 작업:</div>
+            <div class="recent-tasks-title">{{ t('souls.recentTasks') }}</div>
             <div
               v-for="(entry, idx) in activity.recent_tasks.slice(0, 5)"
               :key="idx"
@@ -266,6 +242,8 @@ watch(
           </div>
         </div>
         <!-- /Activity Panel (hidden on error — intentional) -->
+
+        <h4 class="section-label">{{ t('souls.sectionProfile') }}</h4>
 
         <p v-if="detail.description" class="soul-description">{{ detail.description }}</p>
 
@@ -316,10 +294,13 @@ watch(
   font-size: 11px;
 }
 
-.activity-divider {
-  height: 1px;
-  background: $border-light;
-  margin: 2px 0;
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 6px 0 -4px;
 }
 
 .activity-skeleton {

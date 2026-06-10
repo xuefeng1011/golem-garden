@@ -1,9 +1,21 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { NTag } from 'naive-ui'
 import type { Soul } from '@/api/hermes/souls'
 
-defineProps<{ soul: Soul }>()
+const MAX_VISIBLE_TAGS = 3
+
+const props = defineProps<{ soul: Soul }>()
 defineEmits<{ (e: 'click'): void }>()
+
+const visibleSpecialty = computed(() =>
+  (props.soul.specialty ?? []).slice(0, MAX_VISIBLE_TAGS),
+)
+
+const overflowCount = computed(() => {
+  const total = props.soul.specialty?.length ?? 0
+  return Math.max(0, total - MAX_VISIBLE_TAGS)
+})
 </script>
 
 <template>
@@ -17,13 +29,22 @@ defineEmits<{ (e: 'click'): void }>()
 
     <div v-if="soul.specialty?.length" class="specialty-chips">
       <NTag
-        v-for="spec in soul.specialty.slice(0, 4)"
+        v-for="spec in visibleSpecialty"
         :key="spec"
         size="small"
         :bordered="false"
         class="specialty-tag"
       >
         {{ spec }}
+      </NTag>
+      <NTag
+        v-if="overflowCount > 0"
+        size="small"
+        :bordered="false"
+        class="specialty-tag overflow-tag"
+        :title="soul.specialty.slice(MAX_VISIBLE_TAGS).join(', ')"
+      >
+        +{{ overflowCount }}
       </NTag>
     </div>
   </div>
@@ -38,11 +59,21 @@ defineEmits<{ (e: 'click'): void }>()
   border-radius: $radius-md;
   padding: 16px;
   cursor: pointer;
-  transition: border-color $transition-fast, box-shadow $transition-fast;
+  transition:
+    border-color 0.2s $ease-out,
+    box-shadow 0.2s $ease-out,
+    transform 0.2s $ease-out;
 
   &:hover {
     border-color: rgba(var(--accent-primary-rgb), 0.4);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: $shadow-md;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .soul-card:hover {
+    transform: none;
   }
 }
 
@@ -95,5 +126,9 @@ defineEmits<{ (e: 'click'): void }>()
 
 .specialty-tag {
   font-size: 11px;
+}
+
+.overflow-tag {
+  opacity: 0.75;
 }
 </style>

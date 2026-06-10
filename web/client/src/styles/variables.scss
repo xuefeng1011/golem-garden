@@ -17,9 +17,9 @@
   --border-color: #e0e0e0;
   --border-light: #ebebeb;
 
-  // Accent
-  --accent-primary: #333333;
-  --accent-hover: #1a1a1a;
+  // Accent (aligned with Naive UI primaryColor — theme.ts)
+  --accent-primary: #2d7a57;
+  --accent-hover: #1f5c3e;
   --accent-muted: #888888;
 
   // Text
@@ -45,9 +45,18 @@
   --text-on-overlay: #ffffff;
   --accent-info: #4a90d9;
 
+  // Elevation
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.14);
+
+  // Easing
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+
   // RGB components (for rgba() usage)
-  --accent-primary-rgb: 51, 51, 51;
-  --accent-hover-rgb: 26, 26, 26;
+  --accent-primary-rgb: 45, 122, 87;
+  --accent-hover-rgb: 31, 92, 62;
   --text-primary-rgb: 26, 26, 26;
   --text-muted-rgb: 153, 153, 153;
   --success-rgb: 46, 125, 50;
@@ -57,21 +66,21 @@
 }
 
 .dark {
-  // Backgrounds
+  // Backgrounds (body #1a1a1a → card #242424 layer separation)
   --bg-primary: #1a1a1a;
   --bg-secondary: #252525;
   --bg-sidebar: #202020;
-  --bg-card: #333333;
-  --bg-card-hover: #333333;
-  --bg-input: #2a2a2a;
+  --bg-card: #242424;
+  --bg-card-hover: #2a2a2a;
+  --bg-input: #242424;
 
   // Borders
   --border-color: #3a3a3a;
-  --border-light: #333333;
+  --border-light: #2e2e2e;
 
-  // Accent
-  --accent-primary: #e0e0e0;
-  --accent-hover: #f5f5f5;
+  // Accent (aligned with Naive UI primaryColor — theme.ts)
+  --accent-primary: #4fc3a1;
+  --accent-hover: #65d4b3;
   --accent-muted: #888888;
 
   // Text
@@ -97,9 +106,14 @@
   --text-on-overlay: #ffffff;
   --accent-info: #6ba3d6;
 
+  // Elevation (deeper shadows in dark mode)
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+
   // RGB components
-  --accent-primary-rgb: 240, 240, 240;
-  --accent-hover-rgb: 245, 245, 245;
+  --accent-primary-rgb: 79, 195, 161;
+  --accent-hover-rgb: 101, 212, 179;
   --text-primary-rgb: 240, 240, 240;
   --text-muted-rgb: 136, 136, 136;
   --success-rgb: 102, 187, 106;
@@ -161,6 +175,13 @@ $radius-sm: 6px;
 $radius-md: 10px;
 $radius-lg: 14px;
 
+// Elevation
+$shadow-sm: var(--shadow-sm);
+$shadow-md: var(--shadow-md);
+$shadow-lg: var(--shadow-lg);
+
 // Transition
 $transition-fast: 0.15s ease;
 $transition-normal: 0.25s ease;
+$ease-out: var(--ease-out);
+$ease-in-out: var(--ease-in-out);
