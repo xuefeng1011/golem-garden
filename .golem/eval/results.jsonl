@@ -1,0 +1,15 @@
+{"date":"2026-06-10","task":"jsonl-append","soul":"ryn","model":"claude-fable-5","result":"pass","duration_ms":19808,"tokens_out":494}
+{"date":"2026-06-10","task":"bugfix-offbyone","soul":"ryn","model":"claude-fable-5","result":"pass","duration_ms":26858,"tokens_out":697}
+{"date":"2026-06-10","task":"func-json-escape","soul":"ryn","model":"claude-fable-5","result":"pass","duration_ms":80311,"tokens_out":2813}
+{"date":"2026-06-10","task":"doc-readme","soul":"ryn","model":"claude-fable-5","result":"pass","duration_ms":29715,"tokens_out":570}
+{"date":"2026-06-10","task":"verdict-format","soul":"ryn","model":"claude-fable-5","result":"pass","duration_ms":28738,"tokens_out":467}
+{"date":"2026-06-10","task":"bugfix-offbyone","soul":"ryn","model":"sonnet","result":"pass","duration_ms":42099,"tokens_out":594}
+{"date":"2026-06-10","task":"doc-readme","soul":"ryn","model":"sonnet","result":"pass","duration_ms":18254,"tokens_out":208}
+{"date":"2026-06-10","task":"func-json-escape","soul":"ryn","model":"sonnet","result":"pass","duration_ms":18208,"tokens_out":417}
+{"date":"2026-06-10","task":"jsonl-append","soul":"ryn","model":"sonnet","result":"pass","duration_ms":18335,"tokens_out":222}
+{"date":"2026-06-10","task":"verdict-format","soul":"ryn","model":"sonnet","result":"pass","duration_ms":17106,"tokens_out":284}
+{"date":"2026-06-10","task":"bugfix-offbyone","soul":"ryn","model":"haiku","result":"pass","duration_ms":16113,"tokens_out":1324}
+{"date":"2026-06-10","task":"doc-readme","soul":"ryn","model":"haiku","result":"pass","duration_ms":15728,"tokens_out":830}
+{"date":"2026-06-10","task":"func-json-escape","soul":"ryn","model":"haiku","result":"pass","duration_ms":74335,"tokens_out":6336}
+{"date":"2026-06-10","task":"jsonl-append","soul":"ryn","model":"haiku","result":"pass","duration_ms":11889,"tokens_out":697}
+{"date":"2026-06-10","task":"verdict-format","soul":"ryn","model":"haiku","result":"pass","duration_ms":8006,"tokens_out":698}

@@ -310,6 +310,19 @@ case "${1:-}" in
     exit $?
     ;;
 
+  eval)
+    # 골든 태스크 스위트 (P2-3) — lib/eval.sh
+    # forge eval [--model <m>] [--soul <s>] [--task <id>]
+    # forge eval list  |  forge eval report
+    source "${GOLEM_ROOT}/lib/eval.sh"
+    case "${2:-}" in
+      list)   eval_list ;;
+      report) eval_report ;;
+      *)      shift; eval_run "$@" ;;
+    esac
+    exit $?
+    ;;
+
   explore)
     # grep-우선 코드 컨텍스트 (CodeGraph 경량판) — lib/explore.sh
     # forge explore <query> [path]  |  forge explore-files <query> [path]
