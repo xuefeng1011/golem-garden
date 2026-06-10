@@ -171,6 +171,28 @@ verify_tests_only() {
 }
 
 # ─────────────────────────────────────────────────────────
+# 판정 마커 파서 (P0-1 — 구조화 출력 계약)
+# ─────────────────────────────────────────────────────────
+# _verify_parse_verdict <soul_output>
+# 우선순위: [VERDICT: PASS|FAIL] 마커(위치 무관) > 레거시 첫 줄 PASS/FAIL.
+# 둘 다 없으면 UNCLEAR. 전체 본문 PASS/FAIL 스캔은 오탐원이라 제거됨
+# (본문에 "테스트 PASS" 같은 인용만 있어도 PASS 판정되던 구멍).
+_verify_parse_verdict() {
+  local out="$1"
+  local marker
+  marker=$(printf '%s' "$out" | grep -ioE '\[VERDICT:[[:space:]]*(PASS|FAIL)\]' | head -1)
+  if [ -n "$marker" ]; then
+    if printf '%s' "$marker" | grep -iq 'PASS'; then echo "PASS"; else echo "FAIL"; fi
+    return 0
+  fi
+  local first_line
+  first_line=$(printf '%s' "$out" | head -1)
+  if printf '%s' "$first_line" | grep -iqE '\bPASS\b'; then echo "PASS"; return 0; fi
+  if printf '%s' "$first_line" | grep -iqE '\bFAIL\b'; then echo "FAIL"; return 0; fi
+  echo "UNCLEAR"
+}
+
+# ─────────────────────────────────────────────────────────
 # 공개 함수: verify_run
 # ─────────────────────────────────────────────────────────
 # verify_run <target_description> [verifier_soul]
@@ -283,11 +305,12 @@ verify_run() {
 위 정보를 바탕으로:
 1. 코드/작업의 완성도를 독립적으로 평가하세요
 2. 테스트가 충분히 신뢰할 만한지 판단하세요
-3. 최종 판정을 첫 줄에 반드시 'PASS' 또는 'FAIL' 로 명시하세요
-4. 이유를 2-3문장으로 설명하세요
+3. 최종 판정을 첫 줄에 반드시 아래 마커 형식 그대로 출력하세요 (첫 줄에 다른 텍스트 금지):
+   [VERDICT: PASS] 또는 [VERDICT: FAIL]
+4. 둘째 줄부터 이유를 2-3문장으로 설명하세요
 
 형식:
-PASS 또는 FAIL
+[VERDICT: PASS]
 이유: ..."
 
       local soul_output
@@ -299,22 +322,30 @@ PASS 또는 FAIL
         soul_verdict="SKIP(SOUL호출실패)"
         soul_reason="agent_run 오류 또는 빈 응답"
       else
-        # PASS/FAIL 파싱 — 첫 줄 우선, 없으면 전체 스캔
-        local _first_line
-        _first_line=$(printf '%s' "$soul_output" | head -1)
-        if printf '%s' "$_first_line" | grep -iqE '\bPASS\b'; then
-          soul_verdict="PASS"
-        elif printf '%s' "$_first_line" | grep -iqE '\bFAIL\b'; then
-          soul_verdict="FAIL"
-        elif printf '%s' "$soul_output" | grep -iqE '\bPASS\b'; then
-          soul_verdict="PASS"
-        elif printf '%s' "$soul_output" | grep -iqE '\bFAIL\b'; then
-          soul_verdict="FAIL"
-        else
-          soul_verdict="SKIP(판정불명확)"
+        # 마커 계약 파싱 (P0-1) — 마커 > 레거시 첫 줄, 불명확 시 재질의 1회
+        soul_verdict=$(_verify_parse_verdict "$soul_output")
+
+        if [ "$soul_verdict" = "UNCLEAR" ]; then
+          echo "[verify] 판정 마커 불명확 — 형식 재질의 (1회)"
+          local _vr_excerpt _vr_reask _vr_retry_out
+          _vr_excerpt=$(printf '%s' "$soul_output" | head -10)
+          _vr_reask="다음은 검증자의 직전 판정 출력입니다. 내용을 다시 평가하지 말고, 이 출력이 의미하는 최종 판정만 정확히 한 줄로 출력하세요. 허용되는 출력은 '[VERDICT: PASS]' 또는 '[VERDICT: FAIL]' 두 가지뿐입니다.
+
+직전 출력:
+${_vr_excerpt}"
+          _vr_retry_out=$(agent_run "$verifier_soul" "$_vr_reask" 2>/dev/null)
+          soul_verdict=$(_verify_parse_verdict "$_vr_retry_out")
         fi
-        # 첫 3줄을 이유로
-        soul_reason=$(printf '%s' "$soul_output" | head -3 | tr '\n' ' ')
+
+        # 안전 기본값 (P0-1): 재질의 후에도 불명확 → FAIL.
+        # 기존 SKIP(판정불명확)은 soul_ok=1 로 처리돼 게이트가 열린 채 통과했다.
+        if [ "$soul_verdict" = "UNCLEAR" ]; then
+          soul_verdict="FAIL"
+          soul_reason="판정 마커 파싱 실패 (재질의 1회 포함) — 안전 기본값 FAIL"
+        else
+          # 첫 3줄을 이유로
+          soul_reason=$(printf '%s' "$soul_output" | head -3 | tr '\n' ' ')
+        fi
       fi
     fi
   fi

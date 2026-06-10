@@ -91,3 +91,31 @@ _source_agent_runner() {
   result=$(agent_run "zen" "테스트 태스크" --dry-run 2>&1)
   [[ "$result" =~ "cost_cap" ]]
 }
+
+# ─────────────────────────────────────────────────────────
+# P2-1 effort 실소비 — low=180/medium=300/high=600, 명시 env 우선
+# ─────────────────────────────────────────────────────────
+
+@test "effort: effort=high SOUL + AGENT_MAX_SECONDS 미설정 → max_seconds=600" {
+  load_fixture "souls/zen-high.md" "$TEST_PROJECT/.golem/souls/zen-high.md"
+  _source_agent_runner
+  unset AGENT_MAX_SECONDS
+  result=$(agent_run "zen-high" "테스트 태스크" --dry-run 2>&1)
+  [[ "$result" =~ "max_seconds=600" ]]
+}
+
+@test "effort: effort=high + AGENT_MAX_SECONDS=42 명시 → max_seconds=42 (env 우선)" {
+  load_fixture "souls/zen-high.md" "$TEST_PROJECT/.golem/souls/zen-high.md"
+  _source_agent_runner
+  AGENT_MAX_SECONDS=42 result=$(agent_run "zen-high" "테스트 태스크" --dry-run 2>&1)
+  [[ "$result" =~ "max_seconds=42" ]]
+}
+
+@test "effort: effort 필드 없는 SOUL(haiku 모델) → low 추론 → max_seconds=180" {
+  # zen.md 에는 effort 필드가 없고 model=haiku → soul_parse 가 low 추론
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  unset AGENT_MAX_SECONDS
+  result=$(agent_run "zen" "테스트 태스크" --dry-run 2>&1)
+  [[ "$result" =~ "max_seconds=180" ]]
+}

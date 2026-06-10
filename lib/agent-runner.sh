@@ -47,11 +47,30 @@ _AGENT_CLAUDE_BASE=(--print --output-format=stream-json --verbose)
 # 행 걸리거나 루프 도는 claude 자식이 미션을 무한정 막거나 비용을 무한 소진할 수
 # 있었다(크로스 리뷰 지적). 아래 가드로 이를 미러한다.
 #
-# AGENT_MAX_SECONDS  — claude 소환 벽시계 타임아웃(초). 기본 300(게이트웨이와 동일).
+# AGENT_MAX_SECONDS  — claude 소환 벽시계 타임아웃(초).
+#   빈 값(기본) = SOUL_EFFORT 기반 자동 결정 (P2-1 effort 실소비 — low=180/medium=300/high=600, 명시 env 우선).
+#   명시 설정 시 해당 값 최우선 사용. 게이트웨이 MAX_RUN_SECONDS=300 과 동일 역할.
 # AGENT_MAX_COST_USD — 단일 run 비용 상한(USD). 빈 값=비활성(기본). 초과 시 stderr 경고
 #                      (사후 트립와이어 — 가시성 가드일 뿐 사전 차단 아님).
-AGENT_MAX_SECONDS="${AGENT_MAX_SECONDS:-300}"
+AGENT_MAX_SECONDS="${AGENT_MAX_SECONDS:-}"
 AGENT_MAX_COST_USD="${AGENT_MAX_COST_USD:-}"
+
+# D4 — 예산 사전 차단 (P0-3). budget-state.json 의 status 가 exceeded 면
+# 소환 자체를 거부한다 (기존 D2 비용 트립와이어는 사후 경고만 했음).
+# 우회: GOLEM_BUDGET_OVERRIDE=1 / 리셋: forge budget reset
+_agent_budget_preflight() {
+  [ "${GOLEM_BUDGET_OVERRIDE:-0}" = "1" ] && return 0
+  local bf="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/budget-state.json"
+  [ -f "$bf" ] || return 0
+  local st
+  st=$(grep -o '"status":"[^"]*"' "$bf" | sed 's/"status":"//;s/"//')
+  if [ "$st" = "exceeded" ]; then
+    echo "[agent-runner] BLOCKED: 세션 예산 초과 (budget-state.json status=exceeded) — 소환 거부." >&2
+    echo "[agent-runner] 우회: GOLEM_BUDGET_OVERRIDE=1, 리셋: forge budget reset" >&2
+    return 1
+  fi
+  return 0
+}
 
 # timeout 명령 프리픽스 배열을 stdout 으로 출력한다.
 # - GNU coreutils `timeout` (리눅스/Git-bash) 또는 `gtimeout` (macОS coreutils) 탐지.
@@ -236,8 +255,9 @@ agent_run() {
   local task_text="$2"
   local session_id=""
   local dry_run=0
-  # 표시용 max_seconds — AGENT_MAX_SECONDS 가 소환 후 unset 돼도 기본값 유지
-  local max_secs="${AGENT_MAX_SECONDS:-300}"
+  # max_secs 는 soul_parse 이후 effort 기반으로 재해석된다 (아래 참조).
+  # 여기서는 플레이스홀더만 선언 — soul_parse 전이라 SOUL_EFFORT 미확정.
+  local max_secs=""
 
   # 나머지 인자 파싱 (session_id, --dry-run 순서 무관)
   shift 2
@@ -261,6 +281,11 @@ agent_run() {
     return 127
   fi
 
+  # D4 — 예산 사전 차단 (P0-3): dry-run 은 비용이 없으므로 통과
+  if [ "$dry_run" -eq 0 ] && ! _agent_budget_preflight; then
+    return 1
+  fi
+
   # (a) SOUL 파싱
   local soul_file
   soul_file=$(_resolve_soul_file "$soul_name")
@@ -269,6 +294,20 @@ agent_run() {
     return 1
   fi
   soul_parse "$soul_file"
+
+  # P2-1 effort 실소비 — low=180/medium=300/high=600, 명시 env 우선.
+  # AGENT_MAX_SECONDS 가 명시(비어있지 않음)이면 그 값 최우선;
+  # 비어 있으면 SOUL_EFFORT 기반 자동 결정.
+  if [ -n "${AGENT_MAX_SECONDS:-}" ]; then
+    max_secs="$AGENT_MAX_SECONDS"
+  else
+    case "${SOUL_EFFORT:-}" in
+      low)    max_secs=180 ;;
+      medium) max_secs=300 ;;
+      high)   max_secs=600 ;;
+      *)      max_secs=300 ;;
+    esac
+  fi
 
   # (b) 시스템 프롬프트 = identity 헤더 + prompt_build(SOUL 컨텍스트 + 태스크)
   # 명령 치환은 trailing newline 을 제거하므로 헤더/본문 사이에 명시적 개행 삽입
@@ -281,13 +320,23 @@ agent_run() {
 ${_ar_body}"
 
   # (c) 모델 매핑 + (d 일부) 도구 CSV
+  # AGENT_MODEL_OVERRIDE — SOUL frontmatter 모델을 1회성으로 교체 (P2-3 eval
+  # 모델 비교, 향후 P2-1 라우팅/모델 승급 재시도의 공통 진입점)
   local model_arg tools_csv
-  model_arg=$(_map_model "$SOUL_MODEL")
+  model_arg=$(_map_model "${AGENT_MODEL_OVERRIDE:-$SOUL_MODEL}")
   tools_csv=$(_tools_csv "$SOUL_TOOLS")
 
   # 세션 인자 결정: 없거나 0턴이면 --session-id, 기존 세션이면 --resume
   # (게이트웨이 prior_count==0 분기 미러). bash 경로는 세션 메타에 의존하지 않고
   # session_id 전달 여부 + 메타 존재 여부로 판단한다.
+  # P2-4 발견: forge 세션 ID(sess_*)가 그대로 들어오면 claude 가
+  # "Invalid session ID. Must be a valid UUID." 로 즉시 거부 → run 전체 fail.
+  # UUID 형식이 아니면 경고 후 버리고 새 UUID 를 생성한다 (forge 세션과
+  # claude 세션은 별개 체계 — 연결은 세션 메타가 담당).
+  if [ -n "$session_id" ] && ! printf '%s' "$session_id" | grep -qiE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+    echo "[agent-runner] WARNING: session_id 가 UUID 형식이 아님('${session_id}') — 무시하고 새 claude 세션 생성" >&2
+    session_id=""
+  fi
   local session_args
   if [ -z "$session_id" ]; then
     session_id=$(_gen_uuid)
@@ -336,8 +385,9 @@ ${_ar_body}"
   argv+=(-- "$task_text")
 
   # 타임아웃 프리픽스 결정 (D1) — dry-run 에서는 가시화만, 실제 소환 시에는 prepend.
+  # max_secs 를 AGENT_MAX_SECONDS env 로 전달해 _agent_timeout_cmd 가 해석값을 쓰도록 함.
   local -a _ar_timeout_pfx=()
-  read -r -a _ar_timeout_pfx < <(_agent_timeout_cmd)
+  read -r -a _ar_timeout_pfx < <(AGENT_MAX_SECONDS="$max_secs" _agent_timeout_cmd)
   local _ar_guard_desc
   if [ "${#_ar_timeout_pfx[@]}" -gt 0 ]; then
     _ar_guard_desc="${_ar_timeout_pfx[*]} (max_seconds=${max_secs})"
@@ -360,19 +410,24 @@ ${_ar_body}"
 
   # (e) 소환 + stream-json 캡처
   # D1 — 벽시계 타임아웃 가드. timeout 프리픽스를 prepend (없으면 한 번 경고).
+  # P0-4 — SOUL 컨텍스트 env 주입: child claude 세션의 훅(guard-novice,
+  # auto-growth-log)이 누가 실행 중인지 식별하도록 env 프리픽스로 전달.
+  # export 가 아닌 env(1) 프리픽스라 호스트 셸에 누출되지 않는다.
+  local -a _ar_soul_env
+  _ar_soul_env=(env "GOLEM_SOUL_NAME=${SOUL_NAME}" "GOLEM_SOUL_RANK=${SOUL_RANK}")
   local stream_file
   stream_file=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/agent_run_$$_$RANDOM")
   local rc=0
   local _ar_timed_out=0
   if [ "${#_ar_timeout_pfx[@]}" -gt 0 ]; then
     # timeout 124 → 타임아웃, 137 → KILL(타임아웃 후 강제 종료). 둘 다 타임아웃으로 처리.
-    "${_ar_timeout_pfx[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
+    "${_ar_timeout_pfx[@]}" "${_ar_soul_env[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
     if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
       _ar_timed_out=1
     fi
   else
     echo "[agent-runner] WARNING: timeout/gtimeout 미존재 — claude 소환에 벽시계 가드 없음 (무한정 실행 가능)." >&2
-    "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
+    "${_ar_soul_env[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
   fi
 
   # 어시스턴트 텍스트 + result usage 파싱
@@ -384,7 +439,7 @@ ${_ar_body}"
   # D1 — 타임아웃 시: 결과 텍스트를 명확한 사유로 덮어쓰고 fail 처리.
   # (child 는 timeout(1) 이 SIGTERM/SIGKILL 로 이미 종료시킴 — 추가 kill 불필요.)
   if [ "$_ar_timed_out" -eq 1 ]; then
-    _AR_RESULT_TEXT="[agent-runner] TIMEOUT after ${AGENT_MAX_SECONDS}s"
+    _AR_RESULT_TEXT="[agent-runner] TIMEOUT after ${max_secs}s"
     _AR_IS_ERROR=1
   fi
 

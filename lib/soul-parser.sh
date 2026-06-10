@@ -285,7 +285,9 @@ soul_match_score() {
 
   for keyword in $task_keywords; do
     keyword_lower=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
-    if echo "$SOUL_SPECIALTY" | tr '[:upper:]' '[:lower:]' | grep -q "$keyword_lower"; then
+    # -F: 키워드를 리터럴로 매칭 (P0-2 경화 — 정규식 메타문자 '.','*' 등이
+    # 패턴으로 해석돼 오탐/grep 에러를 내던 구멍 차단)
+    if echo "$SOUL_SPECIALTY" | tr '[:upper:]' '[:lower:]' | grep -qF "$keyword_lower"; then
       score=$((score + 10))
     fi
   done

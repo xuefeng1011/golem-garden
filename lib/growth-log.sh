@@ -50,6 +50,18 @@ growth_log_append() {
 
   echo "$entry" >> "$log_file"
   _growth_log_update_summary "$soul_name"
+
+  # forge-board `updated:` 타임스탬프 자동 갱신 (문서 정합화 2026-06-11).
+  # 태스크 행 추가(board_add_task)는 review/rank 이벤트만 수행 — 매 run 기록 시
+  # 보드가 범람하므로 여기서는 타임스탬프만 touch 한다.
+  if ! type board_update_timestamp >/dev/null 2>&1 && [ -f "${GOLEM_ROOT}/lib/forge-board.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${GOLEM_ROOT}/lib/forge-board.sh" 2>/dev/null
+  fi
+  if type board_update_timestamp >/dev/null 2>&1 && type _sed_i >/dev/null 2>&1; then
+    board_update_timestamp 2>/dev/null
+  fi
+
   echo "[growth-log] ${soul_name}: ${task_display} → ${result}"
 }
 
