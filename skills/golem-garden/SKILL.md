@@ -181,6 +181,10 @@ forge 팩 설치 풀스택
 | 12 | `recover`, `복구`, `에러복구` | → forge recover (bash 직접 실행) |
 | 13 | `cost`, `비용`, `토큰` | → forge dashboard --cost (bash 직접 실행) |
 | 14 | `worktree`, `격리`, `isolation` | → forge worktree (bash 직접 실행) |
+| 15 | `doctor`, `진단`, `헬스체크`, `점검` | → forge doctor (bash 직접 실행) |
+| 16 | `verify`, `검증` | → forge verify (bash 직접 실행) |
+| 17 | `explore`, `탐색`, `코드 컨텍스트` | → forge explore (bash 직접 실행) |
+| 18 | `insights`, `인사이트`, `성과 분석`, `성과` | → forge insights (bash 직접 실행) |
 
 **주의: `만들어`는 단독으로 forge-team 트리거가 아니다.**
 - "만들어줘" + 코드/기능 설명 → forge-team (`forge build`)
@@ -244,6 +248,23 @@ forge 팩 설치 풀스택
 1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree {subcommand} {args}` 실행
 2. 서브커맨드: `create <soul> [task]`, `merge <soul> [strategy]`, `cleanup <soul|all>`, `status`
 
+### forge doctor / forge 진단
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh doctor` 실행
+2. 엔진 헬스체크 결과(claude CLI, SOUL, 디렉토리, 훅 상태)를 사용자에게 보여줌
+
+### forge verify {target} [verifier_soul]
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh verify {target} {verifier_soul}` 실행
+2. 결정론적 테스트 + 독립 SOUL 심판(author≠verifier)의 결합 판정을 보여줌
+3. 옵션: `--tests-only` (SOUL 호출 없이 테스트만)
+
+### forge explore {keyword}
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh explore {keyword}` 실행
+2. grep-우선 코드 컨텍스트 수집 결과를 보여줌
+
+### forge insights [soul]
+1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh insights {soul}` 실행 (soul 생략 시 팀 전체)
+2. 성과 패턴/추세/비용 효율 분석을 보여줌
+
 ## forge.sh 호출 규칙 (중요)
 
 **모든 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh` 호출 시 반드시 `GOLEM_PROJECT`를 현재 작업 디렉토리로 설정하라:**
@@ -304,6 +325,10 @@ forge.sh는 `~/.claude/golem-garden/forge.sh` 에 설치되어 있다.
 | `forge session` | `forge build: {작업}` — 작업 재개 / `forge status` — 현황 |
 | `forge recover` | `forge assign {soul}: {작업}` — 재시도 / `forge status` — 현황 |
 | `forge worktree` | `forge build: {작업}` — 빌드 / `forge worktree status` — 현황 |
+| `forge doctor` | `forge status` — 팀 현황 / `forge build: {작업}` — 작업 시작 |
+| `forge verify` | `forge assign {soul}: 검증 실패 수정` — 수정 (FAIL 시) / `forge review {soul}` — 크로스 리뷰 |
+| `forge explore` | `forge assign {soul}: {작업}` — 컨텍스트 기반 작업 배정 / `forge build: {작업}` — 팀 빌드 |
+| `forge insights` | `forge rank {soul}` — 랭크 확인 / `forge dashboard --cost` — 비용 상세 |
 | `forge soul` (인터뷰 생성) | `forge assign {soul}: {작업}` — 바로 작업 배정 / `forge-init` — 팀 재구성 |
 | `forge soul-create` (스크립트 생성) | `forge-init` — 팀 구성에 추가 / `forge status` — 현황 확인 |
 

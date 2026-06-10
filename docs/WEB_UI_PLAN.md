@@ -1,174 +1,91 @@
-# GolemGarden Web UI — 작업 플랜
+# GolemGarden Web UI — 제품 플랜 v2
 
-## 왜 만드는가
+> v1 (2026-04): MVP 계획 — Phase 1~3 완료로 역할 종료.
+> v2 (2026-06-11): 현황 감사 반영 전면 개정. 목표 전환 — "동작하는 데모" → **판매급(product-grade) 대시보드**.
 
-GolemGarden이 CLI에서만 동작해서:
-- 여러 세션 병렬 관리 불가 (터미널 창 N개 왔다갔다)
-- SOUL 전환이 수동
-- 툴 호출/파일 수정 진행 상황 한눈에 보기 어려움
+## 1. 현재 상태 (v1 플랜 대비 실제 구현)
 
-**해결**: 얇은 웹 UI + Gateway로 브라우저 탭 = 세션 병렬 관리.
+| v1 계획 | 실제 상태 |
+|---------|----------|
+| Phase 1 Gateway 스켈레톤 | ✅ 완료+초과 — FastAPI, 엔드포인트 25+, pytest 187 |
+| Phase 2 Claude 브리지+SSE | ✅ 완료 — runs/SSE/하트비트/256KB 캡/워치독 |
+| Phase 3 Hermes 포크 연결 | ✅ 완료+초과 — "5개 파일 수정" 범위를 넘어 13개 뷰의 풀 앱으로 성장 (web/ui → `web/client`) |
+| Phase 4 후보 | rank 배지 ✅ / SQLite 영속화 ✅ (sessions.db v1+마이그레이션 프레임) / circuit breaker·크로스리뷰·SOUL 생성기 미구현 |
 
-## 프로젝트 위치
+**스택**: Vue 3.5 + Pinia 3 + Naive UI 2.44 + vue-i18n(8개 언어) + Vite 8 / FastAPI + uv.
 
-```
-C:\01_xuefeng\08_ai\golem-garden
-```
+**감사 결론 (2026-06-11)**: 아키텍처·컴포넌트 구조는 건강("기술 데모→베타" 단계, 판매 준비도 ~70%). 격차는 기능이 아니라 **마감 품질**이다:
+- 디자인 토큰 불일치 (theme.ts primary `#2d7a57` vs variables.scss `--accent-primary #333`)
+- 상태 3종(빈/로딩/에러) 비표준 — 텍스트만 있거나 부재
+- **게이트웨이가 이미 노출하는 가치 데이터를 UI가 안 씀**: chemistry, daily cost, rank_progress, skill-tree, mailbox
+- forge 명령 인자 입력 UI 부재, 모바일 UX 약함, 테스트 0%
 
-## 아키텍처
+## 2. 제품 비전 — "판매급"의 정의
 
-```
-브라우저 (탭 N개 = 독립 세션 + 선택된 SOUL)
-        │ REST + SSE
-        ▼
-FastAPI Gateway (127.0.0.1:8642)
-        │ subprocess
-        ▼
-Claude Code CLI (세션별 1개, stream-json 출력)
-```
+전문가가 신뢰하고 비전문가가 즐길 수 있는 **AI 에이전트 팀 운영 대시보드**:
 
-- UI: Hermes Web UI 포크 (Vue3 + Naive UI)
-- Gateway: FastAPI 자작
-- 모두 Windows 네이티브
+1. **First-run이 비어 보이지 않는다** — 모든 화면에 디자인된 빈 상태(아이콘+설명+다음 행동 버튼).
+2. **기다림이 보인다** — 스피너 대신 스켈레톤, 스트리밍은 진행 컨텍스트 표시.
+3. **데이터가 이야기한다** — 비용 추세, 랭크 진행도, 팀 케미를 숫자가 아니라 시각으로.
+4. **일관된 언어** — 단일 색·간격·그림자 토큰, 라이트/다크 모두 의도된 대비.
+5. **실패가 친절하다** — 에러 유형별 메시지 + 복구 행동 제시.
 
-## 실행 환경
+## 3. Phase 5 — 판매급 폴리시 (이번 구현)
 
-- Windows 10/11 네이티브 (WSL 아님)
-- 터미널: PowerShell 7 (`pwsh`)
-- Claude Code: 기설치 (`claude` 명령 사용 가능)
-- Python 3.11+, uv로 관리
-- Node.js 18+ (Hermes UI 빌드용)
+병렬 3개 수직 영역, 파일 소유권 분리:
 
-## 코드 작성 규칙
+### P5-A 디자인 시스템 + 공용 프리미티브 (소유: styles/*, components/common/*)
+- 토큰 정합: primary 일관화(light `#2d7a57` / dark 보색 녹색), 다크 대비 재조정, shadow/easing 토큰화
+- 신규 공용 컴포넌트: `EmptyState`, `SkeletonCard`, `RankProgress`, `MiniBarChart`(의존성 없는 SVG — 외부 차트 라이브러리 도입 금지)
+- 각 컴포넌트 vitest 단위 테스트
 
-- 경로는 `pathlib.Path`, 문자열 하드코딩 금지
-- subprocess 호출 시 `encoding="utf-8"`, `errors="replace"` 명시
-- Claude Code 실행파일은 `shutil.which("claude")`로 해결 (Windows에선 `claude.cmd`일 수 있음)
-- 바인딩은 `127.0.0.1`만 (방화벽 팝업 회피)
-- `.gitattributes`: `* text=auto eol=lf` (CRLF 이슈 방지)
+### P5-B Overview·Souls 수직 (소유: views/Overview·Souls, components/hermes/overview·souls)
+- StatCards: 스켈레톤 + 아이콘 + 시각 위계
+- SoulCard/DetailModal: 랭크 진행도(`rank_progress` API — 이미 노출됨), hover 폴리시, 빈 상태 적용
+- RecentActivity 가독성 개선
 
-## 원칙
+### P5-C 가치 데이터 노출 수직 (소유: views/Usage·Team, api/hermes/budget·chemistry)
+- UsageView 재구축: `GET /budget` → 총비용/SOUL별/일별 차트(MiniBarChart) + 예산 경고선
+- 팀 케미 시각화: `GET /chemistry` → pair 카드/히트맵 (TeamView 통합)
+- 활용 API는 전부 기구현 — gateway 변경 없음 (Top3 미사용 API 소진)
 
-1. Gateway는 얇게 — Claude Code가 주인공
-2. SOUL.md는 파일 그대로, DB에 안 넣음
-3. MVP는 로컬 1인용 (인증/배포 없음)
-4. Hermes UI 수정은 5개 파일 이내
-5. 브랜치 격리: `feature/web-ui`에서만
+**수용 기준**: `npm run build`(vue-tsc 포함) 통과 / `vitest run` 통과(신규 컴포넌트 테스트 포함) / gateway pytest 187 무변동 / 라이트·다크 양쪽 토큰 일관.
 
-## 폴더 구조
+## 4. Phase 6 — 후순위 (계획만)
 
-```
-golem-garden/
-├── souls/                       # 글로벌 SOUL 원본
-├── .golem/souls/                # 프로젝트 오버라이드 (우선)
-├── CLAUDE.md
-├── docs/
-│   └── WEB_UI_PLAN.md
-└── web/
-    ├── gateway/
-    │   └── src/golem_gateway/
-    └── ui/
-```
+1. Forge 명령 인자 입력 폼 (명령별 스키마 정의 → 동적 폼)
+2. Chat: 가상 스크롤(대량 메시지), 파일 업로드 백엔드, 모바일 drawer + 제스처
+3. 에러 유형 체계화 (network/auth/notfound/server 구분 — API 클라이언트 공통층)
+4. Skill-tree·Mailbox 노출 (gateway 기노출 데이터 잔여분)
+5. A11y: WCAG AA 대비 검사, 키보드 내비, 스크린리더 레이블
+6. Circuit breaker UI (budget exceeded 시 실행 차단 표시 — 엔진 P0-3와 연동)
 
-> 참고: 상위 플랜 초안은 `.souls/*.md`로 적혀 있었으나, 이 프로젝트의 실제 경로 규약은
-> `souls/` (글로벌) + `.golem/souls/` (프로젝트 오버라이드). Gateway는 후자를 우선 스캔.
+## 5. 원칙 (v1 계승 + 갱신)
 
-## Phase 1: Gateway 스켈레톤 (반나절)
+1. Gateway는 얇게 — Claude Code가 주인공 (유지)
+2. SOUL.md는 파일 그대로 (유지)
+3. 로컬 1인용, 127.0.0.1 (유지)
+4. ~~Hermes 수정 5개 파일 제한~~ → 폐기: 자체 앱으로 전환 완료. 대신 **외부 의존성 추가 금지**(차트 등은 자체 SVG)
+5. 상태 3종(빈/로딩/에러) 없는 화면은 머지 금지 (신규 원칙)
 
-**목표**: 서버 뜨고 SOUL 목록 API 동작.
-
-- `web/gateway/` FastAPI 프로젝트 (uv)
-- 포트 `127.0.0.1:8642`
-- CORS: `http://localhost:5173`, `http://localhost:8648`
-- 엔드포인트:
-  - `GET /health`
-  - `GET /v1/souls` — `.golem/souls/*.md` + `souls/*.md` 스캔, frontmatter 파싱(없어도 OK)
-  - `GET /v1/souls/{id}` — 본문 포함
-- 모델: `id, name, rank, specialty, description, content`
-- `python-frontmatter` 사용
-
-**완료 기준**: `curl.exe http://127.0.0.1:8642/v1/souls` → JSON 목록.
-
-## Phase 2: Claude Code 브리지 + SSE (하루)
-
-**이 단계가 심장.**
-
-**선행**: stream-json 실제 포맷 샘플링
-
-```powershell
-claude --print --output-format stream-json "hello" > sample.jsonl
-```
-
-이 파일 뜯어본 뒤 파서 설계.
-
-- `POST /v1/runs` — body `{input, session_id, soul_id}`
-  - subprocess: `claude --print --output-format stream-json --append-system-prompt <SOUL내용> <input>`
-  - `shutil.which("claude")` 로 경로 해결
-  - `run_id` 즉시 반환 (비동기)
-- `GET /v1/runs/{run_id}/events` — SSE (`sse-starlette`)
-  - stream-json → Hermes 호환 이벤트 변환
-    - assistant delta → `message.delta`
-    - tool_use → `tool.started`
-    - tool_result → `tool.completed`
-    - 프로세스 종료 → `run.completed`
-- 세션 매니저: 메모리 dict `{session_id: ClaudeCodeSession}`
-
-**완료 기준**: `curl.exe -X POST /v1/runs` 후 `/v1/runs/{id}/events` 스트리밍 확인.
-
-## Phase 3: Hermes UI 포크 + 연결 (하루)
-
-**목표**: 브라우저에서 SOUL 골라 대화, 세션 탭 여러 개.
-
-- `web/ui/`에 Hermes UI 클론 (`https://github.com/EKKOLearnAI/hermes-web-ui`)
-- `npm install && npm run dev` 기동 확인
-- 수정 5개 파일:
-  - `src/api/client.ts` — baseURL `http://127.0.0.1:8642`
-  - `src/api/souls.ts` — 신규, `GET /v1/souls`
-  - `src/stores/chat.ts` — 세션에 `soulId` 추가
-  - `src/components/chat/ChatPanel.vue` — SOUL 드롭다운
-  - `src/components/layout/AppSidebar.vue` — SOUL 뱃지
-- Scheduled Jobs는 라우터에서 숨김 (삭제 X)
-
-**완료 기준**: 탭 2개로 서로 다른 SOUL과 동시 대화.
-
-## Phase 4 이후 (MVP 검증 후)
-
-1. SOUL frontmatter `rank` 색상 뱃지 (Novice→Master)
-2. Circuit breaker (토큰/시간 초과 중단)
-3. Cross-agent review
-4. SOUL 생성기 (UI에서 새 SOUL.md 만들기)
-5. SQLite 세션 히스토리 영속화
-
-## 리스크
+## 6. 리스크
 
 | 리스크 | 대응 |
 |---|---|
-| stream-json 스펙 불안정 | Phase 2 시작 전 샘플 먼저 |
-| `--resume` 세션 이어가기 동작 불명 | MVP는 단발 호출만, Phase 4로 미룸 |
-| Hermes 업스트림 변경 | 수정 파일 5개 제한, 커스텀은 신규 파일 |
-| Windows subprocess 경로 | `shutil.which`로 해결, 한글 깨지면 UTF-8 강제 |
-| 동시 실행 시 토큰 한도 | Max 구독 기준 병렬 3~5개 OK, 초과 시 큐잉 |
+| i18n 8개 언어 키 누락 | en+ko만 필수, 나머지는 en 폴백 (messages.ts 병합 구조 활용) |
+| 차트 직접 구현 품질 | MiniBarChart 범위 고정(바+임계선만), 복잡 시각화는 Phase 6 |
+| 테스트 0%에서 출발 | Phase 5 신규 컴포넌트부터 테스트 의무화, 기존 소급은 점진 |
+| 다크모드 회귀 | 토큰 단일화 후 양 모드 수동 QA 체크리스트 |
 
-## 안 할 것
-
-- 멀티유저, 인증, 회원가입
-- Docker, HTTPS, 배포
-- Scheduled Jobs (Hermes 기능 숨김만)
-- 모바일 반응형, 다국어
-
-## 시작 명령 (PowerShell)
+## 7. 실행/검증 명령
 
 ```powershell
-# 프로젝트 이동 + 브랜치
-cd C:\01_xuefeng\08_ai\golem-garden
-git checkout -b feature/web-ui
+# client
+cd web\client ; npm run dev          # 개발 (5173)
+npm run build                         # vue-tsc + vite build (게이트)
+npx vitest run                        # 단위 테스트
 
-# 디렉토리
-mkdir web, docs
-
-# uv 설치 (없으면: pip install uv 도 가능)
-winget install --id=astral-sh.uv -e
-
-# Claude Code 실행
-claude
+# gateway
+cd web\gateway ; uv run python -m golem_gateway.main   # 127.0.0.1:8642
+uv run pytest                         # 187 케이스
 ```

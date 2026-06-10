@@ -1,0 +1,1 @@
+{"id":"msn_1780582808_4692","goal":"통합검증 목표","status":"completed","created":"2026-06-04T14:20:08","seq":"1780582808205498700","tasks":[{"idx":0,"task":"설계","soul":"","status":"pending"},{"idx":1,"task":"구현","soul":"ryn","status":"done"},{"idx":2,"task":"테스트","soul":"","status":"pending"}]}

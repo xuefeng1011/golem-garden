@@ -2,8 +2,8 @@
 project: golem-garden
 type: 3-tier 하이브리드 — Bash CLI + Python FastAPI Gateway + Vue 3 Web UI
 created: 2026-04-06
-updated: 2026-04-26
-branch: feature/web-ui (Tier C + 부채 N1~N4/#4 모두 해결, PR #4 open)
+updated: 2026-06-11
+branch: feat/independent-engine (OMC 디커플 + P0 계약화 + forge eval v2)
 ---
 
 # Forge Board

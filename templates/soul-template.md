@@ -5,6 +5,10 @@ rank: novice
 specialty: [{{SPECIALTIES}}]
 personality: {{PERSONALITY}} (사용자 메모용, 프롬프트 미주입)
 model: {{MODEL}}
+tools: [Read, Edit, Grep, Glob]
+maxTurns: 15
+isolation: none
+effort: medium
 created: {{DATE}}
 ---
 

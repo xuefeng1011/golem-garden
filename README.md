@@ -217,14 +217,16 @@ GolemGarden SOUL → OMC 에이전트 매핑:
 | Sage (Auditor) | code-reviewer | opus | Read, Edit, Write, Bash, Grep, Glob |
 | Bolt (DevOps) | executor | sonnet | rank 기반 점진적 확장 |
 
-OMC 실행 모드 매핑:
+실행 모드 (엔진 네이티브 — OMC 디커플 후 모든 소환은 `forge run` 직접 호출):
 
-| GolemGarden 명령 | OMC 실행 |
+| GolemGarden 명령 | 실행 방식 |
 |----------------|----------|
-| `forge build` | ultrapilot (SOUL별 병렬) |
-| `forge quick` | autopilot |
-| `forge save` | ecomode |
-| `forge review` | pipeline (작업 → 리뷰 순차) |
+| `forge build` | Director 분배 → SOUL별 `forge run` 병렬 |
+| `forge quick` | 최적 SOUL 1개 `forge run` 단독 |
+| `forge mission` | 단일 목표 자율 루프 (execute↔verify) |
+| `forge save` | haiku 모델 비용 절약 실행 |
+| `forge review` | 작업 → 리뷰 순차 (author≠verifier) |
+| `forge eval` | 골든 태스크 스위트 (모델 회귀 측정) |
 
 ---
 
@@ -328,7 +330,7 @@ forge review: Ryn이 작성한 AuthController를 Zen이 리뷰
 - [x] `_json_escape()` — 모든 JSON 문자열 안전 이스케이프 (newline/tab/quote/backslash)
 - [x] 경로 순회 방지 — `_resolve_soul_file()`, `forge_worktree_create()` 입력 검증
 - [x] 승급 로직 통합 — `rank_should_promote()` 단일 함수 (rank-system + global-sync)
-- [x] Lazy loading — forge.sh 24개 모듈 중 21개 온디맨드 로딩
+- [x] Lazy loading — forge.sh 30개 모듈 대부분 온디맨드 로딩 (2026-06 기준)
 - [x] JSONL 요약 캐시 — `.summary` 사이드카로 O(1) 조회
 - [x] 자동 비용 추적 — `log-add-usage` (Agent usage → 모델별 가격 자동 계산)
 
@@ -577,6 +579,18 @@ golem-garden/domain-packs/fullstack/
 └── forge-board-fullstack.md
 ```
 
+### 🤖 피지컬 AI 팩 (2026-06 추가)
+
+```
+golem-garden/domain-packs/physical-ai/
+├── souls/
+│   ├── ember.md       (임베디드/IoT — esp32, freertos, mqtt, ble)
+│   ├── neura.md       (엣지 AI — tinyml, tflite-micro, 양자화)
+│   ├── gopher.md      (Go 백엔드 — grpc, mqtt 브로커, 시계열)
+│   └── atlas.md       (로보틱스 — ros2, slam, 제어루프, opus)
+└── forge-board-physical-ai.md
+```
+
 ### 스킬 팩 설치
 
 ```bash
@@ -585,6 +599,9 @@ forge pack install gamedev
 
 # 주식 분석 팩 활성화
 forge pack install trading
+
+# 피지컬 AI 팩 활성화
+forge pack install physical-ai
 
 # 현재 팩 확인
 forge pack list
@@ -597,7 +614,7 @@ forge pack list
 | | 직접 OMC | GolemGarden on OMC |
 |---|---|---|
 | **에이전트** | 범용 32개, 이름 없음 | SOUL별 이름+성격+전문성 커스터마이즈 |
-| **동작 원리** | OMC가 태스크 분석 → 에이전트 자동 선택 | SOUL.md를 OMC 에이전트에 프롬프트 주입 |
+| **동작 원리** | OMC가 태스크 분석 → 에이전트 자동 선택 | claude CLI 직접 소환 (`--append-system-prompt`로 SOUL 주입, OMC 비의존) |
 | **기억** | 세션 기반, 세션 끝나면 리셋 | SOUL별 growth-log 영구 누적 |
 | **팀워크** | OMC 자동 배정만 | 자동/수동/리드지정 3가지 분배 모드 |
 | **리뷰** | 단순 코드 체크 | SOUL 전문성 기반 크로스 리뷰 |

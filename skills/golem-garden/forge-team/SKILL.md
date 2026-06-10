@@ -202,13 +202,15 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh worktree merge {soul
 
 ### Step 6.5: forge-board.md 자동 업데이트
 
-**Step 3의 `forge run` 실행 시 (내부 `growth_log_append` → `board_add_task`) forge-board.md가 자동 업데이트된다.**
-별도 호출 불필요 — `forge run` 내부에서 자동 실행됨.
-
-업데이트되는 항목:
-- **태스크 히스토리**: 각 SOUL의 작업 결과 + 비용이 자동 누적
-- **updated 타임스탬프**: 매 업데이트 시 자동 갱신
+**자동 갱신 범위 (2026-06-11 정정 — 이전 문서의 "태스크 히스토리 자동 누적" 주장은 미구현이었음):**
+- **updated 타임스탬프**: `forge run` 성공 시 `growth_log_append` → `board_update_timestamp` 자동 갱신
+- **태스크 히스토리 행 추가**: 리뷰(`forge-review.sh`)와 랭크 승급(`rank-system.sh`) 이벤트만 자동 추가 — 매 run 추가는 보드 범람이라 의도적으로 제외
 - **랭크 변동**: `rank_promote` 시 팀 구성 테이블의 Rank 컬럼 자동 반영
+
+주목할 일반 태스크를 보드에 남기려면 호스트가 명시 호출한다 (선택):
+```bash
+GOLEM_PROJECT="$(pwd)" bash -c 'source ~/.claude/golem-garden/lib/soul-parser.sh && source ~/.claude/golem-garden/lib/forge-board.sh && board_add_task "$(date +%Y-%m-%d)" "{task}" "{soul}" "success"'
+```
 
 ### Step 7: 세션 종료 + 결과 보고 (빌드 종료 시그널)
 

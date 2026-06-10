@@ -100,8 +100,12 @@ run)
 ```bash
 # 사용 예
 forge run ryn "REST API 설계"
-forge run zen "Reply with one word: PONG" sess-abc-123
+forge run zen "Reply with one word: PONG" 123e4567-e89b-42d3-a456-426614174000
 ```
+
+> **session_id 주의 (P2-4 발견 수정):** 3번째 인자는 **claude 세션 UUID**다.
+> forge 세션 ID(`sess_*`) 같은 비-UUID가 들어오면 claude CLI가 즉시 거부하므로,
+> 엔진이 경고 후 무시하고 새 UUID로 소환한다. forge 세션과 claude 세션은 별개 체계다.
 
 ---
 

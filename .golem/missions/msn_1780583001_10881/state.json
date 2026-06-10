@@ -1,0 +1,1 @@
+{"id":"msn_1780583001_10881","goal":"lib/mission.sh에 mission_next <id> 함수 추가 — 첫 pending 태스크 반환","status":"completed","created":"2026-06-04T14:23:21","seq":"1780583001096956300","tasks":[{"idx":0,"task":"mission_next 함수 구현 (Ryn)","soul":"ryn","status":"done"},{"idx":1,"task":"bats 테스트 작성·실행으로 검증 (Zen, author≠verifier)","soul":"zen","status":"done"}]}

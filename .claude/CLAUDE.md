@@ -83,10 +83,15 @@ lib/            — Bash 라이브러리
   achievement.sh      — 업적/뱃지
   skill-tree.sh       — 전문화 분기
   project-dna.sh      — 프로젝트 지문
-  rank-system.sh, forge-review.sh, portability.sh, forge-soul.sh, domain-pack.sh, knowledge-sync.sh
-skills/         — OMC 스킬 정의 (forge-init, forge-team, forge-review 등)
+  agent-runner.sh   — 엔진 네이티브 SOUL 소환 (claude CLI 직접, 타임아웃/예산 가드)
+  mission.sh        — 단일 목표 완주 모드 (spec.md + state.json)
+  verify.sh         — 검증 레인 ([VERDICT:] 마커 계약 + 결정론 테스트)
+  eval.sh           — 골든 태스크 스위트 (모델 회귀 측정)
+  doctor.sh         — 엔진 진단 / explore.sh — grep-우선 코드 컨텍스트 / insights.sh — 성과 분석
+  rank-system.sh, forge-review.sh, forge-board.sh, portability.sh, forge-soul.sh, domain-pack.sh, knowledge-sync.sh
+skills/         — 스킬 정의 (forge-init, forge-team, forge-review 등 — 엔진 네이티브)
 growth-log/     — 글로벌 성장 기록
-domain-packs/   — 프리셋 팀 번들 (fullstack, gamedev, trading)
+domain-packs/   — 프리셋 팀 번들 (fullstack, gamedev, trading, physical-ai)
 tests/          — 테스트
   bats/         — Bash 단위 테스트 (bats-core 1.11.0 vendored, run.sh 진입점)
 web/            — 3-tier 웹 스택 (Tier B/C 도입)
@@ -115,10 +120,16 @@ web/            — 3-tier 웹 스택 (Tier B/C 도입)
 
 ```
 forge overview (ov)     통합 대시보드 — 팀/성과/비용/활동 한눈에
-forge-init              프로젝트 초기화 (OMC 분석 → SOUL 팀 구성)
+forge-init              프로젝트 초기화 (프로젝트 분석 → SOUL 팀 구성)
+forge run {soul} "{task}" [uuid]  엔진 네이티브 SOUL 소환 (모든 실행의 기본 단위)
 forge build: {task}     팀 빌드 (Director 분배 → 병렬 실행)
 forge quick: {task}     단독 빌드 (최적 SOUL 1개)
 forge assign {soul}: {task}  지정 SOUL에 태스크 배정
+forge mission ...       단일 목표 완주 모드 (자율 execute↔verify 루프)
+forge verify {target} [soul]  검증 레인 (결정론 테스트 + [VERDICT:] 마커 심판)
+forge eval [--model m]  골든 태스크 스위트 (모델 회귀 측정) / eval list / eval report
+forge doctor            엔진 헬스체크
+forge explore {query}   grep-우선 코드 컨텍스트
 forge review {soul}     크로스 리뷰 실행
 forge sync              지식 승격 심사 (Sage)
 forge status            팀 상태 + 대시보드
