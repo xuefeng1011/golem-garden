@@ -2,7 +2,7 @@
 project: golem-garden
 type: 3-tier 하이브리드 — Bash CLI + Python FastAPI Gateway + Vue 3 Web UI
 created: 2026-04-06
-updated: 2026-06-11
+updated: 2026-06-12
 branch: feat/independent-engine (OMC 디커플 + P0 계약화 + forge eval v2)
 ---
 
@@ -121,6 +121,8 @@ branch: feat/independent-engine (OMC 디커플 + P0 계약화 + forge eval v2)
 | 2026-04-25 | toolResult 256KB cap | Kai | success | ed8f2e8, 트런케이션 마커 |
 | 2026-04-25 | forge-init 재분석 (v3) | Nex+architect | success | analysis.md/forge-board.md 갱신 |
 | 2026-04-25 | install.sh fix 검증 (재설치 후 forge-board 경고 사라지는지) | bolt | success |  |
+| 2026-06-11 | eval v2 (refactor-dedup, spec-edgecase) 리뷰 | zen | fail | →ryn, 이슈 2건 |
+| 2026-06-12 | eval v2 refactor-dedup 재리뷰 리뷰 | zen | pass | →ryn, 이슈 0건 |
 
 ## 다음 작업 후보 (4/26 갱신)
 
