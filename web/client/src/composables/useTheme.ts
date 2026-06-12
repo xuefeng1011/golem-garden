@@ -27,11 +27,19 @@ applyTheme(resolveDark(mode.value))
 
 // Listen for system preference changes
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-mediaQuery.addEventListener('change', () => {
+
+function handleSystemThemeChange() {
   if (mode.value === 'system') {
     applyTheme(resolveDark('system'))
   }
-})
+}
+
+mediaQuery.addEventListener('change', handleSystemThemeChange)
+
+// Remove the module-level media query listener (call on app teardown).
+export function cleanupThemeListener() {
+  mediaQuery.removeEventListener('change', handleSystemThemeChange)
+}
 
 // Watch mode changes
 watch(mode, (newMode) => {

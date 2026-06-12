@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ProjectBudget } from '@/api/hermes/budget'
+import { fmtUsd } from '@/utils/format'
 
 const props = defineProps<{
   budget: ProjectBudget
@@ -17,17 +18,13 @@ const usagePercent = computed(() => {
 const totalTasks = computed(() =>
   props.budget.by_soul.reduce((sum, row) => sum + row.tasks, 0)
 )
-
-function fmtCost(n: number): string {
-  return '$' + n.toFixed(3)
-}
 </script>
 
 <template>
   <div class="summary-cards">
     <div class="stat-card">
       <div class="stat-label">{{ t('usage.totalCost') }}</div>
-      <div class="stat-value">{{ fmtCost(budget.total_cost_usd) }}</div>
+      <div class="stat-value">{{ fmtUsd(budget.total_cost_usd) }}</div>
     </div>
 
     <div class="stat-card">
@@ -42,7 +39,7 @@ function fmtCost(n: number): string {
           {{ usagePercent.toFixed(1) }}%
         </div>
         <div class="stat-sub">
-          {{ t('usage.ofLimit', { limit: fmtCost(budget.budget_limit_usd!) }) }}
+          {{ t('usage.ofLimit', { limit: fmtUsd(budget.budget_limit_usd) }) }}
         </div>
       </template>
       <div v-else class="stat-value stat-muted">{{ t('usage.noLimit') }}</div>

@@ -53,7 +53,7 @@ function handleLanguageChange(val: string) {
     <SettingRow :label="t('settings.display.theme')" :hint="t('settings.display.themeHint')">
       <NSelect :value="mode" :options="themeOptions" size="small" :consistent-menu-width="false" class="input-sm" @update:value="handleThemeChange" />
     </SettingRow>
-    <SettingRow label="언어 / Language" hint="UI 언어를 즉시 전환합니다">
+    <SettingRow :label="t('settings.display.language')" :hint="t('settings.display.languageHint')">
       <NSelect :value="locale" :options="languageOptions" size="small" :consistent-menu-width="false" class="input-sm" @update:value="handleLanguageChange" />
     </SettingRow>
     <SettingRow :label="t('settings.display.streaming')" :hint="t('settings.display.streamingHint')">

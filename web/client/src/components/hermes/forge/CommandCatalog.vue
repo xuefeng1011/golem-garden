@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { CATEGORIES } from './commandSchema'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 export interface CatalogEntry {
   command: string
@@ -16,45 +17,9 @@ const emit = defineEmits<{
   (e: 'select', command: string): void
 }>()
 
-const CATEGORIES: Record<string, string[]> = {
-  '상태': ['status', 'souls', 'rank', 'dashboard', 'overview', 'ov'],
-  '빌드': ['build', 'quick', 'assign'],
-  '리뷰': ['review', 'sync'],
-  '운영': ['session', 'mailbox', 'worktree', 'recover'],
-  '분석': ['insights', 'memory', 'retro', 'chemistry', 'achievement', 'skill-tree', 'dna', 'budget', 'tool-char'],
-  '관리': ['soul-create', 'pack', 'skill-export', 'skill-import', 'log-add'],
-}
-
-const DESCRIPTIONS: Record<string, string> = {
-  status: '팀 상태 + SOUL 랭크',
-  souls: '등록된 SOUL 목록',
-  rank: '랭크 분포 요약',
-  dashboard: '성장 대시보드',
-  overview: '통합 개요 (팀/성과/비용)',
-  ov: '통합 개요 단축',
-  build: '팀 전체 빌드 실행',
-  quick: '단독 SOUL 빌드',
-  assign: '지정 SOUL에 태스크 배정',
-  review: '크로스 리뷰 실행',
-  sync: '지식 승격 심사',
-  session: '세션 생성/재개/상태',
-  mailbox: '메일박스 현황/전송',
-  worktree: 'SOUL별 격리 worktree',
-  recover: '3단계 에러 복구',
-  insights: '팀 성과 패턴 분석',
-  memory: 'SOUL 학습 기억 현황',
-  retro: '자동 회고',
-  chemistry: '팀 케미 대시보드',
-  achievement: '업적/뱃지 대시보드',
-  'skill-tree': '전문화 분기 현황',
-  dna: '프로젝트 DNA 조회',
-  budget: '예산 상태',
-  'tool-char': '도구 성격 가이드',
-  'soul-create': '새 SOUL 생성',
-  pack: 'SOUL 팩 관리',
-  'skill-export': 'SOUL → Agent Skill 내보내기',
-  'skill-import': 'Agent Skill → SOUL 임포트',
-  'log-add': '성장 기록 추가',
+function describe(cmd: string): string {
+  const key = `forge.descriptions.${cmd}`
+  return te(key) ? t(key) : ''
 }
 </script>
 
@@ -66,7 +31,7 @@ const DESCRIPTIONS: Record<string, string> = {
       :key="category"
       class="catalog-group"
     >
-      <div class="group-label">{{ category }}</div>
+      <div class="group-label">{{ t(`forge.categories.${category}`) }}</div>
       <button
         v-for="cmd in commands"
         :key="cmd"
@@ -75,7 +40,7 @@ const DESCRIPTIONS: Record<string, string> = {
         @click="emit('select', cmd)"
       >
         <span class="cmd-name">{{ cmd }}</span>
-        <span class="cmd-desc">{{ DESCRIPTIONS[cmd] ?? '' }}</span>
+        <span class="cmd-desc">{{ describe(cmd) }}</span>
       </button>
     </div>
   </div>

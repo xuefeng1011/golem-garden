@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { NButton, NInput, NTag } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
+import type { CommandArgSchema } from './commandSchema'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   command: string
   description: string
+  argSchema: CommandArgSchema
   running: boolean
 }>()
 
@@ -48,9 +50,18 @@ watch(
 watch(
   () => props.command,
   () => {
-    args.value = ['']
+    const required = props.argSchema.required
+    args.value = required.length > 0 ? required.map(() => '') : ['']
   },
+  { immediate: true },
 )
+
+// Args missing among the required positions (by schema order)
+const missingArgs = computed(() =>
+  props.argSchema.required.filter((_, idx) => !(args.value[idx] ?? '').trim()),
+)
+
+const canRun = computed(() => !props.argSchema.allowsArgs || missingArgs.value.length === 0)
 
 function addArg() {
   args.value = [...args.value, '']
@@ -67,7 +78,17 @@ function updateArg(idx: number, val: string) {
   args.value = next
 }
 
+function argPlaceholder(idx: number): string {
+  const name = props.argSchema.required[idx]
+  return name ? `<${name}>` : t('forge.argPlaceholder', { n: idx + 1 })
+}
+
 function handleRun() {
+  if (!canRun.value || props.running) return
+  if (!props.argSchema.allowsArgs) {
+    emit('run', [])
+    return
+  }
   const trimmed = args.value.map(a => a.trim())
   while (trimmed.length > 0 && trimmed[trimmed.length - 1] === '') trimmed.pop()
   emit('run', trimmed)
@@ -75,7 +96,7 @@ function handleRun() {
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}초`
+  return `${(ms / 1000).toFixed(1)}${t('forge.secondsSuffix')}`
 }
 </script>
 
@@ -90,15 +111,15 @@ function formatDuration(ms: number): string {
       <p class="cmd-description">{{ props.description }}</p>
     </div>
 
-    <!-- Args -->
-    <div class="args-section">
+    <!-- Args (hidden for commands that take no arguments) -->
+    <div v-if="props.argSchema.allowsArgs" class="args-section">
       <div class="args-label">{{ t('forge.argsLabel') }}</div>
       <div class="args-rows">
         <div v-for="(arg, idx) in args" :key="idx" class="arg-row">
           <NInput
             :value="arg"
             size="small"
-            :placeholder="t('forge.argPlaceholder', { n: idx + 1 })"
+            :placeholder="argPlaceholder(idx)"
             @update:value="(v: string) => updateArg(idx, v)"
             @keydown.enter="handleRun"
           />
@@ -116,6 +137,7 @@ function formatDuration(ms: number): string {
         + {{ t('forge.addArg') }}
       </NButton>
     </div>
+    <div v-else class="no-args-note">{{ t('forge.noArgs') }}</div>
 
     <!-- Action buttons -->
     <div class="action-row">
@@ -123,11 +145,14 @@ function formatDuration(ms: number): string {
         type="primary"
         size="small"
         :loading="props.running"
-        :disabled="props.running"
+        :disabled="props.running || !canRun"
         @click="handleRun"
       >
         {{ t('forge.run') }}
       </NButton>
+      <span v-if="!canRun" class="required-hint">
+        {{ t('forge.requiredArgsHint', { args: missingArgs.join(', ') }) }}
+      </span>
       <NButton
         v-if="props.running"
         size="small"
@@ -254,6 +279,17 @@ function formatDuration(ms: number): string {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.no-args-note {
+  font-size: 12px;
+  color: $text-muted;
+  font-style: italic;
+}
+
+.required-hint {
+  font-size: 12px;
+  color: $text-muted;
 }
 
 .output-wrap {

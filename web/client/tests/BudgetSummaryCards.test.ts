@@ -27,9 +27,9 @@ const baseBudget: ProjectBudget = {
 describe('BudgetSummaryCards', () => {
   it('renders total cost, usage percent, task and soul counts', () => {
     const wrapper = mountCards(baseBudget)
-    expect(wrapper.text()).toContain('$1.500')
+    expect(wrapper.text()).toContain('$1.50')
     expect(wrapper.text()).toContain('75.0%')
-    expect(wrapper.text()).toContain('of $2.000 limit')
+    expect(wrapper.text()).toContain('of $2.00 limit')
     const values = wrapper.findAll('.stat-value').map((el) => el.text())
     expect(values).toContain('6') // total tasks
     expect(values).toContain('2') // active souls

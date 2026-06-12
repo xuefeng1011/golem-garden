@@ -10,6 +10,7 @@ import {
 import { useI18n } from 'vue-i18n'
 import type { ProjectOverview } from '@/api/hermes/overview'
 import SkeletonCard from '@/components/common/SkeletonCard.vue'
+import { fmtUsd } from '@/utils/format'
 
 const { t } = useI18n()
 
@@ -17,12 +18,6 @@ const props = defineProps<{
   overview?: ProjectOverview | null
   loading?: boolean
 }>()
-
-function formatCost(n: number): string {
-  if (n === 0) return '$0.00'
-  if (n < 0.01) return '<$0.01'
-  return '$' + n.toFixed(2)
-}
 
 // semantic color for success rate: high → success, low → warning
 const successRateClass = computed(() => {
@@ -61,7 +56,7 @@ const successRateClass = computed(() => {
         <span class="stat-label">{{ t('overview.totalCost') }}</span>
         <NIcon class="stat-icon" size="18"><CashOutline /></NIcon>
       </div>
-      <div class="stat-value">{{ formatCost(overview.total_cost_usd) }}</div>
+      <div class="stat-value">{{ fmtUsd(overview.total_cost_usd) }}</div>
     </div>
     <div class="stat-card">
       <div class="stat-top">

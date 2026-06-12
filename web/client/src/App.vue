@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { darkTheme, NConfigProvider, NMessageProvider, NDialogProvider, NNotificationProvider } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { getThemeOverrides } from '@/styles/theme'
-import { useTheme } from '@/composables/useTheme'
+import { useTheme, cleanupThemeListener } from '@/composables/useTheme'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useAppStore } from '@/stores/hermes/app'
@@ -47,6 +47,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   appStore.stopHealthPolling()
+  cleanupThemeListener()
 })
 
 useKeyboard()

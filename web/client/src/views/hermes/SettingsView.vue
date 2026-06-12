@@ -5,6 +5,7 @@ import {
   NTabPane,
   NSpin,
   NAlert,
+  NTag,
 } from "naive-ui";
 import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "@/stores/hermes/settings";
@@ -31,10 +32,10 @@ onMounted(() => {
 
     <div class="settings-content">
       <NAlert type="info" :show-icon="false" style="margin-bottom: 16px">
-        <template #header>설정 동작 상태</template>
+        <template #header>{{ t('settings.statusNote.title') }}</template>
         <ul style="margin: 4px 0 0 0; padding-left: 20px; font-size: 13px; line-height: 1.6">
-          <li><strong>Display</strong> — 테마/언어 변경 즉시 반영 ✓</li>
-          <li><strong>Agent / Memory / Session / Privacy / Models</strong> — UI 표시만, 저장은 미구현 (추후 phase)</li>
+          <li>{{ t('settings.statusNote.display') }}</li>
+          <li>{{ t('settings.statusNote.others') }}</li>
         </ul>
       </NAlert>
       <NSpin
@@ -46,16 +47,40 @@ onMounted(() => {
           <NTabPane name="display" :tab="t('settings.tabs.display')">
             <DisplaySettings />
           </NTabPane>
-          <NTabPane name="agent" :tab="t('settings.tabs.agent')">
+          <NTabPane name="agent">
+            <template #tab>
+              <span class="tab-with-badge">
+                {{ t('settings.tabs.agent') }}
+                <NTag size="tiny" :bordered="false">{{ t('settings.comingSoon') }}</NTag>
+              </span>
+            </template>
             <AgentSettings />
           </NTabPane>
-          <NTabPane name="memory" :tab="t('settings.tabs.memory')">
+          <NTabPane name="memory">
+            <template #tab>
+              <span class="tab-with-badge">
+                {{ t('settings.tabs.memory') }}
+                <NTag size="tiny" :bordered="false">{{ t('settings.comingSoon') }}</NTag>
+              </span>
+            </template>
             <MemorySettings />
           </NTabPane>
-          <NTabPane name="session" :tab="t('settings.tabs.session')">
+          <NTabPane name="session">
+            <template #tab>
+              <span class="tab-with-badge">
+                {{ t('settings.tabs.session') }}
+                <NTag size="tiny" :bordered="false">{{ t('settings.comingSoon') }}</NTag>
+              </span>
+            </template>
             <SessionSettings />
           </NTabPane>
-          <NTabPane name="privacy" :tab="t('settings.tabs.privacy')">
+          <NTabPane name="privacy">
+            <template #tab>
+              <span class="tab-with-badge">
+                {{ t('settings.tabs.privacy') }}
+                <NTag size="tiny" :bordered="false">{{ t('settings.comingSoon') }}</NTag>
+              </span>
+            </template>
             <PrivacySettings />
           </NTabPane>
           <NTabPane name="models" :tab="t('settings.tabs.models')">
@@ -80,5 +105,11 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+}
+
+.tab-with-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>

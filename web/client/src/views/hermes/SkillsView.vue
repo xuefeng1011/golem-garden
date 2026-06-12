@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { NSpin, NButton, NTabs, NTabPane } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useProfilesStore } from '@/stores/hermes/profiles'
@@ -44,6 +44,11 @@ onMounted(() => {
     projectId ? loadProjectSkills(projectId) : Promise.resolve(),
     loadGlobalSkills(),
   ])
+})
+
+onUnmounted(() => {
+  mobileQuery?.removeEventListener('change', handleMobileChange)
+  mobileQuery = null
 })
 
 watch(

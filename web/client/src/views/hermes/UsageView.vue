@@ -10,6 +10,7 @@ import MiniBarChart from '@/components/common/MiniBarChart.vue'
 import type { BarDatum } from '@/components/common/MiniBarChart.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SkeletonCard from '@/components/common/SkeletonCard.vue'
+import { fmtUsd } from '@/utils/format'
 
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
@@ -81,10 +82,6 @@ const maxSoulCost = computed(() =>
 )
 
 // ── Formatters ──────────────────────────────────────────────────
-
-function fmtCost(n: number): string {
-  return '$' + n.toFixed(3)
-}
 
 function fmtDate(dateStr: string): string {
   const d = new Date(dateStr)
@@ -167,7 +164,7 @@ function fmtDate(dateStr: string): string {
               :height="140"
             />
             <p v-if="dailyThreshold" class="panel-hint">
-              {{ t('usage.dailyPace', { amount: fmtCost(dailyThreshold) }) }}
+              {{ t('usage.dailyPace', { amount: fmtUsd(dailyThreshold) }) }}
             </p>
           </div>
 
@@ -183,7 +180,7 @@ function fmtDate(dateStr: string): string {
                     :style="{ width: (s.cost_usd / maxSoulCost * 100) + '%' }"
                   />
                 </div>
-                <span class="soul-cost">{{ fmtCost(s.cost_usd) }}</span>
+                <span class="soul-cost">{{ fmtUsd(s.cost_usd) }}</span>
                 <span class="soul-tasks">{{ s.tasks }}{{ t('usage.taskSuffix') }}</span>
               </div>
             </div>

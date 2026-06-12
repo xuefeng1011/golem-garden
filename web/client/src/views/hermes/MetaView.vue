@@ -9,7 +9,7 @@ import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchAchievements, fetchChemistry } from '@/api/hermes/meta'
 import type { Achievement, ChemistryPair, ChemistryData } from '@/api/hermes/meta'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const profilesStore = useProfilesStore()
 
 // ── State ─────────────────────────────────────────────────────────
@@ -100,10 +100,10 @@ const recentEvents = computed(() => {
 
 // ── Helpers ───────────────────────────────────────────────────────
 function formatDate(raw: string): string {
-  if (!raw) return ''
+  if (!raw) return '—'
   const d = new Date(raw)
-  if (isNaN(d.getTime())) return raw
-  return `${d.getMonth() + 1}월 ${d.getDate()}일`
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString(locale.value)
 }
 
 function scoreBar(score: number | null): string {
