@@ -6,3 +6,6 @@
 {"date":"2026-04-19","soul":"ryn","learning":"JSONL에 사용자 입력을 쓸 때 반드시 _json_escape 통과. 개행/탭/따옴표가 레코드를 분리함","verdict":"promote","reason":"보안 필수 — JSONL 인젝션 방지 공통 규칙"}
 {"date":"2026-04-19","soul":"ryn","learning":"soul_save/restore에서 구분자는 필드 값에 절대 나타나지 않는 문자 사용. ASCII 0x01(SOH) 권장. 파이프(|)는 자유텍스트에 등장 가능","verdict":"promote","reason":"Bash 직렬화 공통 패턴 — 모든 구분자 선택에 적용"}
 {"date":"2026-04-19","soul":"ryn","learning":"_resolve_soul_file 등 파일 경로를 조립하는 함수에서 basename+정규식 검증([^a-zA-Z0-9_-]) 필수. 경로순회(../)와 명령주입(;rm)을 동시에 차단","verdict":"promote","reason":"보안 필수 — 경로 순회/명령 주입 동시 차단"}
+{"date":"2026-06-12","soul":"zen","learning":"채점기 리뷰의 핵심은 반례 구성 — 각 검사 항목을 개별 통과하는 최소 꼼수 오답을 만들어 보면 false positive 구멍이 드러난다","verdict":"hold","reason":"구체 수치·절차 없는 메타 원칙 — 반례 예시 보강 후 재제출"}
+{"date":"2026-06-12","soul":"ryn","learning":"리팩터링 채점기는 출력 동등성만으론 부족 — 중복 패턴별(포맷 지시자, 조건 로직) 등장 횟수를 각각 grep -c ≤1로 검사해야 부분 함수화 꼼수를 차단","verdict":"promote","reason":"Sage 심사 통과 — 구체 검사 절차 포함, 보편 적용"}
+{"date":"2026-06-12","soul":"ryn","learning":"LLM eval에서 tokens_out=0 이면서 1초 미만 fail은 능력 실패가 아니라 스폰/API 일시 오류 — 점수에서 제외하고 1회 자동 재시도가 맞다","verdict":"promote","reason":"Sage 심사 통과 — 판별 조건·재시도 정책 구체적"}

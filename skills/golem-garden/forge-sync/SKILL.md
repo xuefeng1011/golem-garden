@@ -91,17 +91,19 @@ Sage의 응답(stdout)에서 `VERDICT:` 라인을 파싱한다 (`<usage>` 라인
 
 Sage 응답 파싱 성공 시:
 
-- **promote**:
+- **promote** (2026-06-12 정정 — 두 단계 모두 필수, sync-promote 단독 호출 시 대기열 잔류):
   ```bash
+  GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync-judge {번호} promote "{reason}"
+  # → 대기열에서 제거 + 심사 히스토리 기록
   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync-promote {soul_name} "{learning}"
   # → 글로벌 souls/{name}.md 전문 지식에 추가
-  # → 심사 히스토리에 기록
   ```
 
 - **hold**:
   ```bash
   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh sync-judge {번호} hold "{reason}"
-  # → 대기열에 유지, 다음 심사 때 재검토
+  # → 대기열에서 제거 + 히스토리에 보류 기록 (2026-06-12 정정 — 구 문서의
+  #   "대기열 유지" 는 미구현. 재심사하려면 보강 후 sync record 로 재제출)
   ```
 
 - **reject**:

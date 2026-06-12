@@ -120,6 +120,16 @@ knowledge_promote() {
     return 1
   fi
 
+  # 방어적 dequeue (2026-06-12): 정식 경로는 sync-judge N promote → sync-promote 이지만,
+  # sync-promote 단독 호출 시 pending 에 항목이 잔류해 다음 sync 때 중복 재심사되는
+  # 구멍이 있었다 (라이브 sync 에서 발견). 동일 학습이 pending 에 남아 있으면 제거한다.
+  _init_sync
+  if [ -f "$PENDING_FILE" ]; then
+    local _kp_line
+    _kp_line=$(grep -nF "\"learning\":\"${learning}\"" "$PENDING_FILE" | head -1 | cut -d: -f1)
+    [ -n "$_kp_line" ] && _sed_i "${_kp_line}d" "$PENDING_FILE"
+  fi
+
   # "## 전문 지식" 섹션 끝에 추가
   # 이미 같은 내용이 있으면 건너뜀
   if grep -qF "$learning" "$soul_file" 2>/dev/null; then
