@@ -16,6 +16,8 @@ web/client/node_modules/.vite/
 .golem/sessions/
 .golem/growth-log/
 .golem/mailbox/
+.golem/runs/
+dashboard/.last-refresh
 .server.pid
 dashboard/data.json
 

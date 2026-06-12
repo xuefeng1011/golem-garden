@@ -85,7 +85,7 @@
 
 ## 7. 수용 기준
 
-- [ ] Phase A: bash·gateway 런이 runs/에 보존, 골든 스키마 테스트 + 마스킹 + 롤링 통과. **드레인 처리량 회귀 없음**(기존 pytest 시간 기준 ±10%)
+- [x] Phase A — 2026-06-12 완료 (`e51401c`·`7dec825`·`3f8e189`): bash·gateway 양 경로 runs/ 보존 라이브 확인, 골든 스키마(G6)·마스킹(G5)·롤링(G4) 테스트 통과, bats 213/pytest 224, 드레인 회귀 없음(2.18s). **보너스 발견·수정**: SSE 종료/disconnect 시 drain cancel로 터미널 부기(growth-log 포함)가 통째로 스킵되던 잠복 버그 — cancel-safety + 경합 회귀 테스트. `.golem/runs/`는 gitignore(런타임 산출물)
 - [ ] Phase B: 5개 뷰 — 트레이스 API p50 < 100ms(캐시 히트), 페이지네이션 동작
 - [ ] Phase C: 300노드 합성 데이터에서 팬/줌 60fps 체감(수동 QA), vue-flow 청크가 메인 번들과 분리
 - [ ] 전 게이트: build + vitest + pytest + bats 그린
