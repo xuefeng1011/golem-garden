@@ -86,6 +86,6 @@
 ## 7. 수용 기준
 
 - [x] Phase A — 2026-06-12 완료 (`e51401c`·`7dec825`·`3f8e189`): bash·gateway 양 경로 runs/ 보존 라이브 확인, 골든 스키마(G6)·마스킹(G5)·롤링(G4) 테스트 통과, bats 213/pytest 224, 드레인 회귀 없음(2.18s). **보너스 발견·수정**: SSE 종료/disconnect 시 drain cancel로 터미널 부기(growth-log 포함)가 통째로 스킵되던 잠복 버그 — cancel-safety + 경합 회귀 테스트. `.golem/runs/`는 gitignore(런타임 산출물)
-- [ ] Phase B: 5개 뷰 — 트레이스 API p50 < 100ms(캐시 히트), 페이지네이션 동작
+- [x] Phase B — 2026-06-13 완료: 5개 뷰 전부 (`/hermes/console` Harness Dashboard + 런 상세 드로어 탭 4종 Replay·Tools·Reasoning·Knowledge). 서버는 `GET /v1/projects/{id}/console` 집계 1개만 추가(G10 — 10초 단일 폴링), meta 디렉토리 시그니처 캐시(G3). 파생 뷰 4종은 트레이스에서 클라 순수 함수(`utils/trace.ts`)로 도출 — 서버 추가 부하 0, Replay 재생도 클라 타이머. 라이브 실측: /console 캐시 히트 3.9ms(기준 100ms), 페이지네이션 동작. pytest 229(+5)/vitest 170(+27)/build 그린
 - [ ] Phase C: 300노드 합성 데이터에서 팬/줌 60fps 체감(수동 QA), vue-flow 청크가 메인 번들과 분리
 - [ ] 전 게이트: build + vitest + pytest + bats 그린
