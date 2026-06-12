@@ -492,7 +492,17 @@ export const useChatStore = defineStore('chat', () => {
       // that was just created and whose first run is still in-flight. Without
       // this, refreshing mid-run would wipe the session and fall back to
       // sessions[0], which is exactly what the user reported.
-      const localOnly = sessions.value.filter(s => !freshIds.has(s.id))
+      //
+      // Grace window (2026-06-12): unbounded preservation kept ghost sessions
+      // (deleted server-side, cached in localStorage) alive forever, so
+      // switchSession retried fetchSession → 404 in a loop. A local-only
+      // session older than the grace window cannot be an in-flight first run
+      // anymore — prune it so selection falls back to a real session.
+      const LOCAL_ONLY_GRACE_MS = 10 * 60 * 1000
+      const localOnly = sessions.value.filter(s =>
+        !freshIds.has(s.id) &&
+        Date.now() - (s.updatedAt || s.createdAt || 0) < LOCAL_ONLY_GRACE_MS,
+      )
       sessions.value = [...localOnly, ...fresh]
       persistSessionsList()
 
