@@ -45,11 +45,20 @@ def _write_soul(path: Path, *, name: str, role: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def temp_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Redirect registry I/O to a temp dir so real ~/.golem is never touched."""
-    fake_golem = tmp_path / "fake_home" / ".golem"
-    fake_golem.mkdir(parents=True)
+    """Redirect registry I/O to a temp dir so real ~/.golem is never touched.
+
+    autouse (2026-06-12): opt-in이던 시절 temp_registry 를 받지 않은 테스트
+    (test_souls_extended 의 API 등록 테스트 2건)가 실제 ~/.golem/projects.json 에
+    pytest 임시 경로 14건을 누적시킨 격리 누수가 라이브에서 발견됐다.
+    모든 테스트에 자동 적용해 실 레지스트리 오염을 원천 차단한다.
+    경로가 필요한 테스트는 기존처럼 인자로 받아 사용하면 된다.
+    """
+    # "registry_home": 일부 테스트(test_registry TestPathValidation)가 자체적으로
+    # tmp_path/"fake_home" 을 mkdir 하므로 이름 충돌을 피해 별도 디렉토리를 쓴다
+    fake_golem = tmp_path / "registry_home" / ".golem"
+    fake_golem.mkdir(parents=True, exist_ok=True)
     registry_file = fake_golem / "projects.json"
 
     def _fake_registry_path() -> Path:
