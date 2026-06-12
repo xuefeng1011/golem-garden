@@ -22,6 +22,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Callable
 
 from golem_gateway.config import (
@@ -30,6 +31,7 @@ from golem_gateway.config import (
     INPUT_MAX_BYTES,
     MAX_RUN_SECONDS,
     RUN_QUEUE_MAXSIZE,
+    RUN_RAW_CAP_BYTES,
 )
 from golem_gateway.events import (
     HermesEvent,
@@ -92,6 +94,14 @@ class Run:
     terminal_duration_ms: int = 0
     # Model string from SessionInitEvent (populated on first session.init).
     session_model: str = ""
+    # Raw stdout lines buffered in memory for trajectory persistence (G1).
+    raw_lines: list[str] = field(default_factory=list)
+    raw_bytes: int = 0
+    raw_truncated: bool = False
+    # ISO-8601 UTC timestamp recorded at spawn time.
+    ts_start_iso: str = ""
+    # Resolved project filesystem path — set by spawn_run for persist_run.
+    project_path: "Path | None" = None
 
 
 # Terminal event type names — these must never be dropped from the queue.
@@ -199,6 +209,8 @@ class SessionManager:
             queue=asyncio.Queue(maxsize=RUN_QUEUE_MAXSIZE),
             done=asyncio.Event(),
             started_at=time.monotonic(),
+            ts_start_iso=datetime.now(timezone.utc).isoformat(),
+            project_path=project_path,
         )
 
         # Build enhanced system prompt: identity header + SOUL body + history.
@@ -379,6 +391,16 @@ class SessionManager:
                 line = line_bytes.decode("utf-8", errors="replace").rstrip()
                 if not line:
                     continue
+
+                # G1: buffer raw line in memory only (no disk I/O during run).
+                if not run.raw_truncated:
+                    line_len = len(line.encode("utf-8"))
+                    if run.raw_bytes + line_len <= RUN_RAW_CAP_BYTES:
+                        run.raw_lines.append(line)
+                        run.raw_bytes += line_len
+                    else:
+                        run.raw_truncated = True
+
                 try:
                     raw = json.loads(line)
                 except json.JSONDecodeError:
@@ -419,10 +441,20 @@ class SessionManager:
         except Exception as exc:
             logger.exception("unexpected error draining stdout for run %s: %s", run.run_id, exc)
         finally:
-            # Wait for process to fully exit
+            # Wait for process to fully exit.
+            #
+            # Cancellation-safety (Phase A 라이브 발견): SSE 제너레이터가 정상
+            # 종료/disconnect 시 terminate_run 으로 이 drain task 를 cancel 한다.
+            # 그때 이 finally 안의 await 에서 CancelledError 가 재발생해
+            # 아래의 모든 터미널 부기(on_terminal→growth-log, persist_run,
+            # done.set)가 통째로 스킵되던 잠복 버그가 있었다 — 구독자가 있는
+            # 모든 런에서 growth-log 가 누락된 원인. cancel 을 흡수하고
+            # 부기를 끝까지 수행한다 (task 는 어차피 직후 종료).
             if run.proc is not None:
                 try:
                     rc = await run.proc.wait()
+                except asyncio.CancelledError:
+                    rc = run.proc.returncode if run.proc.returncode is not None else -1
                 except Exception:
                     rc = -1
 
@@ -481,6 +513,29 @@ class SessionManager:
                         "on_terminal callback error for run %s: %s", run.run_id, cb_exc
                     )
 
+            # Persist run trajectory (Phase A — G1: single flush at terminal).
+            if run.project_path is not None:
+                try:
+                    import golem_gateway.runs_store as _rs
+                    _rs.persist_run(
+                        run.project_path,
+                        run_id=run.run_id,
+                        session_id=run.session_id,
+                        soul_id=run.soul_id,
+                        model=run.session_model,
+                        result=run.terminal_result or "fail",
+                        ts_start=run.ts_start_iso,
+                        duration_ms=run.terminal_duration_ms,
+                        usage=run.terminal_usage,
+                        tool_log=run.tool_log,
+                        raw_lines=run.raw_lines,
+                        raw_truncated=run.raw_truncated,
+                    )
+                except Exception as persist_exc:
+                    logger.warning(
+                        "run trajectory persist error for %s: %s", run.run_id, persist_exc
+                    )
+
             run.done.set()
 
     async def _drain_stderr(self, run: Run) -> None:
@@ -527,6 +582,7 @@ class SessionManager:
                     pass
             if not run.terminal_emitted:
                 run.terminal_emitted = True
+                run.terminal_result = "timeout"
                 self._enqueue(
                     run,
                     RunFailedEvent(
