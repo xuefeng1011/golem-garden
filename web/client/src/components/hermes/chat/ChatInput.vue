@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Attachment } from '@/stores/hermes/chat'
 import { useChatStore } from '@/stores/hermes/chat'
+import { queuePreview } from '@/stores/hermes/messageQueue'
 import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchContextLength } from '@/api/hermes/sessions'
@@ -171,7 +172,33 @@ function handleKeydown(e: KeyboardEvent) {
 function handleInput(e: Event) {
   const el = e.target as HTMLTextAreaElement
   el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 100) + 'px'
+  el.style.height = Math.min(el.scrollHeight, Math.max(100, inputHeight.value)) + 'px'
+}
+
+// --- 입력창 드래그 리사이즈 (업스트림 #725 패턴, 순수 포인터 이벤트) ---
+const INPUT_HEIGHT_KEY = 'chat_input_height'
+const inputHeight = ref<number>(Number(localStorage.getItem(INPUT_HEIGHT_KEY)) || 0)
+let resizing = false
+let resizeStartY = 0
+let resizeStartH = 0
+
+function onResizeStart(e: PointerEvent) {
+  resizing = true
+  resizeStartY = e.clientY
+  resizeStartH = inputHeight.value || 72
+  ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+}
+
+function onResizeMove(e: PointerEvent) {
+  if (!resizing) return
+  const max = Math.floor(window.innerHeight * 0.5)
+  inputHeight.value = Math.min(max, Math.max(60, resizeStartH + (resizeStartY - e.clientY)))
+}
+
+function onResizeEnd() {
+  if (!resizing) return
+  resizing = false
+  try { localStorage.setItem(INPUT_HEIGHT_KEY, String(inputHeight.value)) } catch { /* quota */ }
 }
 
 function removeAttachment(id: string) {
@@ -195,6 +222,26 @@ function isImage(type: string): boolean {
 
 <template>
   <div class="chat-input-area">
+    <!-- 드래그 리사이즈 핸들 -->
+    <div
+      class="input-resize-handle"
+      @pointerdown="onResizeStart"
+      @pointermove="onResizeMove"
+      @pointerup="onResizeEnd"
+      @pointercancel="onResizeEnd"
+    />
+
+    <!-- 메시지 큐 칩 (실행 중 적재된 대기 메시지) -->
+    <div v-if="chatStore.queuedMessages.length" class="queued-chips">
+      <span class="queued-label">{{ t('chat.queuedCount', { n: chatStore.queuedMessages.length }) }}</span>
+      <span v-for="q in chatStore.queuedMessages" :key="q.id" class="queued-chip" :title="q.content">
+        {{ queuePreview(q) }}
+        <button class="queued-cancel" :title="t('common.cancel')" @click="chatStore.cancelQueuedMessage(q.id)">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </span>
+    </div>
+
     <!-- Top bar: attach + context info -->
     <div class="input-top-bar">
       <NTooltip trigger="hover">
@@ -265,6 +312,7 @@ function isImage(type: string): boolean {
         ref="textareaRef"
         v-model="inputText"
         class="input-textarea"
+        :style="inputHeight ? { minHeight: inputHeight + 'px' } : undefined"
         :placeholder="t('chat.inputPlaceholder')"
         rows="1"
         @keydown="handleKeydown"
@@ -284,14 +332,15 @@ function isImage(type: string): boolean {
         </NButton>
         <NButton
           size="small"
-          type="primary"
-          :disabled="!canSend || chatStore.isStreaming"
+          :type="chatStore.isStreaming ? 'default' : 'primary'"
+          :disabled="!canSend"
           @click="handleSend"
         >
           <template #icon>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </template>
-          {{ t('chat.send') }}
+          <!-- 실행 중엔 store.sendMessage가 큐에 적재 — 라벨로 의도를 표시 -->
+          {{ t(chatStore.isStreaming ? 'chat.addToQueue' : 'chat.send') }}
         </NButton>
       </div>
     </div>
@@ -300,6 +349,63 @@ function isImage(type: string): boolean {
 
 <style scoped lang="scss">
 @use '@/styles/variables' as *;
+
+.input-resize-handle {
+  height: 6px;
+  margin: -2px 0 2px;
+  cursor: ns-resize;
+  border-radius: 3px;
+  transition: background 0.15s var(--ease-out, ease);
+  touch-action: none;
+
+  &:hover,
+  &:active {
+    background: var(--accent-primary);
+    opacity: 0.35;
+  }
+}
+
+.queued-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 2px 6px;
+
+  .queued-label {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .queued-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 220px;
+    padding: 2px 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color, rgba(128, 128, 128, 0.25));
+    border-radius: 10px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .queued-cancel {
+    display: inline-flex;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--error);
+    }
+  }
+}
 
 .chat-input-area {
   padding: 12px 20px 16px;

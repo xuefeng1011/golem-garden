@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { renameSession } from '@/api/hermes/sessions'
+import { fetchSession, renameSession } from '@/api/hermes/sessions'
+import { buildExportFilename, sessionToMarkdown, triggerDownload } from '@/utils/download'
 import { useChatStore, type Session } from '@/stores/hermes/chat'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { useSessionBrowserPrefsStore } from '@/stores/hermes/session-browser-prefs'
-import { NButton, NDropdown, NInput, NModal, NSelect, NTooltip, useMessage } from 'naive-ui'
+import { NButton, NDropdown, NInput, NModal, NPopconfirm, NSelect, NTooltip, useMessage } from 'naive-ui'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getSourceLabel } from '@/shared/session-display'
@@ -223,6 +224,66 @@ function handleDeleteSession(id: string) {
   message.success(t('chat.sessionDeleted'))
 }
 
+// ── Batch session delete (multi-select mode) ──────────────────────────────
+const selectMode = ref(false)
+const selectedSessionIds = ref<Set<string>>(new Set())
+const isBatchDeleting = ref(false)
+
+function toggleSelectMode() {
+  selectMode.value = !selectMode.value
+  selectedSessionIds.value = new Set()
+}
+
+function toggleSessionSelected(id: string) {
+  const next = new Set(selectedSessionIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedSessionIds.value = next
+}
+
+async function handleBatchDelete() {
+  if (isBatchDeleting.value || selectedSessionIds.value.size === 0) return
+  isBatchDeleting.value = true
+  try {
+    // Delete the active session last so the store's first-session fallback
+    // runs once against the already-pruned list.
+    const activeId = chatStore.activeSessionId
+    const ids = [...selectedSessionIds.value].sort(
+      (a, b) => (a === activeId ? 1 : 0) - (b === activeId ? 1 : 0),
+    )
+    const count = ids.length
+    for (const id of ids) {
+      sessionBrowserPrefsStore.removePinned(id)
+      // Store action wraps the deleteSession API call, prunes local state,
+      // and falls back to the first remaining session when the active one
+      // is deleted.
+      await chatStore.deleteSession(id)
+    }
+    await chatStore.loadSessions()
+    message.success(t('chat.sessionsDeleted', { count }))
+  } finally {
+    isBatchDeleting.value = false
+    selectMode.value = false
+    selectedSessionIds.value = new Set()
+  }
+}
+
+// ── Session export (JSON / Markdown) ──────────────────────────────────────
+async function exportSession(sessionId: string, format: 'json' | 'md') {
+  const detail = await fetchSession(sessionId)
+  if (!detail) {
+    message.error(t('chat.exportFailed'))
+    return
+  }
+  const title = detail.title || chatStore.sessions.find(s => s.id === sessionId)?.title || ''
+  const filename = buildExportFilename(title, format)
+  if (format === 'json') {
+    triggerDownload(filename, JSON.stringify(detail, null, 2), 'application/json')
+  } else {
+    triggerDownload(filename, sessionToMarkdown(detail), 'text/markdown')
+  }
+}
+
 const contextSessionId = ref<string | null>(null)
 const contextSessionPinned = computed(() =>
   contextSessionId.value ? sessionBrowserPrefsStore.isPinned(contextSessionId.value) : false,
@@ -232,6 +293,14 @@ const contextMenuOptions = computed(() => [
   { label: t(contextSessionPinned.value ? 'chat.unpin' : 'chat.pin'), key: 'pin' },
   { label: t('chat.rename'), key: 'rename' },
   { label: t('chat.copySessionId'), key: 'copy-id' },
+  {
+    label: t('chat.export'),
+    key: 'export',
+    children: [
+      { label: t('chat.exportJson'), key: 'export-json' },
+      { label: t('chat.exportMarkdown'), key: 'export-md' },
+    ],
+  },
 ])
 
 function handleContextMenu(e: MouseEvent, sessionId: string) {
@@ -251,6 +320,14 @@ function handleContextMenuSelect(key: string) {
   if (!contextSessionId.value) return
   if (key === 'pin') {
     sessionBrowserPrefsStore.togglePinned(contextSessionId.value)
+    return
+  }
+  if (key === 'export-json') {
+    exportSession(contextSessionId.value, 'json')
+    return
+  }
+  if (key === 'export-md') {
+    exportSession(contextSessionId.value, 'md')
     return
   }
   if (key === 'copy-id') {
@@ -297,6 +374,15 @@ async function handleRenameConfirm() {
           <button class="session-close-btn" @click="showSessions = false">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
+          <NButton
+            v-if="showSessions && chatStore.sessions.length > 0"
+            quaternary
+            size="tiny"
+            :type="selectMode ? 'primary' : 'default'"
+            @click="toggleSelectMode"
+          >
+            {{ t(selectMode ? 'common.cancel' : 'chat.select') }}
+          </NButton>
           <NButton quaternary size="tiny" @click="handleNewChat" circle>
             <template #icon>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -321,9 +407,12 @@ async function handleRenameConfirm() {
             :live="chatStore.isSessionLive(s.id)"
             :pinned="true"
             :can-delete="s.id !== chatStore.activeSessionId || chatStore.sessions.length > 1"
+            :selectable="selectMode"
+            :selected="selectedSessionIds.has(s.id)"
             @select="handleSessionClick(s.id)"
             @contextmenu="handleContextMenu($event, s.id)"
             @delete="handleDeleteSession(s.id)"
+            @toggle-select="toggleSessionSelected(s.id)"
           />
         </template>
 
@@ -342,12 +431,31 @@ async function handleRenameConfirm() {
               :live="chatStore.isSessionLive(s.id)"
               :pinned="false"
               :can-delete="s.id !== chatStore.activeSessionId || chatStore.sessions.length > 1"
+              :selectable="selectMode"
+              :selected="selectedSessionIds.has(s.id)"
               @select="handleSessionClick(s.id)"
               @contextmenu="handleContextMenu($event, s.id)"
               @delete="handleDeleteSession(s.id)"
+              @toggle-select="toggleSessionSelected(s.id)"
             />
           </template>
         </template>
+      </div>
+      <div v-if="showSessions && selectMode" class="batch-delete-bar">
+        <NPopconfirm @positive-click="handleBatchDelete">
+          <template #trigger>
+            <NButton
+              type="error"
+              size="small"
+              block
+              :disabled="selectedSessionIds.size === 0"
+              :loading="isBatchDeleting"
+            >
+              {{ t('chat.deleteSelected', { count: selectedSessionIds.size }) }}
+            </NButton>
+          </template>
+          {{ t('chat.confirmDeleteSelected', { count: selectedSessionIds.size }) }}
+        </NPopconfirm>
       </div>
     </aside>
 
@@ -591,6 +699,31 @@ async function handleRenameConfirm() {
   flex: 1;
   overflow-y: auto;
   padding: 0 6px 12px;
+}
+
+.batch-delete-bar {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border-top: 1px solid $border-color;
+}
+
+:deep(.session-item-checkbox) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border: 1px solid $text-muted;
+  border-radius: 3px;
+  color: #fff;
+  transition: all $transition-fast;
+
+  &.checked {
+    background: $accent-primary;
+    border-color: $accent-primary;
+  }
 }
 
 .session-loading,

@@ -8,6 +8,7 @@ import { useChatStore } from "@/stores/hermes/chat";
 import { copyToClipboard } from "@/utils/clipboard";
 import { repairUnclosedFences } from "@/utils/fence-repair";
 import MarkdownRenderer from "./MarkdownRenderer.vue";
+import ThinkingBlock from "./ThinkingBlock.vue";
 import SoulHandoffCard from "./SoulHandoffCard.vue";
 import {
   copyTextToClipboard,
@@ -348,6 +349,11 @@ const renderedToolResult = computed(() => {
                 </template>
               </div>
             </div>
+            <ThinkingBlock
+              v-if="message.role === 'assistant' && message.thinking"
+              :text="message.thinking"
+              :streaming="message.isStreaming && !message.content"
+            />
             <MarkdownRenderer
               v-if="message.content"
               :content="renderContent"

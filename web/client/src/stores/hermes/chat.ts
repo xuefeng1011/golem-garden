@@ -5,6 +5,7 @@ import { ref, computed, watch } from 'vue'
 import { i18n } from '@/i18n'
 import { notifyWhenHidden } from '@/utils/notify'
 import { useAppStore } from './app'
+import { dequeueMessage, enqueueMessage, removeQueuedMessage, type QueuedMessage } from './messageQueue'
 import { useProfilesStore } from './profiles'
 
 export interface Attachment {
@@ -31,6 +32,8 @@ export interface Message {
   toolUseId?: string
   isStreaming?: boolean
   attachments?: Attachment[]
+  // Extended-thinking 텍스트 (SSE message.thinking 누적) — 접이식 블록으로 표시
+  thinking?: string
 }
 
 export interface Session {
@@ -328,6 +331,30 @@ export const useChatStore = defineStore('chat', () => {
   const activeSession = ref<Session | null>(null)
   const messages = computed<Message[]>(() => activeSession.value?.messages || [])
 
+  // Message queue (upstream-style sequential send): messages sent while a run
+  // is streaming are queued (memory-only, no persistence) and the queue head
+  // is auto-dispatched at run.completed / run.failed.
+  // Design choice: the queue belongs to the ACTIVE session only and is
+  // CLEARED on session switch — sendMessage always targets the active
+  // session, so keeping per-session queues would mis-route auto-dispatched
+  // messages after a switch. Clearing is the simpler, safer behavior.
+  const queuedMessages = ref<QueuedMessage[]>([])
+
+  function cancelQueuedMessage(id: string) {
+    queuedMessages.value = removeQueuedMessage(queuedMessages.value, id)
+  }
+
+  // Auto-send the queue head after the current run finishes. Only fires when
+  // the finished run belongs to the still-active session (the queue is
+  // cleared on switch, so this guard is belt-and-braces).
+  function dispatchQueuedHead(sid: string) {
+    if (sid !== activeSessionId.value) return
+    const { next, rest } = dequeueMessage(queuedMessages.value)
+    if (!next) return
+    queuedMessages.value = rest
+    void sendMessage(next.content, next.attachments)
+  }
+
   function isSessionLive(sessionId: string): boolean {
     if (streamStates.value.has(sessionId) || resumingRuns.value.has(sessionId)) return true
 
@@ -570,6 +597,9 @@ export const useChatStore = defineStore('chat', () => {
 
   async function switchSession(sessionId: string, focusId?: string | null) {
     const profilesStore = useProfilesStore()
+    // Queue is active-session-scoped: drop it when actually changing session
+    // (see queuedMessages comment for the rationale).
+    if (activeSessionId.value !== sessionId) queuedMessages.value = []
     activeSessionId.value = sessionId
     focusMessageId.value = focusId ?? null
     setItemBestEffort(storageKey(), sessionId)
@@ -742,7 +772,20 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function sendMessage(content: string, attachments?: Attachment[]) {
-    if ((!content.trim() && !(attachments && attachments.length > 0)) || isStreaming.value) return
+    if (!content.trim() && !(attachments && attachments.length > 0)) return
+
+    // A run is streaming for the active session: queue instead of dropping.
+    // The head is auto-dispatched from the run.completed / run.failed
+    // handlers. (Gate on isStreaming, not isRunActive — sending during a
+    // resume-poll intentionally proceeds and cancels the polling below.)
+    if (isStreaming.value) {
+      queuedMessages.value = enqueueMessage(queuedMessages.value, {
+        id: uid(),
+        content: content.trim(),
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
+      })
+      return
+    }
 
     if (!activeSession.value) {
       const session = createSession()
@@ -849,6 +892,27 @@ export const useChatStore = defineStore('chat', () => {
           switch (evt.event) {
             case 'run.started':
               break
+
+            case 'message.thinking': {
+              // 응답 본문 전에 오는 extended-thinking 델타 — 같은 스트리밍
+              // 메시지의 thinking 필드에 누적한다 (본문과 분리 렌더)
+              const msgs = getSessionMsgs(sid)
+              const last = msgs[msgs.length - 1]
+              if (last?.role === 'assistant' && last.isStreaming) {
+                last.thinking = (last.thinking || '') + (evt.text || '')
+              } else {
+                addMessage(sid, {
+                  id: uid(),
+                  role: 'assistant',
+                  content: '',
+                  thinking: evt.text || '',
+                  timestamp: Date.now(),
+                  isStreaming: true,
+                })
+              }
+              schedulePersist()
+              break
+            }
 
             case 'message.delta': {
               const msgs = getSessionMsgs(sid)
@@ -966,6 +1030,8 @@ export const useChatStore = defineStore('chat', () => {
               if (sid === activeSessionId.value) persistActiveMessages()
               clearInFlight(sid)
               stopPolling(sid)
+              // Sequential queue: fire the next pending message, if any.
+              dispatchQueuedHead(sid)
               break
             }
 
@@ -995,6 +1061,8 @@ export const useChatStore = defineStore('chat', () => {
               if (sid === activeSessionId.value) persistActiveMessages()
               clearInFlight(sid)
               stopPolling(sid)
+              // Sequential queue: fire the next pending message, if any.
+              dispatchQueuedHead(sid)
               break
             }
           }
@@ -1118,6 +1186,8 @@ export const useChatStore = defineStore('chat', () => {
     isLoadingSessions,
     sessionsLoaded,
     isLoadingMessages,
+    queuedMessages,
+    cancelQueuedMessage,
 
     newChat,
     switchSession,

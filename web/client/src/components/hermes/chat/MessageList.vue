@@ -2,8 +2,10 @@
 import { ref, computed, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import MessageItem from "./MessageItem.vue";
+import OutlinePanel from "./OutlinePanel.vue";
 import { useChatStore } from "@/stores/hermes/chat";
 import { useProfilesStore } from "@/stores/hermes/profiles";
+import { extractOutline, type OutlineItem } from "@/utils/outline";
 
 const chatStore = useChatStore();
 const profilesStore = useProfilesStore();
@@ -47,6 +49,27 @@ const currentToolCalls = computed(() => {
   const tools = msgs.filter((m, i) => m.role === "tool" && i > lastUserIdx);
   return [...tools].reverse();
 });
+
+// Aggregated outline of all assistant messages, reactive to streaming
+// content updates. Hidden until at least 5 headings exist (auto-hide).
+const outlineItems = computed<OutlineItem[]>(() =>
+  chatStore.messages
+    .filter((m) => m.role === "assistant" && m.content)
+    .flatMap((m) => extractOutline(m.content, m.id)),
+);
+
+const showOutline = computed(() => outlineItems.value.length >= 5);
+
+// Rendered markdown carries no per-heading anchors, so navigate in two
+// steps: jump to the message container by id, then correct to the Nth
+// h1–h3 element inside it (same order as extractOutline emits).
+function handleOutlineNavigate(item: OutlineItem) {
+  const container = document.getElementById(`message-${item.messageId}`);
+  if (!container) return;
+  const headings = container.querySelectorAll("h1, h2, h3");
+  const target = headings[item.headingIndex] ?? container;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function isNearBottom(threshold = 200): boolean {
   const el = listRef.value;
@@ -126,7 +149,8 @@ watch(currentToolCalls, () => {
 </script>
 
 <template>
-  <div ref="listRef" class="message-list">
+  <div class="message-list-wrap">
+    <div ref="listRef" class="message-list">
     <div v-if="chatStore.messages.length === 0" class="empty-state">
       <img src="/logo.png" alt="Hermes" class="empty-logo" />
       <p>{{ t("chat.emptyState") }}</p>
@@ -177,11 +201,27 @@ watch(currentToolCalls, () => {
         </div>
       </div>
     </Transition>
+    </div>
+    <OutlinePanel
+      v-if="showOutline"
+      :items="outlineItems"
+      @navigate="handleOutlineNavigate"
+    />
   </div>
 </template>
 
 <style scoped lang="scss">
 @use "@/styles/variables" as *;
+
+// Wrapper keeps `flex: 1` for ChatPanel's column layout while providing a
+// non-scrolling positioning context for the OutlinePanel overlay (an
+// absolute child of the scroll container itself would scroll with content).
+.message-list-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
 
 .message-list {
   flex: 1;

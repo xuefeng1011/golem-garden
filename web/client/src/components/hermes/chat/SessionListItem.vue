@@ -10,15 +10,23 @@ const props = defineProps<{
   live: boolean
   pinned: boolean
   canDelete: boolean
+  selectable?: boolean
+  selected?: boolean
 }>()
 
 const emit = defineEmits<{
   select: []
   contextmenu: [event: MouseEvent]
   delete: []
+  'toggle-select': []
 }>()
 
 const { t } = useI18n()
+
+function handleClick() {
+  if (props.selectable) emit('toggle-select')
+  else emit('select')
+}
 </script>
 
 <template>
@@ -26,9 +34,12 @@ const { t } = useI18n()
     class="session-item"
     :class="{ active, live }"
     :aria-current="active ? 'page' : undefined"
-    @click="emit('select')"
+    @click="handleClick"
     @contextmenu="emit('contextmenu', $event)"
   >
+    <span v-if="selectable" class="session-item-checkbox" :class="{ checked: selected }" aria-hidden="true">
+      <svg v-if="selected" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </span>
     <div class="session-item-content">
       <span class="session-item-title-row">
         <span v-if="live" class="session-item-active-indicator" aria-hidden="true">
@@ -58,7 +69,7 @@ const { t } = useI18n()
         </span>
       </span>
     </div>
-    <NPopconfirm v-if="canDelete" @positive-click="emit('delete')">
+    <NPopconfirm v-if="canDelete && !selectable" @positive-click="emit('delete')">
       <template #trigger>
         <button class="session-item-delete" @click.stop>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

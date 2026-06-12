@@ -25,6 +25,8 @@ export interface RunEvent {
   event: string
   run_id?: string
   delta?: string
+  // message.thinking — extended-thinking 델타 텍스트
+  text?: string
   tool?: string
   name?: string
   preview?: string
