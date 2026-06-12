@@ -12,13 +12,14 @@ import MarkdownRenderer from '@/components/hermes/chat/MarkdownRenderer.vue'
 import ChemistryPairCard from '@/components/hermes/team/ChemistryPairCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SkeletonCard from '@/components/common/SkeletonCard.vue'
+import { ApiError, kindToI18nKey } from '@/utils/api-error'
 
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
 
 const board = ref<ProjectBoard | null>(null)
 const loading = ref(false)
-const error = ref(false)
+const loadError = ref<ApiError | null>(null)
 const showRawModal = ref(false)
 
 const allEmpty = computed(() =>
@@ -30,11 +31,11 @@ const allEmpty = computed(() =>
 
 async function load(projectId: string) {
   loading.value = true
-  error.value = false
+  loadError.value = null
   try {
     board.value = await fetchBoard(projectId)
-  } catch {
-    error.value = true
+  } catch (e) {
+    loadError.value = e instanceof ApiError ? e : new ApiError(String(e), null, 'client')
     board.value = null
   } finally {
     loading.value = false
@@ -162,8 +163,10 @@ const historyData = computed<HistoryEntry[]>(() =>
 
       <NSpin v-else :show="loading">
         <!-- Error -->
-        <div v-if="error" class="error-card">
+        <div v-if="loadError" class="error-card">
           <p class="error-message">{{ t('team.loadFailed') }}</p>
+          <p class="error-description">{{ t(kindToI18nKey(loadError)) }}</p>
+          <p v-if="loadError.kind === 'network'" class="error-hint">{{ t('common.gatewayHint') }}</p>
           <NButton size="small" @click="load(profilesStore.activeProfile!.id ?? '')">
             {{ t('common.retry') }}
           </NButton>
@@ -357,6 +360,20 @@ const historyData = computed<HistoryEntry[]>(() =>
 .error-message {
   font-size: 14px;
   color: $text-secondary;
+}
+
+.error-description {
+  font-size: 13px;
+  color: $text-muted;
+  max-width: 360px;
+}
+
+.error-hint {
+  font-size: 12px;
+  color: $text-muted;
+  font-family: $font-code;
+  opacity: 0.8;
+  max-width: 360px;
 }
 
 // ── Sections ─────────────────────────────────────────────────────

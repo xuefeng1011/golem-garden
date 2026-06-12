@@ -63,3 +63,41 @@ export async function fetchSoulActivity(
     `/v1/projects/${encodeURIComponent(projectId)}/souls/${encodeURIComponent(soulId)}/activity`,
   )
 }
+
+export interface SkillBranch {
+  name: string
+  level: number
+  demonstrated_count: number
+  evidence: string[]
+}
+
+export interface SkillTreeData {
+  branches: SkillBranch[]
+}
+
+export async function fetchSkillTree(
+  projectId: string,
+  soulId: string,
+): Promise<SkillTreeData> {
+  return request<SkillTreeData>(
+    `/v1/projects/${encodeURIComponent(projectId)}/souls/${encodeURIComponent(soulId)}/skill-tree`,
+  )
+}
+
+export interface MailboxMessage {
+  from: string
+  to: string
+  type: string
+  content: string
+  ts: string
+}
+
+export async function fetchMailbox(
+  projectId: string,
+  limit = 50,
+): Promise<MailboxMessage[]> {
+  const res = await request<MailboxMessage[] | { messages: MailboxMessage[] }>(
+    `/v1/projects/${encodeURIComponent(projectId)}/mailbox?limit=${limit}`,
+  )
+  return Array.isArray(res) ? res : (res as { messages: MailboxMessage[] }).messages ?? []
+}

@@ -65,6 +65,12 @@ export default {
     stop: '중지',
     maxRank: '최고 랭크 달성',
     tasksToPromote: '다음 승급까지 {n}태스크',
+    errorNetwork: '서버에 연결할 수 없습니다 — 게이트웨이가 실행 중인지 확인하세요',
+    errorAuth: '인증 실패 — 접근이 거부되었습니다',
+    errorNotFound: '리소스를 찾을 수 없습니다',
+    errorServer: '서버 오류 — 게이트웨이가 예상치 못한 응답을 반환했습니다',
+    errorGeneric: '예기치 않은 오류가 발생했습니다',
+    gatewayHint: '게이트웨이 시작: cd web/gateway && uv run uvicorn ...',
   },
 
   // SOUL 목록
@@ -76,6 +82,7 @@ export default {
     noProjectDescription: '프로젝트를 선택하면 SOUL 팀을 둘러볼 수 있습니다',
     selectProject: '프로젝트 선택',
     sectionCapabilities: '능력 · 도구',
+    sectionSpecialization: '전문화',
     sectionActivity: '활동',
     sectionProfile: '프로필',
     statsTotal: '총 태스크',
@@ -140,6 +147,17 @@ export default {
     empty: '아직 활동 기록이 없습니다',
     loadMore: '더 보기',
     loadEnd: '모두 불러왔습니다',
+    viewTimeline: '타임라인',
+    viewMailbox: '메일박스',
+    mailbox: {
+      empty: '메일박스 메시지가 아직 없습니다',
+      emptyHint: 'forge build 실행 후 SOUL 간 메시지가 여기에 표시됩니다',
+      loadFailed: '메일박스를 불러오지 못했습니다',
+      timeJustNow: '방금 전',
+      timeMinutesAgo: '{n}분 전',
+      timeHoursAgo: '{n}시간 전',
+      timeDaysAgo: '{n}일 전',
+    },
   },
 
   // 성장 & 케미

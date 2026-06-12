@@ -1,3 +1,7 @@
+import { ApiError, classifyHttpStatus } from '@/utils/api-error'
+
+export { ApiError } from '@/utils/api-error'
+
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8642'
 
 function getBaseUrl(): string {
@@ -33,11 +37,18 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     ...options.headers as Record<string, string>,
   }
 
-  const res = await fetch(url, { ...options, headers })
+  let res: Response
+  try {
+    res = await fetch(url, { ...options, headers })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new ApiError(`API Error network: ${msg}`, null, 'network')
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(`API Error ${res.status}: ${text || res.statusText}`)
+    const kind = classifyHttpStatus(res.status)
+    throw new ApiError(`API Error ${res.status}: ${text || res.statusText}`, res.status, kind)
   }
 
   return res.json()

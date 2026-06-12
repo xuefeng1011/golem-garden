@@ -11,6 +11,7 @@ import SoulCard from '@/components/hermes/souls/SoulCard.vue'
 import SoulDetailModal from '@/components/hermes/souls/SoulDetailModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SkeletonCard from '@/components/common/SkeletonCard.vue'
+import { ApiError, kindToI18nKey } from '@/utils/api-error'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -18,17 +19,17 @@ const profilesStore = useProfilesStore()
 
 const souls = ref<Soul[]>([])
 const loading = ref(false)
-const error = ref(false)
+const loadError = ref<ApiError | null>(null)
 const selectedSoulId = ref<string | null>(null)
 const modalOpen = ref(false)
 
 async function loadSouls(projectId: string) {
   loading.value = true
-  error.value = false
+  loadError.value = null
   try {
     souls.value = await fetchSouls(projectId)
-  } catch {
-    error.value = true
+  } catch (e) {
+    loadError.value = e instanceof ApiError ? e : new ApiError(String(e), null, 'client')
     souls.value = []
   } finally {
     loading.value = false
@@ -49,6 +50,7 @@ function onRetry() {
   if (!id) return
   loadSouls(id)
 }
+
 
 function goToProfiles() {
   router.push({ name: 'hermes.profiles' })
@@ -98,8 +100,9 @@ watch(
       </div>
 
       <EmptyState
-        v-else-if="error"
+        v-else-if="loadError"
         :title="t('souls.loadFailed')"
+        :description="t(kindToI18nKey(loadError)) + (loadError.kind === 'network' ? '\n' + t('common.gatewayHint') : '')"
         :action="{ label: t('common.retry'), handler: onRetry }"
       >
         <template #icon>

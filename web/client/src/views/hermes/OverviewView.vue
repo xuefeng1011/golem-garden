@@ -12,6 +12,7 @@ import TeamGrid from '@/components/hermes/overview/TeamGrid.vue'
 import RecentActivity from '@/components/hermes/overview/RecentActivity.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SkeletonCard from '@/components/common/SkeletonCard.vue'
+import { ApiError, kindToI18nKey } from '@/utils/api-error'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -20,7 +21,7 @@ const profilesStore = useProfilesStore()
 const overview = ref<ProjectOverview | null>(null)
 const board = ref<ProjectBoard | null>(null)
 const loading = ref(false)
-const error = ref(false)
+const loadError = ref<ApiError | null>(null)
 const showDebtModal = ref(false)
 
 const onRetry = () => {
@@ -35,7 +36,7 @@ function goToProfiles() {
 
 async function loadData(projectId: string) {
   loading.value = true
-  error.value = false
+  loadError.value = null
   try {
     const [ov, bd] = await Promise.all([
       fetchOverview(projectId),
@@ -43,8 +44,8 @@ async function loadData(projectId: string) {
     ])
     overview.value = ov
     board.value = bd
-  } catch {
-    error.value = true
+  } catch (e) {
+    loadError.value = e instanceof ApiError ? e : new ApiError(String(e), null, 'client')
     overview.value = null
     board.value = null
   } finally {
@@ -110,8 +111,9 @@ watch(
 
       <!-- Error state -->
       <EmptyState
-        v-else-if="error"
+        v-else-if="loadError"
         :title="t('overview.loadFailed')"
+        :description="t(kindToI18nKey(loadError)) + (loadError.kind === 'network' ? '\n' + t('common.gatewayHint') : '')"
         :action="{ label: t('common.retry'), handler: onRetry }"
       >
         <template #icon>

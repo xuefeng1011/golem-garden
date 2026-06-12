@@ -5,11 +5,19 @@ import { useI18n } from 'vue-i18n'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchTimeline } from '@/api/hermes/activity'
 import type { TimelineEvent, TimelineEventType } from '@/api/hermes/activity'
+import { fetchMailbox } from '@/api/hermes/souls'
+import type { MailboxMessage } from '@/api/hermes/souls'
 import TimelineItem from '@/components/hermes/activity/TimelineItem.vue'
+import MailboxFeed from '@/components/hermes/activity/MailboxFeed.vue'
 
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
 
+// ── View mode: timeline | mailbox ────────────────────────────────────────────
+type ViewMode = 'timeline' | 'mailbox'
+const viewMode = ref<ViewMode>('timeline')
+
+// ── Timeline ─────────────────────────────────────────────────────────────────
 const events = ref<TimelineEvent[]>([])
 const loading = ref(false)
 const error = ref(false)
@@ -48,6 +56,7 @@ async function refresh() {
   if (!profilesStore.activeProfile?.id) return
   limitIndex.value = 0
   await load(profilesStore.activeProfile.id)
+  await loadMailbox(profilesStore.activeProfile.id)
 }
 
 function toggleType(type: TimelineEventType) {
@@ -70,9 +79,35 @@ function toggleAll() {
 
 const isAllActive = computed(() => activeTypes.value.size === ALL_TYPES.length)
 
+const TYPE_LABELS: Record<TimelineEventType, string> = {
+  task: 'task',
+  session_start: 'session',
+  session_end: 'session_end',
+  mailbox: 'mailbox',
+}
+
+// ── Mailbox ───────────────────────────────────────────────────────────────────
+const mailboxMessages = ref<MailboxMessage[]>([])
+const mailboxLoading = ref(false)
+const mailboxError = ref(false)
+
+async function loadMailbox(projectId: string) {
+  mailboxLoading.value = true
+  mailboxError.value = false
+  try {
+    mailboxMessages.value = await fetchMailbox(projectId)
+  } catch {
+    mailboxError.value = true
+    mailboxMessages.value = []
+  } finally {
+    mailboxLoading.value = false
+  }
+}
+
 onMounted(() => {
   if (profilesStore.activeProfile?.id) {
     load(profilesStore.activeProfile.id)
+    loadMailbox(profilesStore.activeProfile.id)
   }
 })
 
@@ -82,18 +117,13 @@ watch(
     if (id) {
       limitIndex.value = 0
       load(id)
+      loadMailbox(id)
     } else {
       events.value = []
+      mailboxMessages.value = []
     }
   }
 )
-
-const TYPE_LABELS: Record<TimelineEventType, string> = {
-  task: 'task',
-  session_start: 'session',
-  session_end: 'session_end',
-  mailbox: 'mailbox',
-}
 </script>
 
 <template>
@@ -106,19 +136,36 @@ const TYPE_LABELS: Record<TimelineEventType, string> = {
         </span>
       </div>
       <div class="filter-row">
+        <!-- View mode toggle -->
         <button
           class="filter-chip"
-          :class="{ active: isAllActive }"
-          @click="toggleAll"
-        >{{ t('activity.filterAll') }}</button>
+          :class="{ active: viewMode === 'timeline' }"
+          @click="viewMode = 'timeline'"
+        >{{ t('activity.viewTimeline') }}</button>
         <button
-          v-for="type in ALL_TYPES"
-          :key="type"
           class="filter-chip"
-          :class="{ active: activeTypes.has(type) }"
-          @click="toggleType(type)"
-        >{{ TYPE_LABELS[type] }}</button>
-        <button class="refresh-btn" :disabled="loading" @click="refresh">
+          :class="{ active: viewMode === 'mailbox' }"
+          @click="viewMode = 'mailbox'"
+        >{{ t('activity.viewMailbox') }}</button>
+
+        <!-- Timeline type filters (shown only in timeline mode) -->
+        <template v-if="viewMode === 'timeline'">
+          <span class="filter-sep">|</span>
+          <button
+            class="filter-chip"
+            :class="{ active: isAllActive }"
+            @click="toggleAll"
+          >{{ t('activity.filterAll') }}</button>
+          <button
+            v-for="type in ALL_TYPES"
+            :key="type"
+            class="filter-chip"
+            :class="{ active: activeTypes.has(type) }"
+            @click="toggleType(type)"
+          >{{ TYPE_LABELS[type] }}</button>
+        </template>
+
+        <button class="refresh-btn" :disabled="loading || mailboxLoading" @click="refresh">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10" />
             <polyline points="1 20 1 14 7 14" />
@@ -133,7 +180,8 @@ const TYPE_LABELS: Record<TimelineEventType, string> = {
         {{ t('activity.noProject') }}
       </div>
 
-      <NSpin v-else :show="loading">
+      <!-- Timeline view -->
+      <NSpin v-if="viewMode === 'timeline'" :show="loading">
         <div v-if="error" class="error-card">
           <p class="error-message">{{ t('activity.loadFailed') }}</p>
           <NButton size="small" @click="refresh">{{ t('common.retry') }}</NButton>
@@ -165,6 +213,15 @@ const TYPE_LABELS: Record<TimelineEventType, string> = {
             <span v-else class="load-end">{{ t('activity.loadEnd') }}</span>
           </div>
         </template>
+      </NSpin>
+
+      <!-- Mailbox view -->
+      <NSpin v-else-if="viewMode === 'mailbox'" :show="mailboxLoading">
+        <div v-if="mailboxError" class="error-card">
+          <p class="error-message">{{ t('activity.mailbox.loadFailed') }}</p>
+          <NButton size="small" @click="profilesStore.activeProfile?.id && loadMailbox(profilesStore.activeProfile.id)">{{ t('common.retry') }}</NButton>
+        </div>
+        <MailboxFeed v-else :messages="mailboxMessages" />
       </NSpin>
     </div>
   </div>
@@ -234,6 +291,12 @@ const TYPE_LABELS: Record<TimelineEventType, string> = {
     border-color: $accent-primary;
     color: $accent-primary;
   }
+}
+
+.filter-sep {
+  color: $border-color;
+  font-size: 14px;
+  user-select: none;
 }
 
 .refresh-btn {

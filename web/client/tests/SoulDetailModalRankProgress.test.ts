@@ -35,6 +35,7 @@ const activity: SoulActivity = {
 vi.mock('@/api/hermes/souls', () => ({
   fetchSoul: vi.fn(() => Promise.resolve(detail)),
   fetchSoulActivity: vi.fn(() => Promise.resolve(activity)),
+  fetchSkillTree: vi.fn(() => Promise.resolve({ branches: [] })),
 }))
 
 function mountModal() {

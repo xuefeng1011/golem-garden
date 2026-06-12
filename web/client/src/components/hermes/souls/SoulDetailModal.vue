@@ -2,10 +2,11 @@
 import { ref, watch, computed } from 'vue'
 import { NModal, NTag, NSpin, NSkeleton, NIcon } from 'naive-ui'
 import { CheckmarkCircle, CloseCircle, InformationCircle } from '@vicons/ionicons5'
-import type { SoulDetail, SoulActivity } from '@/api/hermes/souls'
-import { fetchSoul, fetchSoulActivity } from '@/api/hermes/souls'
+import type { SoulDetail, SoulActivity, SkillTreeData } from '@/api/hermes/souls'
+import { fetchSoul, fetchSoulActivity, fetchSkillTree } from '@/api/hermes/souls'
 import MarkdownRenderer from '@/components/hermes/chat/MarkdownRenderer.vue'
 import RankProgress from '@/components/common/RankProgress.vue'
+import SkillTreeBranches from './SkillTreeBranches.vue'
 import { useI18n } from 'vue-i18n'
 import { effortTagType, isolationTagType, formatMaxTurns, showDisallowedTools } from './soulDetailHelpers'
 
@@ -25,6 +26,9 @@ const error = ref(false)
 
 const activity = ref<SoulActivity | null>(null)
 const activityLoading = ref(false)
+
+const skillTree = ref<SkillTreeData | null>(null)
+const skillTreeLoading = ref(false)
 
 function formatDate(ts: string): string {
   if (!ts) return ''
@@ -57,11 +61,13 @@ watch(
     if (!open || !soulId || !props.projectId) {
       detail.value = null
       activity.value = null
+      skillTree.value = null
       return
     }
     loading.value = true
     error.value = false
     activityLoading.value = true
+    skillTreeLoading.value = true
 
     const detailPromise = fetchSoul(props.projectId, soulId)
       .then((d) => { detail.value = d })
@@ -73,7 +79,12 @@ watch(
       .catch(() => { activity.value = null })
       .finally(() => { activityLoading.value = false })
 
-    await Promise.allSettled([detailPromise, activityPromise])
+    const skillTreePromise = fetchSkillTree(props.projectId, soulId)
+      .then((s) => { skillTree.value = s })
+      .catch(() => { skillTree.value = null })
+      .finally(() => { skillTreeLoading.value = false })
+
+    await Promise.allSettled([detailPromise, activityPromise, skillTreePromise])
   },
   { immediate: true },
 )
@@ -185,6 +196,19 @@ watch(
           </div>
         </div>
         <!-- /N3 Capability Fields -->
+
+        <!-- Skill Tree Section -->
+        <template v-if="skillTreeLoading || (skillTree && skillTree.branches.length > 0)">
+          <h4 class="section-label">{{ t('souls.sectionSpecialization') }}</h4>
+          <div v-if="skillTreeLoading" class="activity-skeleton">
+            <NSkeleton text style="width: 80%; height: 13px; margin-bottom: 6px;" />
+            <NSkeleton text style="width: 60%; height: 13px; margin-bottom: 6px;" />
+          </div>
+          <div v-else-if="skillTree && skillTree.branches.length > 0" class="skill-tree-panel">
+            <SkillTreeBranches :branches="skillTree.branches" />
+          </div>
+        </template>
+        <!-- /Skill Tree Section -->
 
         <!-- Activity Panel -->
         <h4 class="section-label">{{ t('souls.sectionActivity') }}</h4>
@@ -444,6 +468,14 @@ watch(
   flex-shrink: 0;
   color: $text-muted;
   font-size: 11px;
+}
+
+/* ── Skill Tree Panel ── */
+.skill-tree-panel {
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  padding: 10px 14px;
 }
 
 /* ── below activity ── */

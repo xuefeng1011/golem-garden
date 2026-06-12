@@ -65,6 +65,12 @@ export default {
     stop: 'Stop',
     maxRank: 'Max rank reached',
     tasksToPromote: '{n} tasks to next rank',
+    errorNetwork: 'Cannot connect to the server — make sure the gateway is running',
+    errorAuth: 'Authentication failed — access denied',
+    errorNotFound: 'Resource not found',
+    errorServer: 'Server error — the gateway returned an unexpected response',
+    errorGeneric: 'An unexpected error occurred',
+    gatewayHint: 'Start the gateway: cd web/gateway && uv run uvicorn ...',
   },
 
   // SOULs
@@ -76,6 +82,7 @@ export default {
     noProjectDescription: 'Pick a project to browse its SOUL team',
     selectProject: 'Choose a project',
     sectionCapabilities: 'Capabilities & Tools',
+    sectionSpecialization: 'Specialization',
     sectionActivity: 'Activity',
     sectionProfile: 'Profile',
     statsTotal: 'Total tasks',
@@ -140,6 +147,17 @@ export default {
     empty: 'No activity records yet',
     loadMore: 'Load more',
     loadEnd: 'All loaded',
+    viewTimeline: 'Timeline',
+    viewMailbox: 'Mailbox',
+    mailbox: {
+      empty: 'No mailbox messages yet',
+      emptyHint: 'Messages appear here after SOULs exchange tasks via forge build',
+      loadFailed: 'Failed to load mailbox',
+      timeJustNow: 'just now',
+      timeMinutesAgo: '{n}m ago',
+      timeHoursAgo: '{n}h ago',
+      timeDaysAgo: '{n}d ago',
+    },
   },
 
   // Growth & Chemistry
