@@ -1,0 +1,33 @@
+{
+  "$comment": "런 트래젝토리 meta 사이드카의 필수 키 계약 (G6 골든 — bats와 pytest 양쪽이 이 파일로 검증). bash(lib/agent-runner.sh)와 gateway(runs_store.py)가 동일 스키마로 기록해야 한다.",
+  "required": [
+    "run_id",
+    "session_id",
+    "soul",
+    "model",
+    "source",
+    "ts_start",
+    "duration_ms",
+    "tokens_in",
+    "tokens_out",
+    "tokens_cache",
+    "cost_usd",
+    "result",
+    "tool_counts"
+  ],
+  "types": {
+    "run_id": "string(uuid)",
+    "session_id": "string(uuid)",
+    "soul": "string",
+    "model": "string",
+    "source": "string(bash|gateway)",
+    "ts_start": "string(iso8601)",
+    "duration_ms": "integer",
+    "tokens_in": "integer",
+    "tokens_out": "integer",
+    "tokens_cache": "integer",
+    "cost_usd": "number",
+    "result": "string(success|fail|timeout)",
+    "tool_counts": "object(string->integer)"
+  }
+}

@@ -72,6 +72,76 @@ _agent_budget_preflight() {
   return 0
 }
 
+# ─────────────────────────────────────────────────────────
+# 런 트래젝토리 영속화 (Phase A — docs/OBSERVABILITY_PLAN.md G1/G2/G4/G5)
+# ─────────────────────────────────────────────────────────
+# stream-json 을 버리는 대신 .golem/runs/<run_id>.jsonl 로 보존하고
+# 1줄 meta 사이드카(spec/run-meta.schema.json 계약)를 남긴다.
+# - 마스킹+보존은 sed 단일 패스 (G2: 추가 스캔 최소)
+# - 실패는 절대 런을 죽이지 않는다 (전부 soft-fail)
+# GOLEM_RUNS_KEEP   — 보존 개수 롤링 (기본 200)
+# GOLEM_RUNS_DISABLE=1 — 영속화 끄기 (기존 rm 동작)
+
+# 보존 개수 초과분 삭제 (jsonl + meta 쌍, mtime 역순)
+_agent_runs_gc() {
+  local dir="$1"
+  local keep="${GOLEM_RUNS_KEEP:-200}"
+  printf '%s' "$keep" | grep -qE '^[0-9]+$' || keep=200
+  local excess f
+  excess=$(ls -1t "$dir"/*.jsonl 2>/dev/null | tail -n +"$((keep + 1))")
+  [ -z "$excess" ] && return 0
+  while IFS= read -r f; do
+    rm -f "$f" "${f%.jsonl}.meta.json" 2>/dev/null
+  done <<EOF_GC
+$excess
+EOF_GC
+  return 0
+}
+
+# _agent_persist_run <stream_file> <run_id> <session_id> <soul> <model> <result> <cost> <ts_start>
+# 호출 후 stream_file 은 항상 제거된다 (보존 성공 시 마스킹 사본만 남음).
+_agent_persist_run() {
+  local stream_file="$1" run_id="$2" session_id="$3" soul_name="$4" model="$5"
+  local result="$6" cost="$7" ts_start="$8"
+
+  if [ "${GOLEM_RUNS_DISABLE:-0}" = "1" ] || [ ! -f "$stream_file" ]; then
+    rm -f "$stream_file" 2>/dev/null
+    return 0
+  fi
+
+  local runs_dir="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/runs"
+  mkdir -p "$runs_dir" 2>/dev/null || { rm -f "$stream_file"; return 0; }
+  local dest="${runs_dir}/${run_id}.jsonl"
+
+  # 시크릿 마스킹 + 보존 — 단일 패스 (G5, gateway runs_store.py 와 동일 규칙)
+  if ! sed -E \
+    -e 's/sk-[A-Za-z0-9_-]{10,}/***MASKED***/g' \
+    -e 's/ghp_[A-Za-z0-9]{20,}/***MASKED***/g' \
+    -e 's/(ANTHROPIC|OPENAI)[A-Z_]*KEY["=: ]+[^",[:space:]]+/\1_KEY=***MASKED***/g' \
+    "$stream_file" > "$dest" 2>/dev/null; then
+    rm -f "$stream_file" "$dest" 2>/dev/null
+    return 0
+  fi
+  rm -f "$stream_file" 2>/dev/null
+
+  # tool_counts — 마스킹 사본 1패스 근사 카운트 (stream-json tool_use "name" 필드)
+  local tool_counts
+  tool_counts=$(grep -o '"name":"[A-Za-z_][A-Za-z0-9_]*"' "$dest" 2>/dev/null \
+    | sed 's/^"name"://' | sort | uniq -c \
+    | awk '{gsub(/"/,"",$2); printf "%s\"%s\":%s", sep, $2, $1; sep=","}')
+  tool_counts="{${tool_counts}}"
+
+  # meta 사이드카 — 이미 파싱된 _AR_* 재사용 (추가 스캔 0)
+  printf '{"run_id":"%s","session_id":"%s","soul":"%s","model":"%s","source":"bash","ts_start":"%s","duration_ms":%s,"tokens_in":%s,"tokens_out":%s,"tokens_cache":%s,"cost_usd":%s,"result":"%s","tool_counts":%s}\n' \
+    "$run_id" "$session_id" "$soul_name" "$model" "$ts_start" \
+    "${_AR_DURATION_MS:-0}" "${_AR_TOKENS_IN:-0}" "${_AR_TOKENS_OUT:-0}" "${_AR_TOKENS_CACHE:-0}" \
+    "${cost:-0.000}" "$result" "$tool_counts" \
+    > "${runs_dir}/${run_id}.meta.json" 2>/dev/null
+
+  _agent_runs_gc "$runs_dir"
+  return 0
+}
+
 # timeout 명령 프리픽스 배열을 stdout 으로 출력한다.
 # - GNU coreutils `timeout` (리눅스/Git-bash) 또는 `gtimeout` (macОS coreutils) 탐지.
 # - 둘 다 없으면 빈 출력 → 호출부가 무가드로 폴백(한 번 경고).
@@ -326,6 +396,12 @@ ${_ar_body}"
   model_arg=$(_map_model "${AGENT_MODEL_OVERRIDE:-$SOUL_MODEL}")
   tools_csv=$(_tools_csv "$SOUL_TOOLS")
 
+  # 런 식별자 + 시작 시각 (Phase A 트래젝토리 meta 용 — 세션 uuid 와 별개)
+  local run_id
+  run_id=$(_gen_uuid)
+  local _ar_ts_start
+  _ar_ts_start=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+
   # 세션 인자 결정: 없거나 0턴이면 --session-id, 기존 세션이면 --resume
   # (게이트웨이 prior_count==0 분기 미러). bash 경로는 세션 메타에 의존하지 않고
   # session_id 전달 여부 + 메타 존재 여부로 판단한다.
@@ -434,7 +510,8 @@ ${_ar_body}"
   _AR_RESULT_TEXT=$(_extract_assistant_text "$stream_file")
   _parse_stream < "$stream_file"
 
-  rm -f "$stream_file"
+  # stream_file 은 여기서 지우지 않는다 — result/cost 확정 후
+  # _agent_persist_run 이 마스킹 보존 + 제거를 담당한다 (Phase A).
 
   # D1 — 타임아웃 시: 결과 텍스트를 명확한 사유로 덮어쓰고 fail 처리.
   # (child 는 timeout(1) 이 SIGTERM/SIGKILL 로 이미 종료시킴 — 추가 kill 불필요.)
@@ -492,6 +569,13 @@ ${_ar_body}"
     growth_log_append "$soul_name" "$task_text" "$result" 0 0 >&2
   fi
 
+  # 런 트래젝토리 영속화 (Phase A) — result/cost 확정 후 1회.
+  # meta result 는 타임아웃을 구분해 기록 (스키마: success|fail|timeout)
+  local _ar_meta_result="$result"
+  [ "$_ar_timed_out" -eq 1 ] && _ar_meta_result="timeout"
+  _agent_persist_run "$stream_file" "$run_id" "$session_id" "$soul_name" "$model_arg" \
+    "$_ar_meta_result" "$cost" "$_ar_ts_start"
+
   # (g) 스킬 증류 — 임계 도달 시 기존 soul-memory 라이브러리로 lesson 1건 압축 기록
   # (stdout 오염 방지를 위해 stderr 로. 성공 태스크에서만.)
   if [ "$result" = "success" ]; then
@@ -499,7 +583,7 @@ ${_ar_body}"
   fi
 
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
 
   [ "$result" = "fail" ] && return 1
   return 0
