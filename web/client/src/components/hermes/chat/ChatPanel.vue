@@ -9,6 +9,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getSourceLabel } from '@/shared/session-display'
 import { copyToClipboard } from '@/utils/clipboard'
+import { fetchBudget, type ProjectBudget } from '@/api/hermes/budget'
+import BudgetGuardBanner from './BudgetGuardBanner.vue'
 import ChatInput from './ChatInput.vue'
 // ConversationMonitorPane removed — Gateway has no conversations endpoint.
 import MessageList from './MessageList.vue'
@@ -25,6 +27,36 @@ import SessionListItem from './SessionListItem.vue'
 const chatStore = useChatStore()
 const profilesStore = useProfilesStore()
 const sessionBrowserPrefsStore = useSessionBrowserPrefsStore()
+
+// ── Budget guard ──────────────────────────────────────────────────────────
+const budgetData = ref<ProjectBudget | null>(null)
+let budgetPollTimer: ReturnType<typeof setInterval> | null = null
+const BUDGET_POLL_MS = 5 * 60 * 1000 // 5 minutes
+
+async function refreshBudget() {
+  const pid = profilesStore.activeProfile?.id
+  if (!pid) {
+    budgetData.value = null
+    return
+  }
+  try {
+    budgetData.value = await fetchBudget(pid)
+  } catch {
+    // non-fatal: banner simply stays hidden on error
+  }
+}
+
+function startBudgetPolling() {
+  refreshBudget()
+  if (budgetPollTimer) clearInterval(budgetPollTimer)
+  budgetPollTimer = setInterval(refreshBudget, BUDGET_POLL_MS)
+}
+
+watch(
+  () => profilesStore.activeProfile?.id,
+  () => { startBudgetPolling() },
+  { immediate: true },
+)
 
 const director = computed(() => profilesStore.directorSoul)
 
@@ -94,6 +126,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   mobileQuery?.removeEventListener('change', handleMobileChange)
+  if (budgetPollTimer) clearInterval(budgetPollTimer)
 })
 const showRenameModal = ref(false)
 const renameValue = ref('')
@@ -552,6 +585,7 @@ async function handleRenameConfirm() {
       </header>
 
       <template v-if="currentMode === 'chat'">
+        <BudgetGuardBanner :budget="budgetData" />
         <MessageList />
         <ChatInput />
       </template>

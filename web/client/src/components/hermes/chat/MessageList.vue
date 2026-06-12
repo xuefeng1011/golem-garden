@@ -6,6 +6,13 @@ import OutlinePanel from "./OutlinePanel.vue";
 import { useChatStore } from "@/stores/hermes/chat";
 import { useProfilesStore } from "@/stores/hermes/profiles";
 import { extractOutline, type OutlineItem } from "@/utils/outline";
+import {
+  initialWindowState,
+  hiddenCount,
+  expandWindow,
+  applyWindow,
+  type WindowState,
+} from "@/utils/message-window";
 
 const chatStore = useChatStore();
 const profilesStore = useProfilesStore();
@@ -31,9 +38,63 @@ const showThinking = computed(() => {
   return last.role === "user" || last.role === "system";
 });
 
-const displayMessages = computed(() =>
+const allDisplayMessages = computed(() =>
   chatStore.messages.filter((m) => m.role !== "tool"),
 );
+
+// --- Message windowing ---
+// window tracks which slice of allDisplayMessages is currently rendered.
+// Reset on session change; expand on user request (scroll anchor preserved).
+const windowState = ref<WindowState>(
+  initialWindowState(allDisplayMessages.value.length),
+);
+
+// Reset window whenever the active session changes.
+watch(
+  () => chatStore.activeSessionId,
+  () => {
+    windowState.value = initialWindowState(allDisplayMessages.value.length);
+  },
+);
+
+// When new messages arrive (e.g. user sends a message), keep the tail visible
+// by re-anchoring the window to the end — but only if we were already showing
+// the tail (startIndex === 0 after accounting for growth means "all visible").
+watch(
+  () => allDisplayMessages.value.length,
+  (newLen, oldLen) => {
+    if (newLen <= oldLen) return;
+    const ws = windowState.value;
+    // If the window already starts at 0 (all shown), keep it that way.
+    // If window is anchored to the tail, re-anchor to the new tail.
+    const wasAtTail = ws.startIndex === Math.max(0, oldLen - 80);
+    if (wasAtTail) {
+      windowState.value = initialWindowState(newLen);
+    }
+  },
+);
+
+const olderCount = computed(() => hiddenCount(windowState.value));
+const showOlderButton = computed(() => olderCount.value > 0);
+
+const displayMessages = computed(() =>
+  applyWindow(allDisplayMessages.value, windowState.value),
+);
+
+// Load older messages: preserve scroll position by scrolling to the element
+// that was previously first in the rendered list (scroll anchor).
+function handleShowOlder() {
+  // Capture the first currently-rendered message id before expanding.
+  const firstVisible = displayMessages.value[0];
+  windowState.value = expandWindow(windowState.value);
+  if (!firstVisible) return;
+  nextTick(() => {
+    const el = document.getElementById(`message-${firstVisible.id}`);
+    if (el) {
+      el.scrollIntoView({ block: "start" });
+    }
+  });
+}
 
 const currentToolCalls = computed(() => {
   const msgs = chatStore.messages;
@@ -155,6 +216,14 @@ watch(currentToolCalls, () => {
       <img src="/logo.png" alt="Hermes" class="empty-logo" />
       <p>{{ t("chat.emptyState") }}</p>
     </div>
+    <button
+      v-if="showOlderButton"
+      class="show-older-btn"
+      type="button"
+      @click="handleShowOlder"
+    >
+      {{ t("chat.showOlder", { n: olderCount }) }}
+    </button>
     <MessageItem
       v-for="msg in displayMessages"
       :key="msg.id"
@@ -181,6 +250,7 @@ watch(currentToolCalls, () => {
               stroke="currentColor"
               stroke-width="1.5"
               class="tool-call-icon"
+              aria-hidden="true"
             >
               <path
                 d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
@@ -193,6 +263,7 @@ watch(currentToolCalls, () => {
             <span
               v-if="tc.toolStatus === 'running'"
               class="tool-call-spinner"
+              aria-hidden="true"
             ></span>
             <span v-if="tc.toolStatus === 'error'" class="tool-call-error">{{
               t("chat.error")
@@ -234,6 +305,33 @@ watch(currentToolCalls, () => {
 
   .dark & {
     background-color: #333333;
+  }
+}
+
+.show-older-btn {
+  align-self: center;
+  padding: 5px 14px;
+  font-size: 12px;
+  color: $text-secondary;
+  background: $bg-card;
+  border: 1px solid $border-light;
+  border-radius: $radius-md;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+
+  &:hover {
+    background: $bg-secondary;
+    color: $text-primary;
+  }
+
+  .dark & {
+    background: #3a3a3a;
+    border-color: rgba(255, 255, 255, 0.12);
+
+    &:hover {
+      background: #444444;
+    }
   }
 }
 

@@ -319,6 +319,12 @@ export default {
     exportJson: 'Export as JSON',
     exportMarkdown: 'Export as Markdown',
     exportFailed: 'Export failed',
+    showOlder: 'Show {n} older messages',
+    removeAttachment: 'Remove attachment',
+    cancelQueued: 'Cancel queued message',
+    chatInput: 'Message input',
+    budgetWarning: 'Budget {pct}% used',
+    budgetBlocked: 'Session budget exceeded — engine may refuse SOUL invocations (GOLEM_BUDGET_OVERRIDE=1)',
   },
 
   // Jobs

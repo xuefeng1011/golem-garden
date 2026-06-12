@@ -319,6 +319,12 @@ export default {
     exportJson: 'JSON으로 내보내기',
     exportMarkdown: 'Markdown으로 내보내기',
     exportFailed: '내보내기 실패',
+    showOlder: '이전 메시지 {n}개 보기',
+    removeAttachment: '첨부 제거',
+    cancelQueued: '대기 메시지 취소',
+    chatInput: '메시지 입력',
+    budgetWarning: '예산 {pct}% 사용',
+    budgetBlocked: '세션 예산 초과 — 엔진이 SOUL 소환을 거부할 수 있습니다 (GOLEM_BUDGET_OVERRIDE=1)',
   },
 
   // 예약 작업

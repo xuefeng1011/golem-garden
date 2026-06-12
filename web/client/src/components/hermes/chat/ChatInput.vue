@@ -236,8 +236,8 @@ function isImage(type: string): boolean {
       <span class="queued-label">{{ t('chat.queuedCount', { n: chatStore.queuedMessages.length }) }}</span>
       <span v-for="q in chatStore.queuedMessages" :key="q.id" class="queued-chip" :title="q.content">
         {{ queuePreview(q) }}
-        <button class="queued-cancel" :title="t('common.cancel')" @click="chatStore.cancelQueuedMessage(q.id)">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <button class="queued-cancel" :title="t('common.cancel')" :aria-label="t('chat.cancelQueued')" @click="chatStore.cancelQueuedMessage(q.id)">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </span>
     </div>
@@ -246,9 +246,9 @@ function isImage(type: string): boolean {
     <div class="input-top-bar">
       <NTooltip trigger="hover">
         <template #trigger>
-          <NButton quaternary size="tiny" @click="handleAttachClick" circle>
+          <NButton quaternary size="tiny" :aria-label="t('chat.attachFiles')" @click="handleAttachClick" circle>
             <template #icon>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             </template>
           </NButton>
         </template>
@@ -287,8 +287,8 @@ function isImage(type: string): boolean {
             <span class="file-size">{{ formatSize(att.size) }}</span>
           </div>
         </template>
-        <button class="attachment-remove" @click="removeAttachment(att.id)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <button class="attachment-remove" :aria-label="t('chat.removeAttachment')" @click="removeAttachment(att.id)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
     </div>
@@ -314,6 +314,7 @@ function isImage(type: string): boolean {
         class="input-textarea"
         :style="inputHeight ? { minHeight: inputHeight + 'px' } : undefined"
         :placeholder="t('chat.inputPlaceholder')"
+        :aria-label="t('chat.chatInput')"
         rows="1"
         @keydown="handleKeydown"
         @compositionstart="handleCompositionStart"
