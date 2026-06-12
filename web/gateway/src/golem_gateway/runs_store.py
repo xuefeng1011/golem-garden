@@ -151,6 +151,57 @@ def persist_run(
 
 
 # ---------------------------------------------------------------------------
+# Meta cache (G3) — directory-signature-keyed, for console aggregation
+# ---------------------------------------------------------------------------
+
+# {runs_dir: (file_count, max_mtime, metas)}
+_meta_cache: dict[Path, tuple[int, float, list[dict]]] = {}
+
+
+def load_all_metas(runs_dir: Path) -> list[dict]:
+    """Return all parsed *.meta.json dicts from runs_dir, newest-first.
+
+    Uses a directory-signature cache keyed on (file_count, max_mtime) so a
+    single new meta file correctly busts the cache without re-stat-ing every
+    file on every request (G3 pattern, mirrors load_trace_lines).
+
+    Returns [] if runs_dir does not exist.
+    """
+    if not runs_dir.is_dir():
+        return []
+
+    resolved = runs_dir.resolve()
+
+    try:
+        meta_files = sorted(
+            resolved.glob("*.meta.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError as exc:
+        logger.warning("load_all_metas: cannot list %s: %s", resolved, exc)
+        return []
+
+    file_count = len(meta_files)
+    max_mtime = meta_files[0].stat().st_mtime if meta_files else 0.0
+
+    cached = _meta_cache.get(resolved)
+    if cached and cached[0] == file_count and cached[1] == max_mtime:
+        return cached[2]
+
+    metas: list[dict] = []
+    for meta_path in meta_files:
+        try:
+            data = json.loads(meta_path.read_text(encoding="utf-8", errors="replace"))
+            metas.append(data)
+        except Exception:
+            continue
+
+    _meta_cache[resolved] = (file_count, max_mtime, metas)
+    return metas
+
+
+# ---------------------------------------------------------------------------
 # Trace cache (G3) — mtime-keyed, mirrors activity._cached_load_growth_log
 # ---------------------------------------------------------------------------
 

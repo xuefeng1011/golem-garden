@@ -6,7 +6,6 @@ GET /v1/projects/{project_id}/runs/{run_id}/trace?offset=0&limit=200
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from golem_gateway.registry import ProjectRegistry
-from golem_gateway.runs_store import load_trace_lines
+from golem_gateway.runs_store import load_all_metas, load_trace_lines
 
 router = APIRouter(prefix="/v1/projects/{project_id}", tags=["traces"])
 
@@ -85,19 +84,11 @@ async def list_runs(
     """List completed run metas sorted by mtime descending."""
     project_path = await _resolve_project_path(project_id, registry)
     runs_dir = project_path / ".golem" / "runs"
-    if not runs_dir.is_dir():
-        return []
-
-    meta_files = sorted(
-        runs_dir.glob("*.meta.json"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
+    all_metas = load_all_metas(runs_dir)
 
     results: list[RunMeta] = []
-    for meta_path in meta_files[offset : offset + limit]:
+    for data in all_metas[offset : offset + limit]:
         try:
-            data = json.loads(meta_path.read_text(encoding="utf-8", errors="replace"))
             results.append(RunMeta(**data))
         except Exception:
             continue

@@ -317,6 +317,18 @@ class SessionManager:
     async def get_run(self, run_id: str) -> Run | None:
         return self._runs.get(run_id)
 
+    def active_runs_for(self, project_id: str) -> list[Run]:
+        """Return all active (not-done) runs belonging to project_id.
+
+        Intended for the console aggregation endpoint (G10).  Uses a snapshot
+        of the internal dict so the caller never touches private state directly.
+        """
+        return [
+            run
+            for run in self._runs.values()
+            if run.project_id == project_id and not run.done.is_set()
+        ]
+
     async def terminate_run(self, run_id: str) -> None:
         """Kill subprocess, cancel tasks, evict from _runs. Idempotent."""
         async with self._lock:
