@@ -67,6 +67,11 @@ const router = createRouter({
       name: 'hermes.meta',
       component: () => import('@/views/hermes/MetaView.vue'),
     },
+    {
+      path: '/hermes/console',
+      name: 'hermes.console',
+      component: () => import('@/views/hermes/ConsoleView.vue'),
+    },
   ],
 })
 

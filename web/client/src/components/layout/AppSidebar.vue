@@ -188,6 +188,14 @@ function openChangelog() {
             </svg>
             <span>{{ t("sidebar.usage") }}</span>
           </button>
+          <button class="nav-item" :class="{ active: selectedKey === 'hermes.console' }" @click="handleNav('hermes.console')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <polyline points="8 10 5 13 8 16" />
+              <line x1="12" y1="16" x2="19" y2="16" />
+            </svg>
+            <span>{{ t("sidebar.console") }}</span>
+          </button>
         </div>
       </div>
 
