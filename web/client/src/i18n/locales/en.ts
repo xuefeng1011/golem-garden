@@ -222,7 +222,7 @@ export default {
     disconnected: 'Disconnected',
     collapse: 'Collapse menu',
     expand: 'Expand menu',
-    updateTip: 'Run "hermes-web-ui update" in terminal to update',
+    updateTip: 'Update from the terminal to get the latest version',
     updateVersion: 'Upgrade to v{version}',
     updating: 'Updating...',
     updateSuccess: 'Update complete, please restart the server',
@@ -236,7 +236,7 @@ export default {
   // Chat
   chat: {
     contextRemaining: 'remaining',
-    emptyState: 'Start a conversation with Hermes Agent',
+    emptyState: 'Start a conversation with GolemGarden',
     inputPlaceholder: 'Type a message... (Enter to send, Shift+Enter for new line)',
     attachFiles: 'Attach files',
     stop: 'Stop',

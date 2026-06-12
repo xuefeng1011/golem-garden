@@ -1,7 +1,7 @@
 export default {
   // 登录
   login: {
-    title: 'Hermes Web UI',
+    title: 'GolemGarden Web UI',
     description: '输入访问令牌以继续。令牌在服务端启动日志中查看。',
     placeholder: '访问令牌',
     submit: '登录',
@@ -105,7 +105,7 @@ export default {
   // 对话
   chat: {
     contextRemaining: '剩余',
-    emptyState: '开始与 Hermes Agent 对话',
+    emptyState: '开始与 GolemGarden 对话',
     inputPlaceholder: '输入消息... (Enter 发送，Shift+Enter 换行)',
     attachFiles: '添加附件',
     stop: '停止',

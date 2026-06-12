@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useUsageStore } from '@/stores/hermes/usage'
+import { fmtUsd } from '@/utils/format'
 
 const { t } = useI18n()
 const usageStore = useUsageStore()
@@ -11,11 +12,7 @@ function formatTokens(n: number): string {
   return String(n)
 }
 
-function formatCost(n: number): string {
-  if (n === 0) return '$0.00'
-  if (n < 0.01) return '<$0.01'
-  return '$' + n.toFixed(2)
-}
+const formatCost = fmtUsd
 </script>
 
 <template>
