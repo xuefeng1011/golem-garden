@@ -56,6 +56,19 @@ class MessageDeltaEvent(HermesEvent):
     text: str
 
 
+class ThinkingDeltaEvent(HermesEvent):
+    """Extended-thinking content emitted by the model before its reply.
+
+    Source shape (claude stream-json, assistant message content block):
+        {"type": "thinking", "thinking": "<text>", "signature": "..."}
+    The signature is intentionally dropped — it is only meaningful for
+    round-tripping blocks back to the API, not for display.
+    """
+
+    event: Literal["message.thinking"] = "message.thinking"
+    text: str
+
+
 class ToolStartedEvent(HermesEvent):
     event: Literal["tool.started"] = "tool.started"
     tool_use_id: str
@@ -93,7 +106,7 @@ def parse_stream_event(raw: dict[str, Any], context: RunContext) -> list[HermesE
     Rules:
     - type=system, subtype=hook_started|hook_response  → ignored (noise)
     - type=system, subtype=init                        → SessionInitEvent
-    - type=assistant (message with content blocks)     → MessageDeltaEvent / ToolStartedEvent per block
+    - type=assistant (message with content blocks)     → MessageDeltaEvent / ThinkingDeltaEvent / ToolStartedEvent per block
     - type=user (message with tool_result blocks)      → ToolCompletedEvent per block
     - type=result                                      → RunCompletedEvent
     - anything else                                    → DEBUG log, empty list
@@ -137,6 +150,11 @@ def parse_stream_event(raw: dict[str, Any], context: RunContext) -> list[HermesE
                 text = str(block.get("text") or "")
                 if text:
                     events.append(MessageDeltaEvent(**base, text=text))
+
+            elif block_type == "thinking":
+                thinking_text = str(block.get("thinking") or "")
+                if thinking_text:
+                    events.append(ThinkingDeltaEvent(**base, text=thinking_text))
 
             elif block_type == "tool_use":
                 events.append(

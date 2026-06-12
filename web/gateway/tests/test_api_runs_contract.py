@@ -742,3 +742,62 @@ async def test_persist_growth_log_no_terminal_result_defaults_to_fail(
 
     # Should default to "fail" per line 219 of api_runs.py
     assert entry["result"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# Per-run model override (C4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_model_override_rejects_unknown_model(registered_project) -> None:
+    """model='gpt-5' → 422 (whitelist: opus/sonnet/haiku or claude-*)."""
+    project_id, _ = registered_project
+    from httpx import ASGITransport
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            f"/v1/projects/{project_id}/runs",
+            json={"input": "hello", "soul_id": "ryn", "model": "gpt-5"},
+        )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["haiku", "claude-sonnet-4-6"])
+async def test_model_override_forwarded_to_spawn(
+    registered_project, monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    """Valid model value must reach SessionManager.spawn_run(model=...)."""
+    project_id, _ = registered_project
+    valid_session_id = str(uuid.uuid4())
+    mock_run = _make_mock_run(valid_session_id)
+    captured: dict = {}
+
+    async def fake_spawn_run(self, **kwargs):
+        captured.update(kwargs)
+        return mock_run
+
+    monkeypatch.setattr(SessionManager, "spawn_run", fake_spawn_run)
+
+    soul_detail = _make_minimal_soul_detail()
+    with patch("golem_gateway.souls.get_soul_by_id", return_value=soul_detail):
+        with patch("golem_gateway.sessions_db.get_session_store") as mock_store_fn:
+            mock_store = MagicMock()
+            mock_store.get_user_assistant_count.return_value = 0
+            mock_store.upsert_session.return_value = None
+            mock_store.add_message.return_value = None
+            mock_store_fn.return_value = mock_store
+
+            from httpx import ASGITransport
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    f"/v1/projects/{project_id}/runs",
+                    json={"input": "hello", "soul_id": "ryn", "model": model},
+                )
+
+    assert resp.status_code == 200
+    assert captured.get("model") == model

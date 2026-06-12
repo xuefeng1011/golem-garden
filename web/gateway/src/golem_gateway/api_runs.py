@@ -54,6 +54,22 @@ class RunRequest(BaseModel):
     session_id: str | None = None
     soul_id: str
     history: list[HistoryTurn] = Field(default_factory=list)
+    # Per-run model override (C4). The client has always sent this field
+    # (appStore.selectedModel) — the gateway previously ignored it.
+    # Allowed: alias (opus/sonnet/haiku) or full claude-* model id,
+    # mirroring lib/agent-runner.sh _map_model. None/"" → SOUL/CLI default.
+    model: str | None = None
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        if v in {"opus", "sonnet", "haiku"} or v.startswith("claude-"):
+            return v
+        raise ValueError(
+            "model must be one of opus/sonnet/haiku or a claude-* model id"
+        )
 
     @field_validator("soul_id")
     @classmethod
@@ -155,6 +171,7 @@ async def create_run(
             project_path=project_path,
             project_id=project_id,
             prior_turn_count=prior_turn_count,
+            model=body.model,
         )
     except Exception as exc:
         # Spawn failed before any user/assistant rows existed for this session.

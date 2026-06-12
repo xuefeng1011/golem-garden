@@ -169,6 +169,7 @@ class SessionManager:
         project_path: "Path",
         project_id: str,
         prior_turn_count: int | None = None,
+        model: str | None = None,
     ) -> Run:
         """Create a Run, spawn the subprocess, and begin draining stdout.
 
@@ -248,6 +249,8 @@ class SessionManager:
             CLAUDE_CMD,
             *CLAUDE_ARGS_BASE,
             *session_args,
+            # Per-run model override (C4) — RunRequest 가 화이트리스트 검증함
+            *(["--model", model] if model else []),
             "--append-system-prompt",
             system_prompt,
             "--",
