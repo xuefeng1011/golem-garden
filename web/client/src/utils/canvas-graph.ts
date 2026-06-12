@@ -1,0 +1,314 @@
+/**
+ * canvas-graph.ts — Pure graph builder for CanvasView
+ * G7: data fields contain only scalars (id, label, numbers) — no large objects
+ * G9: dagre layout is pre-computed once at data load time, not on drag/events
+ */
+import dagre from 'dagre'
+import type { RunMeta } from '@/api/hermes/console'
+import type { MailboxMessage } from '@/api/hermes/souls'
+import type { Mission } from '@/api/hermes/missions'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface GraphNode {
+  id: string
+  type: 'soul' | 'run' | 'session' | 'mission' | 'task'
+  position: { x: number; y: number }
+  data: GraphNodeData
+}
+
+export interface GraphNodeData {
+  label: string
+  nodeType: 'soul' | 'run' | 'session' | 'mission' | 'task'
+  // soul node extras
+  runCount?: number
+  successRate?: number
+  totalCost?: number
+  // run node extras
+  runId?: string
+  soul?: string
+  result?: string
+  durationMs?: number
+  costUsd?: number
+  model?: string
+  tsStart?: string
+  // session node extras
+  sessionId?: string
+  childCount?: number
+  // mission/task extras
+  missionId?: string
+  status?: string
+  taskIdx?: number
+}
+
+export interface GraphEdge {
+  id: string
+  source: string
+  target: string
+  label?: string
+}
+
+export interface GraphData {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+
+export function layoutWithDagre(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  direction: 'TB' | 'LR' = 'TB',
+): GraphNode[] {
+  if (nodes.length === 0) return nodes
+
+  const g = new dagre.graphlib.Graph()
+  g.setDefaultEdgeLabel(() => ({}))
+  g.setGraph({ rankdir: direction, nodesep: 60, ranksep: 80, marginx: 20, marginy: 20 })
+
+  for (const node of nodes) {
+    g.setNode(node.id, { width: 180, height: 60 })
+  }
+
+  for (const edge of edges) {
+    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+      g.setEdge(edge.source, edge.target)
+    }
+  }
+
+  dagre.layout(g)
+
+  return nodes.map((node) => {
+    const pos = g.node(node.id)
+    return {
+      ...node,
+      position: {
+        x: pos ? pos.x - 90 : node.position.x,
+        y: pos ? pos.y - 30 : node.position.y,
+      },
+    }
+  })
+}
+
+// ── Execution Flow ────────────────────────────────────────────────────────────
+
+const MAX_RUNS_PER_SOUL = 10
+
+/**
+ * Build execution flow graph:
+ * - SOUL nodes with aggregated stats (run count, success rate, cost)
+ * - Recent run child nodes (max MAX_RUNS_PER_SOUL per soul, collapsed by default)
+ * - Mailbox edges from→to with message count label
+ */
+export function buildExecutionFlow(
+  runs: RunMeta[],
+  mailboxEntries: MailboxMessage[],
+): GraphData {
+  // Group runs by soul
+  const bySoul = new Map<string, RunMeta[]>()
+  for (const run of runs) {
+    const soul = run.soul || 'unknown'
+    const list = bySoul.get(soul) ?? []
+    list.push(run)
+    bySoul.set(soul, list)
+  }
+
+  const nodes: GraphNode[] = []
+  const edges: GraphEdge[] = []
+
+  // Soul nodes
+  for (const [soul, soulRuns] of bySoul) {
+    const successCount = soulRuns.filter((r) => r.result === 'success').length
+    const successRate = soulRuns.length > 0 ? successCount / soulRuns.length : 0
+    const totalCost = soulRuns.reduce((acc, r) => acc + (r.cost_usd ?? 0), 0)
+
+    nodes.push({
+      id: `soul__${soul}`,
+      type: 'soul',
+      position: { x: 0, y: 0 },
+      data: {
+        label: soul,
+        nodeType: 'soul',
+        runCount: soulRuns.length,
+        successRate: Math.round(successRate * 100),
+        totalCost,
+        soul,
+      },
+    })
+
+    // Recent run child nodes (max MAX_RUNS_PER_SOUL, sorted newest first)
+    const sorted = [...soulRuns].sort(
+      (a, b) => new Date(b.ts_start).getTime() - new Date(a.ts_start).getTime(),
+    )
+    const recentRuns = sorted.slice(0, MAX_RUNS_PER_SOUL)
+
+    for (const run of recentRuns) {
+      const runNodeId = `run__${run.run_id}`
+      nodes.push({
+        id: runNodeId,
+        type: 'run',
+        position: { x: 0, y: 0 },
+        data: {
+          label: `${run.run_id.slice(0, 8)} (${run.result})`,
+          nodeType: 'run',
+          runId: run.run_id,
+          soul: run.soul,
+          result: run.result,
+          durationMs: run.duration_ms,
+          costUsd: run.cost_usd,
+          model: run.model,
+          tsStart: run.ts_start,
+        },
+      })
+      edges.push({
+        id: `e__soul__${soul}__${run.run_id}`,
+        source: `soul__${soul}`,
+        target: runNodeId,
+      })
+    }
+  }
+
+  // Mailbox edges: aggregate by from→to pair
+  const mailEdgeCounts = new Map<string, number>()
+  for (const msg of mailboxEntries) {
+    if (!msg.from || !msg.to) continue
+    const key = `${msg.from}|${msg.to}`
+    mailEdgeCounts.set(key, (mailEdgeCounts.get(key) ?? 0) + 1)
+  }
+
+  for (const [key, count] of mailEdgeCounts) {
+    const [from, to] = key.split('|')
+    const srcId = `soul__${from}`
+    const tgtId = `soul__${to}`
+    const srcExists = nodes.some((n) => n.id === srcId)
+    const tgtExists = nodes.some((n) => n.id === tgtId)
+    if (srcExists && tgtExists) {
+      edges.push({
+        id: `mail__${key}`,
+        source: srcId,
+        target: tgtId,
+        label: `${count}`,
+      })
+    }
+  }
+
+  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  return { nodes: laidOut, edges }
+}
+
+// ── Mission DAG ───────────────────────────────────────────────────────────────
+
+/**
+ * Build a DAG for a single mission: mission node → task nodes in idx order
+ */
+export function buildMissionDag(mission: Mission): GraphData {
+  const nodes: GraphNode[] = []
+  const edges: GraphEdge[] = []
+
+  // Mission root node
+  const missionNodeId = `mission__${mission.id}`
+  nodes.push({
+    id: missionNodeId,
+    type: 'mission',
+    position: { x: 0, y: 0 },
+    data: {
+      label: mission.goal.length > 60 ? mission.goal.slice(0, 57) + '…' : mission.goal,
+      nodeType: 'mission',
+      missionId: mission.id,
+      status: mission.status,
+    },
+  })
+
+  // Sort tasks by idx
+  const tasks = [...mission.tasks].sort((a, b) => a.idx - b.idx)
+
+  let prevNodeId = missionNodeId
+  for (const task of tasks) {
+    const taskNodeId = `task__${mission.id}__${task.idx}`
+    nodes.push({
+      id: taskNodeId,
+      type: 'task',
+      position: { x: 0, y: 0 },
+      data: {
+        label: task.task.length > 50 ? task.task.slice(0, 47) + '…' : task.task,
+        nodeType: 'task',
+        missionId: mission.id,
+        taskIdx: task.idx,
+        soul: task.soul,
+        status: task.status,
+      },
+    })
+    edges.push({
+      id: `e__task__${mission.id}__${task.idx}`,
+      source: prevNodeId,
+      target: taskNodeId,
+    })
+    prevNodeId = taskNodeId
+  }
+
+  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  return { nodes: laidOut, edges }
+}
+
+// ── Session Tree ──────────────────────────────────────────────────────────────
+
+/**
+ * Build a session tree graph:
+ * - Session nodes (grouped by session_id)
+ * - Run child nodes under each session
+ */
+export function buildSessionTree(runs: RunMeta[]): GraphData {
+  const nodes: GraphNode[] = []
+  const edges: GraphEdge[] = []
+
+  const bySession = new Map<string, RunMeta[]>()
+  for (const run of runs) {
+    const sid = run.session_id || 'no-session'
+    const list = bySession.get(sid) ?? []
+    list.push(run)
+    bySession.set(sid, list)
+  }
+
+  for (const [sid, sessionRuns] of bySession) {
+    const sessionNodeId = `session__${sid}`
+    nodes.push({
+      id: sessionNodeId,
+      type: 'session',
+      position: { x: 0, y: 0 },
+      data: {
+        label: `Session ${sid.slice(0, 8)}`,
+        nodeType: 'session',
+        sessionId: sid,
+        childCount: sessionRuns.length,
+      },
+    })
+
+    for (const run of sessionRuns) {
+      const runNodeId = `run__${run.run_id}`
+      nodes.push({
+        id: runNodeId,
+        type: 'run',
+        position: { x: 0, y: 0 },
+        data: {
+          label: `${run.soul} (${run.result})`,
+          nodeType: 'run',
+          runId: run.run_id,
+          soul: run.soul,
+          result: run.result,
+          durationMs: run.duration_ms,
+          costUsd: run.cost_usd,
+          model: run.model,
+          tsStart: run.ts_start,
+        },
+      })
+      edges.push({
+        id: `e__session__${sid}__${run.run_id}`,
+        source: sessionNodeId,
+        target: runNodeId,
+      })
+    }
+  }
+
+  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  return { nodes: laidOut, edges }
+}

@@ -72,6 +72,11 @@ const router = createRouter({
       name: 'hermes.console',
       component: () => import('@/views/hermes/ConsoleView.vue'),
     },
+    {
+      path: '/hermes/canvas',
+      name: 'hermes.canvas',
+      component: () => import('@/views/hermes/CanvasView.vue'),
+    },
   ],
 })
 

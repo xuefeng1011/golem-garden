@@ -237,6 +237,7 @@ export default {
     settings: '설정',
     forge: 'Forge',
     console: '콘솔',
+    canvas: '캔버스',
     connected: '연결됨',
     disconnected: '연결 끊김',
     collapse: '메뉴 접기',
@@ -903,6 +904,20 @@ export default {
     colCount: '횟수',
     colTools: '도구',
     loadMoreLines: '더 불러오기 ({loaded}/{total} 라인)',
+  },
+
+  // 캔버스 (Phase C)
+  canvas: {
+    title: '캔버스',
+    viewFlow: '실행 흐름',
+    viewMission: '미션 DAG',
+    viewSession: '세션 트리',
+    selectMission: '미션 선택…',
+    refresh: '새로고침',
+    noProject: '프로젝트를 먼저 선택하세요',
+    noProjectDescription: '프로젝트를 선택하면 실행 그래프를 시각화할 수 있습니다',
+    emptyTitle: '표시할 데이터가 없습니다',
+    emptyDescription: 'forge 명령을 실행하면 실행 데이터가 생성됩니다',
   },
 
   // 변경 이력

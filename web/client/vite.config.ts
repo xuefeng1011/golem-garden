@@ -12,4 +12,15 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // G9: vue-flow + dagre isolated from main bundle
+        manualChunks(id) {
+          if (id.includes('@vue-flow')) return 'vue-flow'
+          if (id.includes('dagre')) return 'dagre'
+        },
+      },
+    },
+  },
 })
