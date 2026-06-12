@@ -16,6 +16,7 @@ from golem_gateway.api_sessions import router as sessions_router
 from golem_gateway.api_skills import global_router as global_skills_router
 from golem_gateway.api_skills import router as skills_router
 from golem_gateway.api_souls import router as souls_router
+from golem_gateway.api_traces import router as traces_router
 from golem_gateway.config import CORS_ORIGINS, HOST, PORT
 from golem_gateway.forge_runner import ForgeRunner
 from golem_gateway.registry import ProjectRegistry
@@ -60,6 +61,7 @@ app.include_router(global_skills_router)
 app.include_router(runs_router)
 app.include_router(sessions_router)
 app.include_router(forge_router)
+app.include_router(traces_router)
 
 
 @app.get("/health", tags=["system"])

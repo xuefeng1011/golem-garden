@@ -160,3 +160,16 @@ ALLOWED_FORGE_COMMANDS: frozenset[str] = frozenset({
     "log-add",
     "overview", "ov",
 })
+
+# ---------------------------------------------------------------------------
+# Phase A: Run trajectory persistence (OBSERVABILITY_PLAN)
+# ---------------------------------------------------------------------------
+
+# Number of completed runs to keep per project (rolling GC).
+RUNS_KEEP: int = int(os.environ.get("GOLEM_RUNS_KEEP", "200"))
+
+# Per-run raw JSONL byte cap (512 KiB).
+RUN_RAW_CAP_BYTES: int = 512 * 1024
+
+# Set to "1" to disable all run persistence (useful for CI/testing).
+RUNS_DISABLE: bool = os.environ.get("GOLEM_RUNS_DISABLE") == "1"
