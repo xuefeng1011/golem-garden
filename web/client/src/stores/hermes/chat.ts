@@ -2,6 +2,8 @@ import { startRun, streamRunEvents, type ChatMessage, type RunEvent } from '@/ap
 import { deleteSession as deleteSessionApi, fetchSession, fetchSessions, fetchSessionUsageSingle, type HermesMessage, type SessionSummary } from '@/api/hermes/sessions'
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
+import { i18n } from '@/i18n'
+import { notifyWhenHidden } from '@/utils/notify'
 import { useAppStore } from './app'
 import { useProfilesStore } from './profiles'
 
@@ -947,6 +949,15 @@ export const useChatStore = defineStore('chat', () => {
               }
               cleanup()
               updateSessionTitle(sid)
+              // Announce completion when the tab is backgrounded — the user
+              // switched away while waiting; a silent finish is easy to miss.
+              {
+                const doneSession = sessions.value.find(s => s.id === sid)
+                void notifyWhenHidden(
+                  i18n.global.t('chat.notifyRunDone'),
+                  doneSession?.title || 'GolemGarden',
+                )
+              }
               // the in-flight marker. If the browser is reloading right now
               // and kills us between the two localStorage writes, we want
               // the next page load to still see in-flight === true (so
@@ -1058,6 +1069,17 @@ export const useChatStore = defineStore('chat', () => {
       clearInFlight(sid)
       stopPolling(sid)
     }
+  }
+
+  // Browser tab title mirrors the active session title.
+  if (typeof document !== 'undefined') {
+    watch(
+      () => activeSession.value?.title,
+      (title) => {
+        document.title = title ? `${title} — GolemGarden` : 'GolemGarden'
+      },
+      { immediate: true },
+    )
   }
 
   // Tab visibility: re-sync when returning to foreground

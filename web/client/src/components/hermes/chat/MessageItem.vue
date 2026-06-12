@@ -5,6 +5,8 @@ import { useI18n } from "vue-i18n";
 import { useMessage } from "naive-ui";
 import { useProfilesStore } from "@/stores/hermes/profiles";
 import { useChatStore } from "@/stores/hermes/chat";
+import { copyToClipboard } from "@/utils/clipboard";
+import { repairUnclosedFences } from "@/utils/fence-repair";
 import MarkdownRenderer from "./MarkdownRenderer.vue";
 import SoulHandoffCard from "./SoulHandoffCard.vue";
 import {
@@ -32,6 +34,37 @@ const currentSoul = computed(() => {
 
 const isSystem = computed(() => props.message.role === "system");
 const toolExpanded = ref(false);
+
+// Streaming-only fence repair: while a reply is still streaming, an opening
+// ``` may not have its closing fence yet — temporarily close it so the
+// partial render doesn't swallow the rest of the message into a code block.
+const renderContent = computed(() =>
+  props.message.isStreaming
+    ? repairUnclosedFences(props.message.content)
+    : props.message.content,
+);
+
+// Whole-message copy (assistant bubbles): copies the raw markdown source.
+const messageCopied = ref(false);
+let messageCopiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+const showCopyButton = computed(
+  () =>
+    props.message.role === "assistant" &&
+    !props.message.isStreaming &&
+    !!props.message.content,
+);
+
+async function handleCopyMessage(): Promise<void> {
+  const ok = await copyToClipboard(props.message.content || "");
+  if (!ok) return;
+  messageCopied.value = true;
+  if (messageCopiedTimer) clearTimeout(messageCopiedTimer);
+  messageCopiedTimer = setTimeout(() => {
+    messageCopied.value = false;
+    messageCopiedTimer = null;
+  }, 1500);
+}
 
 const timeStr = computed(() => {
   const d = new Date(props.message.timestamp);
@@ -317,8 +350,46 @@ const renderedToolResult = computed(() => {
             </div>
             <MarkdownRenderer
               v-if="message.content"
-              :content="message.content"
+              :content="renderContent"
             />
+
+            <button
+              v-if="showCopyButton"
+              type="button"
+              class="msg-copy-btn"
+              :class="{ copied: messageCopied }"
+              :title="messageCopied ? t('chat.messageCopied') : t('chat.copyMessage')"
+              :aria-label="t('chat.copyMessage')"
+              @click="handleCopyMessage"
+            >
+              <svg
+                v-if="messageCopied"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <svg
+                v-else
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
 
             <span v-if="message.isStreaming && !message.content" class="streaming-dots">
               <span></span><span></span><span></span>
@@ -413,11 +484,45 @@ const renderedToolResult = computed(() => {
 }
 
 .message-bubble {
+  position: relative;
   padding: 10px 14px;
   font-size: 14px;
   line-height: 1.65;
   word-break: break-word;
   border-radius: 10px;
+
+  &:hover .msg-copy-btn,
+  &:focus-within .msg-copy-btn {
+    opacity: 1;
+  }
+}
+
+.msg-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background: $msg-assistant-bg;
+  color: $text-muted;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    color: $text-primary;
+  }
+
+  &.copied {
+    color: $success;
+    opacity: 1;
+  }
 }
 
 .msg-attachments {
