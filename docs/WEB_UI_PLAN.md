@@ -51,14 +51,20 @@
 
 **수용 기준**: `npm run build`(vue-tsc 포함) 통과 / `vitest run` 통과(신규 컴포넌트 테스트 포함) / gateway pytest 187 무변동 / 라이트·다크 양쪽 토큰 일관.
 
-## 4. Phase 6 — 후순위 (계획만)
+## 4. Phase 6 — 진행 현황 (2026-06-12 갱신)
 
-1. Forge 명령 인자 입력 폼 (명령별 스키마 정의 → 동적 폼)
-2. Chat: 가상 스크롤(대량 메시지), 파일 업로드 백엔드, 모바일 drawer + 제스처
-3. 에러 유형 체계화 (network/auth/notfound/server 구분 — API 클라이언트 공통층)
-4. Skill-tree·Mailbox 노출 (gateway 기노출 데이터 잔여분)
-5. A11y: WCAG AA 대비 검사, 키보드 내비, 스크린리더 레이블
-6. Circuit breaker UI (budget exceeded 시 실행 차단 표시 — 엔진 P0-3와 연동)
+1. ✅ Forge 명령 인자 입력 폼 (`e3140c7` — commandSchema + 필수 검증)
+2. ◐ Chat: ~~가상 스크롤~~ → **윈도잉으로 대체 구현**(`e55b9ed` 마지막 80개+더보기 — 의존성 0 원칙). **보류**: 파일 업로드 백엔드(게이트웨이 엔드포인트 필요), 모바일 drawer+제스처
+3. ✅ 에러 유형 체계화 (`cffd990` — ApiError 5종 + 뷰별 유형 메시지 + 게이트웨이 힌트)
+4. ✅ Skill-tree·Mailbox 노출 (`cffd990` — SoulDetail 전문화 섹션, Activity 메일박스 토글)
+5. ◐ A11y: 채팅 영역 aria-label/aria-hidden 1차 완료(`e55b9ed`). **보류**: 전 화면 WCAG AA 대비 검사, 키보드 내비 체계화
+6. ✅ Circuit breaker UI (`e55b9ed` — BudgetGuardBanner 80%/100% 2단계, 엔진 P0-3 정합)
+
+### Phase 5/6 동안 함께 들어온 것 (업스트림 체리픽)
+펜스 복구·탭 제목·완료 알림·메시지 복사(`4987a08`), 큐·리사이즈·일괄삭제·export·아웃라인·thinking 표시(`d34f6b9`), per-run 모델 오버라이드(`6a53b27`)
+
+### Phase 7 후보 (미착수)
+파일 업로드 백엔드, 모바일 제스처, 전 화면 A11y 감사, forge mission 칸반 시각화(spec.md+state.json), 세션 트리 UI
 
 ## 5. 원칙 (v1 계승 + 갱신)
 
