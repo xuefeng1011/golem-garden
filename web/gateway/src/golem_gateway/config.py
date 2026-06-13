@@ -159,6 +159,7 @@ ALLOWED_FORGE_COMMANDS: frozenset[str] = frozenset({
     "soul-create", "pack",
     "log-add",
     "overview", "ov",
+    "flow",
 })
 
 # ---------------------------------------------------------------------------
