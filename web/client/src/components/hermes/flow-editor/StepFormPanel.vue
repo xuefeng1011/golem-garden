@@ -27,6 +27,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update', patch: Partial<EditorNodeData>): void
   (e: 'close'): void
+  (e: 'delete'): void
+  (e: 'view-result', runId: string): void
 }>()
 
 const { t } = useI18n()
@@ -159,6 +161,23 @@ function onGotoTargetChange(val: string) {
         />
       </NFormItem>
     </NForm>
+
+    <!-- 액션 버튼 -->
+    <div class="panel-actions">
+      <button
+        v-if="data.runId"
+        class="action-btn action-btn--result"
+        @click="emit('view-result', data.runId!)"
+      >
+        {{ t('flowEditor.btnViewResult') }}
+      </button>
+      <button
+        class="action-btn action-btn--delete"
+        @click="emit('delete')"
+      >
+        {{ t('flowEditor.btnDeleteStep') }}
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -212,5 +231,47 @@ function onGotoTargetChange(val: string) {
 .panel-form {
   padding: 14px;
   flex: 1;
+}
+
+.panel-actions {
+  padding: 10px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid $border-color;
+  flex-shrink: 0;
+}
+
+.action-btn {
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: $radius-sm;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background $transition-fast, border-color $transition-fast, color $transition-fast;
+
+  &--result {
+    background: rgba(var(--accent-primary-rgb), 0.08);
+    border-color: rgba(var(--accent-primary-rgb), 0.25);
+    color: $accent-primary;
+
+    &:hover {
+      background: rgba(var(--accent-primary-rgb), 0.15);
+      border-color: $accent-primary;
+    }
+  }
+
+  &--delete {
+    background: rgba(var(--error-rgb), 0.07);
+    border-color: rgba(var(--error-rgb), 0.2);
+    color: $error;
+
+    &:hover {
+      background: rgba(var(--error-rgb), 0.14);
+      border-color: $error;
+    }
+  }
 }
 </style>

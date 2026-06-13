@@ -26,7 +26,7 @@ export interface GraphNodeData {
   successRate?: number
   totalCost?: number
   // run node extras
-  runId?: string
+  runId?: string | null
   soul?: string
   result?: string
   durationMs?: number
@@ -490,6 +490,7 @@ export interface EditorNodeData extends GraphNodeData {
   approval: boolean
   on_fail: string
   hasError?: boolean
+  runId?: string | null
 }
 
 /**
@@ -547,6 +548,7 @@ export function editorGraphFromFlow(flow: Flow): { nodes: GraphNode[]; edges: Gr
       status: step.status,
       flowId: flow.flow_id,
       onFail: step.on_fail,
+      runId: step.run_id ?? null,
     } as EditorNodeData,
   }))
 

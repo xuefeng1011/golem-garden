@@ -1061,6 +1061,8 @@ export default {
     switchDirtyConfirm: 'Switch',
     progressCount: '{done}/{total} done',
     emptyDescWithFlows: 'Load a saved workflow or start from a template',
+    btnDeleteStep: 'Delete this step',
+    btnViewResult: 'View result',
   },
 
   // Changelog

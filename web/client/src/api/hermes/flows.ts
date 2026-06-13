@@ -8,6 +8,7 @@ export interface FlowStep {
   status: 'pending' | 'waiting_approval' | 'approved' | 'running' | 'done' | 'failed' | 'skipped'
   approval: boolean
   on_fail: string
+  run_id?: string | null
 }
 
 export interface Flow {

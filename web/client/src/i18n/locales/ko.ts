@@ -1002,6 +1002,8 @@ export default {
     switchDirtyConfirm: '전환',
     progressCount: '{done}/{total} 완료',
     emptyDescWithFlows: '저장된 플로우를 불러오거나 템플릿으로 시작하세요',
+    btnDeleteStep: '이 단계 삭제',
+    btnViewResult: '결과 보기',
   },
 
   // 변경 이력

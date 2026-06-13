@@ -5,7 +5,7 @@
  * G8: N8nNode plain div.
  * G9: layout only on load or [자동 정렬] button; never on drag/connect.
  */
-import { shallowRef, ref, computed, watch, markRaw, onUnmounted } from 'vue'
+import { shallowRef, ref, computed, watch, markRaw, onUnmounted, provide } from 'vue'
 import {
   VueFlow,
   useVueFlow,
@@ -25,6 +25,7 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 
 import { useProfilesStore } from '@/stores/hermes/profiles'
+import { useConsoleStore } from '@/stores/hermes/console'
 import { fetchSouls } from '@/api/hermes/souls'
 import { fetchFlows, createFlow, updateFlow, deleteFlow } from '@/api/hermes/flows'
 import type { Flow } from '@/api/hermes/flows'
@@ -42,9 +43,11 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import EditorToolbar from '@/components/hermes/flow-editor/EditorToolbar.vue'
 import StepFormPanel from '@/components/hermes/flow-editor/StepFormPanel.vue'
 import RunPanel from '@/components/hermes/flow-editor/RunPanel.vue'
+import RunDetailDrawer from '@/components/hermes/console/RunDetailDrawer.vue'
 
 const { t } = useI18n()
 const profilesStore = useProfilesStore()
+const consoleStore = useConsoleStore()
 const dialog = useDialog()
 const message = useMessage()
 
@@ -506,12 +509,19 @@ async function refreshFlowStatus() {
 
     // 상태 갱신은 프로그램적 — dirty 켜지지 않게 가드 (G9: dagre 미실행, 위치 보존)
     applyingStatus = true
-    const statusMap = new Map(flow.steps.map((s) => [s.id, s.status]))
+    const stepMap = new Map(flow.steps.map((s) => [s.id, s]))
     nodes.value = nodes.value.map((n) => {
       const d = n.data as EditorNodeData
-      const newStatus = statusMap.get(d.stepId)
-      if (newStatus === undefined) return n
-      return { ...n, data: { ...d, status: newStatus } as EditorNodeData }
+      const step = stepMap.get(d.stepId)
+      if (!step) return n
+      return {
+        ...n,
+        data: {
+          ...d,
+          status: step.status,
+          runId: step.run_id ?? d.runId ?? null,
+        } as EditorNodeData,
+      }
     })
     // running step 으로 들어가는 엣지만 흐름 애니메이션
     const runningIds = new Set(
@@ -576,6 +586,35 @@ function deleteSelected() {
   if (selectedNodeId.value && selNodes.includes(selectedNodeId.value)) {
     selectedNodeId.value = null
   }
+}
+
+// ── Delete node by id (X 버튼 / StepFormPanel 삭제 버튼) ──────────────────────
+function deleteNodeById(nodeId: string) {
+  nodes.value = nodes.value.filter((n) => n.id !== nodeId)
+  edges.value = edges.value.filter(
+    (e) => e.source !== nodeId && e.target !== nodeId,
+  )
+  if (selectedNodeId.value === nodeId) {
+    selectedNodeId.value = null
+  }
+}
+
+// provide — N8nNode 가 inject 해서 X 버튼 클릭 시 호출
+provide('flowEditorDeleteNode', deleteNodeById)
+
+// ── RunDetailDrawer 상태 ──────────────────────────────────────────────────────
+const drawerVisible = ref(false)
+
+async function onViewResult(runId: string) {
+  const pid = profilesStore.activeProfile?.id
+  if (!pid) return
+  drawerVisible.value = true
+  await consoleStore.selectRunById(runId, pid)
+}
+
+function onDrawerClose() {
+  drawerVisible.value = false
+  consoleStore.closeRun()
 }
 
 // ── Connect handler (G9: no re-layout on connect) ────────────────────────────
@@ -753,6 +792,8 @@ onBeforeRouteLeave((_to, _from, next) => {
           :all-step-options="allStepOptions"
           @update="onStepUpdate"
           @close="selectedNodeId = null"
+          @delete="selectedNodeId && deleteNodeById(selectedNodeId)"
+          @view-result="onViewResult"
         />
       </div>
 
@@ -765,6 +806,19 @@ onBeforeRouteLeave((_to, _from, next) => {
         @approve="approve"
         @reject="reject"
         @stop="stopRun"
+      />
+
+      <!-- Step 결과 Drawer -->
+      <RunDetailDrawer
+        :show="drawerVisible"
+        :run="consoleStore.selectedRun"
+        :trace-data="consoleStore.traceData"
+        :trace-loading="consoleStore.traceLoading"
+        :trace-error="consoleStore.traceError"
+        :trace-appending="consoleStore.traceAppending"
+        :project-id="profilesStore.activeProfile?.id ?? ''"
+        @close="onDrawerClose"
+        @load-more="consoleStore.loadMoreTrace(profilesStore.activeProfile?.id ?? '')"
       />
     </template>
   </div>

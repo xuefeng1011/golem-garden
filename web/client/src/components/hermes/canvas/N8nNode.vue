@@ -5,7 +5,7 @@
  * 좌측 아이콘 칩(SOUL 이니셜 또는 타입 아이콘) + 제목 + 부제 + 상태 점.
  * 좌(target)/우(source) Handle 로 좌→우 흐름. 디테일은 클릭 시 NodeInfoPanel.
  */
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import {
   HardwareChipOutline,
@@ -14,13 +14,18 @@ import {
   FlagOutline,
   GitCommitOutline,
   LockClosedOutline,
+  CloseOutline,
 } from '@vicons/ionicons5'
 import type { GraphNodeData } from '@/utils/canvas-graph'
 
 const props = defineProps<{
   data: GraphNodeData
   selected?: boolean
+  id?: string
 }>()
+
+// provide/inject 패턴 — FlowEditorView 에서만 제공, CanvasView 는 null
+const onDelete = inject<((id: string) => void) | null>('flowEditorDeleteNode', null)
 
 // status(있으면) 또는 run 의 result 를 통일된 상태 키로 정규화
 const statusKey = computed(() => {
@@ -98,6 +103,23 @@ const subtitle = computed(() => {
       <LockClosedOutline class="lock-svg" />
     </span>
     <span v-if="statusKey" class="node-dot" :class="`is-${statusKey}`" />
+
+    <!-- runId 힌트 점: 실행 결과가 있는 노드 표시 (done/failed + runId) -->
+    <span
+      v-if="(data as any).runId && (statusKey === 'done' || statusKey === 'failed')"
+      class="node-result-dot"
+      title="Result available"
+    />
+
+    <!-- 삭제 버튼: FlowEditorView 에서만 inject 제공, CanvasView 는 미표시 -->
+    <button
+      v-if="onDelete && id"
+      class="node-delete-btn"
+      :title="'Delete step'"
+      @click.stop="onDelete(id)"
+    >
+      <CloseOutline class="delete-svg" />
+    </button>
 
     <Handle type="source" :position="Position.Right" class="n8n-handle" />
   </div>
@@ -236,5 +258,53 @@ const subtitle = computed(() => {
   height: 8px;
   background: $bg-card;
   border: 1.5px solid $border-color;
+}
+
+// ── 삭제 버튼 ─────────────────────────────────────────────
+.node-delete-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: $bg-card;
+  border: 1px solid $border-color;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: $text-muted;
+  opacity: 0;
+  transition: opacity $transition-fast, color $transition-fast, border-color $transition-fast;
+  padding: 0;
+  z-index: 20;
+
+  &:hover {
+    color: $error;
+    border-color: $error;
+  }
+}
+
+.n8n-node:hover .node-delete-btn,
+.n8n-node.selected .node-delete-btn {
+  opacity: 1;
+}
+
+.delete-svg {
+  width: 10px;
+  height: 10px;
+}
+
+// ── runId 결과 힌트 점 ────────────────────────────────────
+.node-result-dot {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: $accent-primary;
+  opacity: 0.7;
 }
 </style>

@@ -756,4 +756,29 @@ describe('editorGraphFromFlow', () => {
     const { edges } = editorGraphFromFlow(flow)
     expect(edges).toHaveLength(0)
   })
+
+  it('propagates run_id from flow step into node data.runId', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: 'ryn', task: 'Build', deps: [], status: 'done', approval: false, on_fail: 'abort', run_id: 'run_abc123' },
+        { id: 's2', soul: 'nex', task: 'Review', deps: ['s1'], status: 'pending', approval: false, on_fail: 'abort' },
+      ],
+    })
+    const { nodes } = editorGraphFromFlow(flow)
+    const s1 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's1')!
+    const s2 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's2')!
+    expect((s1.data as EditorNodeData).runId).toBe('run_abc123')
+    expect((s2.data as EditorNodeData).runId).toBeNull()
+  })
+
+  it('runId is a string scalar or null (G7 compliance)', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: 'ryn', task: 'Build', deps: [], status: 'done', approval: false, on_fail: 'abort', run_id: 'run_xyz' },
+      ],
+    })
+    const { nodes } = editorGraphFromFlow(flow)
+    const runId = (nodes[0].data as EditorNodeData).runId
+    expect(typeof runId === 'string' || runId === null).toBe(true)
+  })
 })

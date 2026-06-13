@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchConsole, type ConsoleData, type RunMeta } from '@/api/hermes/console'
-import { fetchTrace, type TraceResponse } from '@/api/hermes/traces'
+import { fetchRuns, fetchTrace, type TraceResponse } from '@/api/hermes/traces'
 import { ApiError } from '@/utils/api-error'
 
 const POLL_INTERVAL_MS = 10_000
@@ -95,6 +95,49 @@ export const useConsoleStore = defineStore('console', () => {
     traceError.value = null
   }
 
+  // ── selectRunById — flow step 결과 보기 (run_id 로 RunMeta 매칭 후 trace 로드) ──
+  async function selectRunById(runId: string, projectId: string) {
+    traceData.value = null
+    traceError.value = null
+    traceLoading.value = true
+    // 목록에서 매칭되는 RunMeta 찾기; 없으면 최소 skeleton 사용
+    let run: RunMeta | null = null
+    try {
+      const runs = await fetchRuns(projectId, 200)
+      run = runs.find((r) => r.run_id === runId) ?? null
+    } catch {
+      // fetchRuns 실패해도 trace는 시도
+    }
+    if (!run) {
+      // 최소 RunMeta — drawer 헤더용 기본값
+      run = {
+        run_id: runId,
+        session_id: '',
+        soul: '',
+        model: '',
+        source: '',
+        ts_start: '',
+        duration_ms: 0,
+        tokens_in: 0,
+        tokens_out: 0,
+        tokens_cache: 0,
+        cost_usd: 0,
+        result: 'success',
+        tool_counts: {},
+      }
+    }
+    selectedRun.value = run
+    try {
+      traceData.value = await fetchTrace(projectId, runId)
+    } catch (e) {
+      traceError.value = e instanceof ApiError
+        ? e
+        : new ApiError(String(e), null, 'client')
+    } finally {
+      traceLoading.value = false
+    }
+  }
+
   return {
     data,
     loading,
@@ -107,6 +150,7 @@ export const useConsoleStore = defineStore('console', () => {
     startPolling,
     stopPolling,
     selectRun,
+    selectRunById,
     loadMoreTrace,
     closeRun,
   }
