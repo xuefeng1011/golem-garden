@@ -474,3 +474,37 @@ async def test_api_director_soul_coordinator_fields(tmp_path: Path):
     assert data["tools"] == list(_COORDINATOR_TOOLS)
     assert "Edit" not in data["tools"]
     assert data["disallowed_tools"] == list(_COORDINATOR_DISALLOWED_TOOLS)
+
+
+@pytest.mark.asyncio
+async def test_api_list_souls_exposes_is_coordinator(tmp_path: Path):
+    """GET /v1/.../souls (목록) 도 is_coordinator 노출 — 편집기 Director 경고용."""
+    from golem_gateway.main import app
+
+    _patch_app_state()
+
+    souls_dir = tmp_path / "souls"
+    souls_dir.mkdir()
+    (souls_dir / "nex.md").write_text(
+        "---\nname: Nex\nrole: director\nrank: junior\nmodel: opus\n---\n\n디렉터.",
+        encoding="utf-8",
+    )
+    (souls_dir / "ryn.md").write_text(
+        "---\nname: Ryn\nrole: backend-developer\nrank: senior\nmodel: sonnet\n---\n\n백엔드.",
+        encoding="utf-8",
+    )
+    (tmp_path / ".golem").mkdir()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/v1/projects", json={"name": "test-list-coord", "path": str(tmp_path)})
+        assert resp.status_code in (200, 201)
+        project_id = resp.json()["id"]
+
+        resp = await client.get(f"/v1/projects/{project_id}/souls")
+        assert resp.status_code == 200, resp.text
+        by_id = {s["id"]: s for s in resp.json()}
+
+    assert "is_coordinator" in by_id["nex"], "목록 응답에 is_coordinator 누락"
+    assert by_id["nex"]["is_coordinator"] is True
+    assert by_id["ryn"]["is_coordinator"] is False

@@ -1077,6 +1077,7 @@ export default {
     runInputConfirm: 'Enter & run',
     resolvedInputLabel: 'Received input (resolved)',
     outputLabel: 'Output',
+    directorWarning: 'This soul is a Director (delegate-only) and cannot produce content directly — use a soul with write tools for content/code steps.',
   },
 
   // Changelog

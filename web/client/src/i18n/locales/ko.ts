@@ -1018,6 +1018,7 @@ export default {
     runInputConfirm: '입력하고 실행',
     resolvedInputLabel: '받은 입력 (해석됨)',
     outputLabel: '출력',
+    directorWarning: '이 소울은 디렉터(위임 전용)라 콘텐츠를 직접 만들지 못해요 — 글·코드 생성 단계엔 쓰기 가능한 소울을 권장합니다.',
   },
 
   // 변경 이력

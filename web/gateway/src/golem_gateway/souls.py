@@ -41,20 +41,26 @@ _RANK_DEFAULT_ISOLATION: dict[str, Literal["none", "worktree"]] = {
 
 
 class SoulSummary(BaseModel):
-    """Lean model returned by the list endpoint (no content field)."""
+    """Lean model returned by the list endpoint (no content field).
+
+    is_coordinator 는 목록에도 노출한다 — 편집기가 콘텐츠 단계에 위임 전용
+    Director(쓰기 도구 없음) 소울이 배정되면 경고하기 위함(런어웨이 방지).
+    """
 
     id: str
     name: str
     rank: str
     specialty: list[str]
     description: str
+    is_coordinator: bool = False
 
 
 class SoulDetail(SoulSummary):
     """Full model returned by the single-SOUL endpoint (includes content).
 
-    확장 필드(tools, disallowed_tools, max_turns, isolation, is_coordinator, effort)는
+    확장 필드(tools, disallowed_tools, max_turns, isolation, effort)는
     soul-parser.sh의 rank 기반 기본값 + frontmatter 오버라이드 로직을 Python으로 미러링한다.
+    (is_coordinator 는 SoulSummary 로 승격됨 — 목록/상세 모두 노출)
     """
 
     content: str
@@ -62,7 +68,6 @@ class SoulDetail(SoulSummary):
     disallowed_tools: list[str] = []
     max_turns: Optional[int] = None
     isolation: Literal["none", "worktree"] = "none"
-    is_coordinator: bool = False
     effort: Optional[Literal["low", "medium", "high"]] = None
 
 

@@ -17,7 +17,7 @@ import {
   NSwitch,
   NIcon,
 } from 'naive-ui'
-import { CloseOutline } from '@vicons/ionicons5'
+import { CloseOutline, AlertCircleOutline } from '@vicons/ionicons5'
 import type { EditorNodeData } from '@/utils/canvas-graph'
 import { resolveTaskPreview } from '@/utils/canvas-graph'
 import type { Soul } from '@/api/hermes/souls'
@@ -41,6 +41,14 @@ const { t } = useI18n()
 
 // 입력 노드 여부
 const isInput = computed(() => props.data.kind === 'input')
+
+// 선택된 소울이 위임 전용 Director(쓰기 도구 없음)인지 — 콘텐츠 생성을 직접 못 해
+// 헤드리스 실행 시 위임만 시도하며 공회전한다. 에이전트 단계에 배정되면 경고.
+const isDirectorSoul = computed(() => {
+  if (isInput.value) return false
+  const soul = props.souls.find((s) => s.id === props.data.soul)
+  return soul?.is_coordinator === true
+})
 
 // task 에 {{단계}} 참조가 있는지
 const hasRef = computed(() => /\{\{[A-Za-z0-9_-]+\}\}/.test(props.data.task ?? ''))
@@ -166,6 +174,12 @@ function insertRef(stepId: string) {
           @update:value="onSoulChange"
         />
       </NFormItem>
+
+      <!-- Director(위임 전용) 소울 경고 — 콘텐츠 단계엔 쓰기 가능한 소울 권장 -->
+      <div v-if="isDirectorSoul" class="soul-warning">
+        <NIcon :size="14"><AlertCircleOutline /></NIcon>
+        <span>{{ t('flowEditor.directorWarning') }}</span>
+      </div>
 
       <!-- Task content -->
       <NFormItem
@@ -328,6 +342,21 @@ function insertRef(stepId: string) {
 .panel-form {
   padding: 14px;
   flex: 1;
+}
+
+// ── Director 경고 ─────────────────────────────────────────────
+.soul-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: -6px 0 14px;
+  padding: 7px 9px;
+  border-radius: $radius-sm;
+  background: rgba(var(--warning-rgb), 0.1);
+  border: 1px solid rgba(var(--warning-rgb), 0.28);
+  color: $warning;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 // ── 참조 칩 ──────────────────────────────────────────────────

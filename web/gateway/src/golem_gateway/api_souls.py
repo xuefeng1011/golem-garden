@@ -55,6 +55,7 @@ async def list_souls(
             rank=s.rank,
             specialty=s.specialty,
             description=s.description,
+            is_coordinator=s.is_coordinator,
         )
         for s in souls
     ]

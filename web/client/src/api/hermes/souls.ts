@@ -6,6 +6,8 @@ export interface Soul {
   rank: string
   specialty: string[]
   description: string
+  // 위임 전용 Director(쓰기 도구 없음) 여부 — 목록에도 노출(콘텐츠 단계 배정 경고용)
+  is_coordinator?: boolean
 }
 
 export interface SoulDetail extends Soul {
