@@ -32,6 +32,7 @@
     "retry": "integer(0-3,default=1)",
     "approval": "boolean",
     "on_fail": "string(abort|continue|goto:<step_id>)",
-    "status": "string(pending|waiting_approval|approved|running|done|failed|skipped)"
+    "status": "string(pending|waiting_approval|approved|running|done|failed|skipped)",
+    "run_id": "string(uuid, optional — 단계 실행 트래젝토리 링크, 단계별 결과 보기용)"
   }
 }

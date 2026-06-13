@@ -320,3 +320,44 @@ EOF
     return 1
   }
 }
+
+# ── flow_set_step_run_id — step 에 실행 run_id 기록 (단계별 결과 보기용) ──────
+# flow_set_step_run_id <state_file> <step_id> <run_id>
+# run_id 필드는 step 에 없을 수 있어 add-or-replace. flow_set_step_status 와 동일
+# 잠금/재조립 패턴.
+flow_set_step_run_id() {
+  local state_file="$1"
+  [ -f "$state_file" ] || return 1
+  [ -z "$2" ] || [ -z "$3" ] && return 1
+  _flow_lock "$state_file" || return 1
+  local _rc=0
+  _flow_set_step_run_id_locked "$@" || _rc=$?
+  _flow_unlock "$state_file"
+  return "$_rc"
+}
+
+_flow_set_step_run_id_locked() {
+  local state_file="$1" step_id="$2" run_id="$3"
+  local json head steps_lines rebuilt="" line s_id found=0
+  json=$(tr -d '\n\r' < "$state_file")
+  case "$json" in *'"steps"'*) : ;; *) return 1 ;; esac
+  head="${json%%\"steps\"*}"
+  steps_lines=$(printf '%s\n' "$json" | _fc_steps_lines) || return 1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    s_id=$(_fc_get_field "id" "$line")
+    if [ "$s_id" = "$step_id" ]; then
+      # 기존 run_id(선행 콤마 포함) 제거 후 닫는 } 앞에 삽입 (add-or-replace)
+      line=$(printf '%s' "$line" | sed -E 's/,?"run_id":"[^"]*"//')
+      line=$(printf '%s' "$line" | sed "s/}\$/,\"run_id\":\"${run_id}\"}/")
+      found=1
+    fi
+    if [ -z "$rebuilt" ]; then rebuilt="$line"; else rebuilt="${rebuilt},${line}"; fi
+  done <<EOF
+$steps_lines
+EOF
+  [ "$found" -eq 1 ] || return 1
+  local updated="${head}\"steps\":[${rebuilt}]}"
+  local tmp="${state_file}.tmp.$$"
+  printf '%s' "$updated" > "$tmp" && mv -f "$tmp" "$state_file"
+}

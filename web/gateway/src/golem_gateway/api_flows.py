@@ -53,6 +53,8 @@ class FlowStep(BaseModel):
     status: str
     approval: bool = False
     on_fail: str = "abort"
+    # 단계 실행 트래젝토리 링크 (단계별 결과 보기) — 미실행 단계는 None
+    run_id: str | None = None
 
 
 class FlowSummary(BaseModel):
@@ -189,6 +191,7 @@ def _load_flow(state_path: Path) -> dict[str, Any] | None:
                 "status": s.get("status", "pending"),
                 "approval": bool(s.get("approval", False)),
                 "on_fail": s.get("on_fail", "abort"),
+                "run_id": s.get("run_id"),
             }
             for s in raw.get("steps", [])
         ]

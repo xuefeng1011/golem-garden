@@ -57,14 +57,21 @@ flow_step_run() {
     return 0
   fi
 
-  local attempt=0 rc=0
+  local attempt=0 rc=0 _out=""
   while true; do
+    # 출력 캡처 후 재출력 — run_id 추출(단계별 결과 보기) + SSE 로그 보존.
     # if 분기로 호출 — `cmd; rc=$?`는 set -e(bats/forge.sh) 환경에서 즉사한다
-    if agent_run "$soul" "$task" 2>/dev/null; then rc=0; else rc=$?; fi
+    if _out=$(agent_run "$soul" "$task" 2>/dev/null); then rc=0; else rc=$?; fi
+    printf '%s\n' "$_out"
     [ "$rc" -eq 0 ] && break
     attempt=$((attempt + 1))
     if [ "$attempt" -gt "$retry" ]; then break; fi
   done
+
+  # <usage> ... run=<uuid> ... 에서 run_id 추출해 step 에 기록 (단계 클릭 시 결과 조회)
+  local _step_run
+  _step_run=$(printf '%s' "$_out" | grep -o 'run=[0-9a-fA-F-]\{8,\}' | head -1 | sed 's/run=//')
+  [ -n "$_step_run" ] && flow_set_step_run_id "$state_file" "$step_id" "$_step_run" 2>/dev/null || true
 
   if [ "$rc" -eq 0 ]; then
     flow_set_step_status "$state_file" "$step_id" "done"
