@@ -7,7 +7,6 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NInput, NButton, NIcon, NTooltip, NSelect } from 'naive-ui'
 import {
-  AddOutline,
   GitMergeOutline,
   CheckmarkCircleOutline,
   SaveOutline,

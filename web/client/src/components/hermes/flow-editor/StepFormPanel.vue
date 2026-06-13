@@ -19,12 +19,15 @@ import {
 } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import type { EditorNodeData } from '@/utils/canvas-graph'
+import { resolveTaskPreview } from '@/utils/canvas-graph'
 import type { Soul } from '@/api/hermes/souls'
 
 const props = defineProps<{
   data: EditorNodeData
   souls: Soul[]
   allStepOptions: { label: string; value: string }[]
+  // stepId -> 단계 출력 (해석된 입력 미리보기·출력 표시용)
+  outputMap?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -38,6 +41,17 @@ const { t } = useI18n()
 
 // 입력 노드 여부
 const isInput = computed(() => props.data.kind === 'input')
+
+// task 에 {{단계}} 참조가 있는지
+const hasRef = computed(() => /\{\{[A-Za-z0-9_-]+\}\}/.test(props.data.task ?? ''))
+
+// 해석된 입력(미리보기): {{id}} 를 상류 출력으로 치환한 결과 (엔진 _flow_subst 미러)
+const resolvedInput = computed(() =>
+  resolveTaskPreview(props.data.task ?? '', props.outputMap ?? {}),
+)
+
+// 이 단계의 출력 (실행 후 state.json 에 저장된 산출 텍스트)
+const stepOutput = computed(() => props.data.output ?? '')
 
 // soul options: empty = host
 const soulOptions = computed(() => [
@@ -223,6 +237,28 @@ function insertRef(stepId: string) {
       </NFormItem>
     </NForm>
 
+    <!-- ── 실행 입출력(에이전트 노드) ── -->
+    <div v-if="!isInput && (hasRef || stepOutput)" class="io-section">
+      <!-- 해석된 입력: {{id}} 가 실제 무엇으로 치환됐는지 -->
+      <div v-if="hasRef" class="io-block">
+        <div class="io-label">{{ t('flowEditor.resolvedInputLabel') }}</div>
+        <pre class="io-text io-text--in">{{ resolvedInput }}</pre>
+      </div>
+      <!-- 이 단계가 낸 출력 -->
+      <div v-if="stepOutput" class="io-block">
+        <div class="io-label">{{ t('flowEditor.outputLabel') }}</div>
+        <pre class="io-text io-text--out">{{ stepOutput }}</pre>
+      </div>
+    </div>
+
+    <!-- 입력 노드: 이 값이 하류로 흐른다는 안내 -->
+    <div v-else-if="isInput && stepOutput" class="io-section">
+      <div class="io-block">
+        <div class="io-label">{{ t('flowEditor.outputLabel') }}</div>
+        <pre class="io-text io-text--out">{{ stepOutput }}</pre>
+      </div>
+    </div>
+
     <!-- 액션 버튼 -->
     <div class="panel-actions">
       <button
@@ -334,6 +370,51 @@ function insertRef(stepId: string) {
   font-size: 11px;
   color: $text-muted;
   line-height: 1.4;
+}
+
+// ── 실행 입출력 ───────────────────────────────────────────────
+.io-section {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.io-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.io-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-muted;
+}
+
+.io-text {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: $radius-sm;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+  font-family: inherit;
+
+  &--in {
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.22);
+    color: $text-primary;
+  }
+
+  &--out {
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    color: $text-primary;
+  }
 }
 
 // ── 액션 버튼 ─────────────────────────────────────────────────

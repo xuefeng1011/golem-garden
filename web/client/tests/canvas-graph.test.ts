@@ -9,6 +9,7 @@ import {
   layoutWithDagre,
   stepsFromGraph,
   editorGraphFromFlow,
+  resolveTaskPreview,
 } from '@/utils/canvas-graph'
 import type { GraphNode, GraphEdge, EditorNodeData } from '@/utils/canvas-graph'
 import type { RunMeta } from '@/api/hermes/console'
@@ -861,5 +862,35 @@ describe('stepsFromGraph kind→type serialization', () => {
     expect(inputStep.type).toBe('input')
     expect(agentStep.type).toBe('agent')
     expect(agentStep.deps).toEqual(['in1'])
+  })
+})
+
+describe('resolveTaskPreview', () => {
+  it('substitutes a {{id}} token with the upstream output', () => {
+    expect(resolveTaskPreview('use {{in1}}', { in1: 'hello' })).toBe('use hello')
+  })
+
+  it('substitutes multiple tokens including repeats', () => {
+    const out = resolveTaskPreview('{{a}} then {{b}} then {{a}}', { a: 'X', b: 'Y' })
+    expect(out).toBe('X then Y then X')
+  })
+
+  it('leaves a token intact when the output is missing/empty (mirrors engine _flow_subst)', () => {
+    expect(resolveTaskPreview('use {{in1}}', {})).toBe('use {{in1}}')
+    expect(resolveTaskPreview('use {{in1}}', { in1: '' })).toBe('use {{in1}}')
+  })
+
+  it('returns text unchanged when there are no tokens', () => {
+    expect(resolveTaskPreview('plain task', { in1: 'x' })).toBe('plain task')
+  })
+
+  it('handles empty task safely', () => {
+    expect(resolveTaskPreview('', { in1: 'x' })).toBe('')
+  })
+
+  it('does not recursively re-substitute tokens that appear inside an output', () => {
+    // output containing a token-like string should be inserted verbatim, not re-resolved
+    const out = resolveTaskPreview('{{a}}', { a: '{{b}}', b: 'deep' })
+    expect(out).toBe('{{b}}')
   })
 })

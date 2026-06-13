@@ -1072,6 +1072,11 @@ export default {
     inputValuePlaceholder: 'Value passed into the pipeline…',
     insertRefHint: '{{step-id}} inserts the output of that upstream step',
     refChipsLabel: 'Upstream steps',
+    runInputTitle: 'Enter input',
+    runInputDesc: 'This workflow starts with input nodes. Enter the values to run with.',
+    runInputConfirm: 'Enter & run',
+    resolvedInputLabel: 'Received input (resolved)',
+    outputLabel: 'Output',
   },
 
   // Changelog

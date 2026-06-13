@@ -43,6 +43,8 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import EditorToolbar from '@/components/hermes/flow-editor/EditorToolbar.vue'
 import StepFormPanel from '@/components/hermes/flow-editor/StepFormPanel.vue'
 import RunPanel from '@/components/hermes/flow-editor/RunPanel.vue'
+import RunInputModal from '@/components/hermes/flow-editor/RunInputModal.vue'
+import type { RunInputField } from '@/components/hermes/flow-editor/RunInputModal.vue'
 import RunDetailDrawer from '@/components/hermes/console/RunDetailDrawer.vue'
 
 const { t } = useI18n()
@@ -105,6 +107,10 @@ let sseAbort: (() => void) | null = null
 // 실행 중 노드 상태 라이브 갱신용 폴링 (캔버스에서 진행 가시화)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
+// ── 런타임 입력 모달 ─────────────────────────────────────────────────────────
+const runInputVisible = ref(false)
+const runInputFields = ref<RunInputField[]>([])
+
 function _startPolling() {
   _stopPolling()
   pollTimer = setInterval(refreshFlowStatus, 1500)
@@ -133,6 +139,16 @@ const allStepOptions = computed(() =>
     return { label: d.label || d.stepId, value: d.stepId }
   }),
 )
+
+// ── 단계 출력 맵 (stepId -> output) — 해석된 입력 미리보기·출력 표시용 ─────────
+const outputMap = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const n of nodes.value) {
+    const d = n.data as EditorNodeData
+    if (d.output) map[d.stepId] = d.output
+  }
+  return map
+})
 
 // ── Dirty tracking ────────────────────────────────────────────────────────────
 // applyingStatus(폴링/로드)일 때는 무시 — 사용자 편집만 dirty 로 본다.
@@ -440,6 +456,7 @@ async function save(): Promise<boolean> {
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
+// 실행 진입점 — 입력 노드가 있으면 먼저 값 입력 모달을 띄운다.
 async function run() {
   const pid = profilesStore.activeProfile?.id
   if (!pid) return
@@ -447,6 +464,43 @@ async function run() {
     message.warning(t('flowEditor.emptyTitle'))
     return
   }
+
+  const inputNodes = nodes.value.filter(
+    (n) => (n.data as EditorNodeData).kind === 'input',
+  )
+  if (inputNodes.length > 0) {
+    runInputFields.value = inputNodes.map((n) => {
+      const d = n.data as EditorNodeData
+      return { nodeId: n.id, stepId: d.stepId, label: d.label || d.stepId, value: d.task ?? '' }
+    })
+    runInputVisible.value = true
+    return // 모달 confirm → onRunInputConfirm 에서 _doRun 계속
+  }
+
+  await _doRun()
+}
+
+// 입력 모달 확정 — 입력 노드 task 에 값 반영(저장 트리거) 후 실행
+async function onRunInputConfirm(values: Record<string, string>) {
+  nodes.value = nodes.value.map((n) => {
+    if (!(n.id in values)) return n
+    const v = values[n.id]
+    return {
+      ...n,
+      data: {
+        ...n.data,
+        task: v,
+        label: v.length > 40 ? v.slice(0, 37) + '…' : (v || (n.data as EditorNodeData).stepId),
+      } as EditorNodeData,
+    }
+  })
+  await _doRun()
+}
+
+// 실제 실행 — 저장(필요 시) 후 forge flow run + 폴링/SSE
+async function _doRun() {
+  const pid = profilesStore.activeProfile?.id
+  if (!pid) return
 
   // 미저장(신규)이거나 변경분 있으면 먼저 저장 — 저장 실패 시 중단
   if (!flowId.value || dirty.value) {
@@ -525,6 +579,7 @@ async function refreshFlowStatus() {
           ...d,
           status: step.status,
           runId: step.run_id ?? d.runId ?? null,
+          output: step.output ?? d.output ?? null,
         } as EditorNodeData,
       }
     })
@@ -559,8 +614,8 @@ async function approve(stepId: string) {
     await startForge(pid, 'flow', ['approve', flowId.value, stepId])
     message.success(t('flowEditor.approved'))
     await refreshFlowStatus()
-    // 승인 후 자동으로 플로우 재개 — 사용자가 ▶실행을 다시 누를 필요 없음
-    await run()
+    // 승인 후 자동으로 플로우 재개 — 입력은 이미 반영·저장됐으므로 모달 없이 바로 실행
+    await _doRun()
   } catch (err) {
     message.error(err instanceof Error ? err.message : String(err))
   }
@@ -797,6 +852,7 @@ onBeforeRouteLeave((_to, _from, next) => {
           :data="selectedNodeData"
           :souls="souls"
           :all-step-options="allStepOptions"
+          :output-map="outputMap"
           @update="onStepUpdate"
           @close="selectedNodeId = null"
           @delete="selectedNodeId && deleteNodeById(selectedNodeId)"
@@ -813,6 +869,13 @@ onBeforeRouteLeave((_to, _from, next) => {
         @approve="approve"
         @reject="reject"
         @stop="stopRun"
+      />
+
+      <!-- 런타임 입력 모달 -->
+      <RunInputModal
+        v-model:show="runInputVisible"
+        :fields="runInputFields"
+        @confirm="onRunInputConfirm"
       />
 
       <!-- Step 결과 Drawer -->

@@ -530,6 +530,24 @@ export function stepsFromGraph(
 }
 
 /**
+ * resolveTaskPreview — substitute {{step_id}} tokens in a task with upstream outputs.
+ *
+ * Mirrors the engine's _flow_subst (lib/flow.sh): a `{{id}}` reference is replaced
+ * by that step's output only when the output exists; otherwise the token is left
+ * intact. This lets the editor show exactly what an agent received as input.
+ */
+export function resolveTaskPreview(
+  task: string,
+  outputMap: Record<string, string>,
+): string {
+  if (!task) return ''
+  return task.replace(/\{\{([A-Za-z0-9_-]+)\}\}/g, (token, id) => {
+    const out = outputMap[id]
+    return out !== undefined && out !== null && out !== '' ? out : token
+  })
+}
+
+/**
  * editorGraphFromFlow — load an existing Flow into editor nodes/edges with dagre LR layout.
  */
 export function editorGraphFromFlow(flow: Flow): { nodes: GraphNode[]; edges: GraphEdge[] } {
