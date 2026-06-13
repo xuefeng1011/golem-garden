@@ -367,10 +367,14 @@ EOF
 # 값은 캡(4000자) + JSON 이스케이프. add-or-replace, 잠금/재조립 패턴 동일.
 _FLOW_OUTPUT_CAP=4000
 
-# 자기완결 JSON 문자열 이스케이프 (\\ " \t \r 줄바꿈→\n)
+# 자기완결 JSON 문자열 이스케이프 (\\ " \t \b \f \r 줄바꿈→\n, 기타 제어문자 제거)
+# 에이전트 출력에 제어바이트(BEL·ANSI 등)가 섞여도 JSON 이 깨지지 않도록 한다.
 _flow_json_escape() {
   printf '%s' "$1" \
-    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\r//g' \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' \
+          -e "s/$(printf '\b')/\\\\b/g" -e "s/$(printf '\f')/\\\\f/g" \
+          -e 's/\r//g' \
+    | tr -d '\000-\010\013\016-\037' \
     | awk '{if(NR>1) printf "\\n"; printf "%s",$0}'
 }
 

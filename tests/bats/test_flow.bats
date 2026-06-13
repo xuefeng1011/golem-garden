@@ -665,6 +665,29 @@ line2 "quoted"'
   [ "$(_fc_steps_lines < "$state" | grep -F '"id":"s1"' | grep -oc '"output"')" -eq 1 ]
 }
 
+@test "flow: _flow_json_escape — 제어문자 처리(\\b·\\f 이스케이프, BEL 제거)" {
+  # backspace(0x08)→\b, formfeed(0x0c)→\f, BEL(0x07)·기타 제어문자는 제거
+  local raw esc
+  raw="$(printf 'a\bb\fc\ad')"          # a<BS>b<FF>c<BEL>d
+  esc="$(_flow_json_escape "$raw")"
+  [[ "$esc" == *'a\bb'* ]]              # backspace 이스케이프
+  [[ "$esc" == *'\fc'* ]]              # formfeed 이스케이프
+  [[ "$esc" == *'cd'* ]]               # BEL 제거되어 c 와 d 가 인접
+  # 제어바이트가 결과에 남지 않음 (출력은 순수 ASCII 가시문자/백슬래시)
+  [ -z "$(printf '%s' "$esc" | tr -d '\040-\176')" ]
+}
+
+@test "flow: set step output — 제어문자 섞여도 JSON 유효" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t","deps":[],"type":"agent"}]
+JSON
+  run flow_create "ctl" "$TEST_PROJECT/steps.json"
+  local state="${FLOW_DIR}/${output}/state.json"
+  flow_set_step_output "$state" s1 "$(printf 'x\ay\bz')"   # BEL + backspace 포함
+  # state.json 이 여전히 1depth 파싱 가능하고 output 필드 존재
+  [ "$(_fc_steps_lines < "$state" | grep -F '"id":"s1"' | grep -oc '"output"')" -eq 1 ]
+}
+
 @test "flow: {{id}} 치환 — 상류 출력이 하류 task로 주입" {
   _mk_steps <<'JSON'
 [{"id":"in1","soul":"","task":"고양이","deps":[],"type":"input"},
