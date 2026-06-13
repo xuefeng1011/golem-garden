@@ -224,10 +224,73 @@ def _load_flow(state_path: Path) -> dict[str, Any] | None:
         return None
 
 
-def _build_state_json(flow_id: str, req: FlowWriteRequest, created: str) -> dict[str, Any]:
-    """Build the state.json dict from a FlowWriteRequest."""
-    steps = [
-        {
+def _step_def_unchanged(prev: dict[str, Any], s: FlowStepInput) -> bool:
+    """True if a step's definition (task/soul/deps) is identical to the prior one.
+
+    deps are compared as sets — the editor derives deps from edges, so order may
+    differ without a semantic change.
+    """
+    return (
+        prev.get("task") == s.task
+        and prev.get("soul", "") == s.soul
+        and set(prev.get("deps", [])) == set(s.deps)
+    )
+
+
+def _preserved_step_ids(
+    steps: list[FlowStepInput],
+    prev_by_id: dict[str, dict[str, Any]],
+) -> set[str]:
+    """IDs whose prior run state (status/run_id/output) may be inherited on update.
+
+    A step is invalidated (NOT preserved) if it is new, its definition changed, or
+    it transitively depends on an invalidated step — n8n-style downstream cache
+    invalidation, so a preserved step's output is always still valid (its upstreams
+    are unchanged too).
+    """
+    invalid: set[str] = set()
+    for s in steps:
+        prev = prev_by_id.get(s.id)
+        if prev is None or not _step_def_unchanged(prev, s):
+            invalid.add(s.id)
+
+    # Forward adjacency: dep -> [dependents].
+    adjacency: dict[str, list[str]] = {s.id: [] for s in steps}
+    for s in steps:
+        for dep in s.deps:
+            if dep in adjacency:
+                adjacency[dep].append(s.id)
+
+    # BFS: propagate invalidation to all transitive dependents.
+    queue = list(invalid)
+    while queue:
+        node = queue.pop(0)
+        for dependent in adjacency.get(node, []):
+            if dependent not in invalid:
+                invalid.add(dependent)
+                queue.append(dependent)
+
+    return {s.id for s in steps} - invalid
+
+
+def _build_state_json(
+    flow_id: str,
+    req: FlowWriteRequest,
+    created: str,
+    prev_by_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build the state.json dict from a FlowWriteRequest.
+
+    On update (prev_by_id provided), steps whose definition is unchanged AND whose
+    upstreams are unchanged inherit prior status/run_id/output so execution results
+    survive edits. Fresh writes (POST) reset every step to pending.
+    """
+    prev_by_id = prev_by_id or {}
+    preserved = _preserved_step_ids(req.steps, prev_by_id) if prev_by_id else set()
+
+    steps: list[dict[str, Any]] = []
+    for s in req.steps:
+        step: dict[str, Any] = {
             "id": s.id,
             "soul": s.soul,
             "task": s.task,
@@ -238,8 +301,15 @@ def _build_state_json(flow_id: str, req: FlowWriteRequest, created: str) -> dict
             "type": s.type,
             "status": "pending",
         }
-        for s in req.steps
-    ]
+        if s.id in preserved:
+            prev = prev_by_id[s.id]
+            step["status"] = prev.get("status", "pending")
+            if prev.get("run_id") is not None:
+                step["run_id"] = prev["run_id"]
+            if prev.get("output") is not None:
+                step["output"] = prev["output"]
+        steps.append(step)
+
     return {
         "flow_id": flow_id,
         "goal": req.goal,
@@ -465,16 +535,21 @@ async def update_flow(
 
     state_path = flow_dir / "state.json"
 
-    # Preserve original created timestamp if present.
+    # Preserve original created timestamp + prior per-step run state (status/run_id/
+    # output) so editing a flow doesn't wipe execution results.
     created = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    prev_by_id: dict[str, Any] = {}
     if state_path.is_file():
         try:
             old = json.loads(state_path.read_text(encoding="utf-8"))
             created = old.get("created", created)
+            prev_by_id = {
+                s["id"]: s for s in old.get("steps", []) if isinstance(s, dict) and "id" in s
+            }
         except Exception:
             pass
 
-    data = _build_state_json(flow_id, body, created)
+    data = _build_state_json(flow_id, body, created, prev_by_id)
     _write_state_atomic(state_path, data)
 
     # NON-fatal advisory (see create_flow) — Python guards are authoritative.

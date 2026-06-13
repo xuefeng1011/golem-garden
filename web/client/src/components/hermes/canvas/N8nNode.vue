@@ -6,6 +6,7 @@
  * 좌(target)/우(source) Handle 로 좌→우 흐름. 디테일은 클릭 시 NodeInfoPanel.
  */
 import { computed, inject } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Handle, Position } from '@vue-flow/core'
 import {
   HardwareChipOutline,
@@ -24,6 +25,8 @@ const props = defineProps<{
   selected?: boolean
   id?: string
 }>()
+
+const { t } = useI18n()
 
 // provide/inject 패턴 — FlowEditorView 에서만 제공, CanvasView 는 null
 const onDelete = inject<((id: string) => void) | null>('flowEditorDeleteNode', null)
@@ -122,7 +125,7 @@ const subtitle = computed(() => {
     <button
       v-if="onDelete && id"
       class="node-delete-btn"
-      :title="'Delete step'"
+      :title="t('flowEditor.btnDeleteStep')"
       @click.stop="onDelete(id)"
     >
       <CloseOutline class="delete-svg" />

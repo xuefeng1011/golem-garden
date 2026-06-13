@@ -31,7 +31,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:goal', val: string): void
-  (e: 'add-step'): void
   (e: 'add-input'): void
   (e: 'add-agent'): void
   (e: 'auto-layout'): void

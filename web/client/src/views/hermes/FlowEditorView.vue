@@ -236,6 +236,7 @@ function _resetCanvas() {
   selectedNodeId.value = null
   runPhase.value = 'idle'
   runLines.value = []
+  stepCounter = 0  // 세션 누수 방지 — 새 캔버스마다 카운터 초기화
   applyingStatus = false
   dirty.value = false
 }
@@ -343,24 +344,26 @@ function _addNode(kind: 'input' | 'agent') {
   stepCounter += 1
   const stepId = `step_${Date.now()}_${stepCounter}`
   const firstSoul = kind === 'agent' ? (souls.value[0]?.id ?? '') : ''
+  // 연결 기준 노드: Vue Flow 내부 선택이 있으면 그것, 없으면 마지막으로 추가된 노드.
+  // → 클릭 없이 순차 추가만으로도 파이프라인이 자동 연결된다.
   const selected = getSelectedNodes.value
   const lastSelected = selected.length > 0 ? selected[selected.length - 1] : null
+  const anchor =
+    lastSelected ??
+    (nodes.value.length > 0 ? nodes.value[nodes.value.length - 1] : null)
 
-  // Position: right of last selected node, or stacked below last node
-  const base = lastSelected?.position ?? (
-    nodes.value.length > 0
-      ? nodes.value[nodes.value.length - 1].position
-      : { x: 100, y: 100 }
-  )
+  // Position: right of the anchor node, or default origin for the first node
+  const base = anchor?.position ?? { x: 100, y: 100 }
 
   const newNode = makeNode(stepId, '', firstSoul, kind)
   newNode.position = { x: base.x + 260, y: base.y }
 
   const newEdges = [...edges.value]
-  if (lastSelected) {
+  // 앵커가 있으면 앵커→새 노드 엣지 자동 생성 (첫 노드는 앵커 없음 → 생략)
+  if (anchor) {
     newEdges.push({
       id: `e_auto_${stepId}`,
-      source: lastSelected.id,
+      source: anchor.id,
       target: newNode.id,
     })
   }
@@ -369,9 +372,12 @@ function _addNode(kind: 'input' | 'agent') {
   nodes.value = [...nodes.value, newNode]
   edges.value = newEdges
   selectedNodeId.value = newNode.id
+
+  // 새 노드를 항상 화면 안으로 — 뷰포트가 직전 플로우 위치에 남아있어
+  // 추가한 노드가 화면 밖에 떨어지는 문제 방지 (autoLayout 과 동일 패턴)
+  setTimeout(() => fitView({ padding: 0.2 }), 50)
 }
 
-function addStep() { _addNode('agent') }
 function addInput() { _addNode('input') }
 function addAgent() { _addNode('agent') }
 
@@ -794,7 +800,6 @@ onBeforeRouteLeave((_to, _from, next) => {
         :selected-flow-id="flowId"
         :done-count="doneCount"
         :total-count="totalCount"
-        @add-step="addStep"
         @add-input="addInput"
         @add-agent="addAgent"
         @auto-layout="autoLayout"

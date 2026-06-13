@@ -373,6 +373,138 @@ async def test_put_flow_updates_content(registered_project) -> None:
 
 
 @pytest.mark.asyncio
+async def test_put_flow_preserves_unchanged_step_results(registered_project) -> None:
+    """PUT keeps status/run_id/output for steps whose definition is unchanged."""
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "s1", "soul": "ryn", "task": "t1", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-1", "output": "result one"},
+        {"id": "s2", "soul": "", "task": "t2", "deps": ["s1"], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-2", "output": "result two"},
+    ]
+    _write_flow(project_path, "flow_510_1", status="completed", steps=seeded)
+
+    # PUT with identical task/soul/deps → results survive.
+    body = {
+        "goal": "edited goal",
+        "steps": [
+            {"id": "s1", "task": "t1", "soul": "ryn"},
+            {"id": "s2", "task": "t2", "soul": "", "deps": ["s1"]},
+        ],
+    }
+    resp = await _put(project_id, "flow_510_1", body)
+    assert resp.status_code == 200, resp.text
+
+    state = json.loads(
+        (project_path / ".golem" / "flows" / "flow_510_1" / "state.json").read_text(encoding="utf-8")
+    )
+    by_id = {s["id"]: s for s in state["steps"]}
+    assert state["goal"] == "edited goal"
+    for sid, run, out in (("s1", "run-1", "result one"), ("s2", "run-2", "result two")):
+        assert by_id[sid]["status"] == "done"
+        assert by_id[sid]["run_id"] == run
+        assert by_id[sid]["output"] == out
+
+
+@pytest.mark.asyncio
+async def test_put_flow_resets_changed_step(registered_project) -> None:
+    """A step whose task changed loses its prior run state (cache invalidated)."""
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "s1", "soul": "ryn", "task": "old task", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-1", "output": "stale"},
+    ]
+    _write_flow(project_path, "flow_520_2", status="completed", steps=seeded)
+
+    body = {"goal": "g", "steps": [{"id": "s1", "task": "NEW task", "soul": "ryn"}]}
+    resp = await _put(project_id, "flow_520_2", body)
+    assert resp.status_code == 200, resp.text
+
+    step = json.loads(
+        (project_path / ".golem" / "flows" / "flow_520_2" / "state.json").read_text(encoding="utf-8")
+    )["steps"][0]
+    assert step["status"] == "pending"
+    assert "run_id" not in step
+    assert "output" not in step
+
+
+@pytest.mark.asyncio
+async def test_put_flow_invalidates_downstream_of_changed(registered_project) -> None:
+    """Changing an upstream step also invalidates unchanged downstream steps."""
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "s1", "soul": "ryn", "task": "t1", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-1", "output": "o1"},
+        {"id": "s2", "soul": "ryn", "task": "t2", "deps": ["s1"], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-2", "output": "o2"},
+    ]
+    _write_flow(project_path, "flow_530_3", status="completed", steps=seeded)
+
+    # s1 task changes; s2 definition unchanged but depends on s1 → also reset.
+    body = {
+        "goal": "g",
+        "steps": [
+            {"id": "s1", "task": "t1 CHANGED", "soul": "ryn"},
+            {"id": "s2", "task": "t2", "soul": "ryn", "deps": ["s1"]},
+        ],
+    }
+    resp = await _put(project_id, "flow_530_3", body)
+    assert resp.status_code == 200, resp.text
+
+    by_id = {
+        s["id"]: s
+        for s in json.loads(
+            (project_path / ".golem" / "flows" / "flow_530_3" / "state.json").read_text(encoding="utf-8")
+        )["steps"]
+    }
+    assert by_id["s1"]["status"] == "pending"
+    assert by_id["s2"]["status"] == "pending"
+    assert "output" not in by_id["s2"]
+
+
+@pytest.mark.asyncio
+async def test_put_flow_preserves_when_deps_reordered(registered_project) -> None:
+    """deps compared as a set — reordering deps alone does not invalidate."""
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "a", "soul": "ryn", "task": "ta", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent", "status": "done"},
+        {"id": "b", "soul": "ryn", "task": "tb", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent", "status": "done"},
+        {"id": "c", "soul": "ryn", "task": "tc", "deps": ["a", "b"], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-c", "output": "oc"},
+    ]
+    _write_flow(project_path, "flow_540_4", status="completed", steps=seeded)
+
+    body = {
+        "goal": "g",
+        "steps": [
+            {"id": "a", "task": "ta", "soul": "ryn"},
+            {"id": "b", "task": "tb", "soul": "ryn"},
+            {"id": "c", "task": "tc", "soul": "ryn", "deps": ["b", "a"]},  # reordered
+        ],
+    }
+    resp = await _put(project_id, "flow_540_4", body)
+    assert resp.status_code == 200, resp.text
+
+    step_c = next(
+        s
+        for s in json.loads(
+            (project_path / ".golem" / "flows" / "flow_540_4" / "state.json").read_text(encoding="utf-8")
+        )["steps"]
+        if s["id"] == "c"
+    )
+    assert step_c["status"] == "done"
+    assert step_c["output"] == "oc"
+
+
+@pytest.mark.asyncio
 async def test_put_flow_not_found_404(registered_project) -> None:
     project_id, _ = registered_project
     resp = await _put(project_id, "00000000-0000-0000-0000-000000000000", _SIMPLE_BODY)
