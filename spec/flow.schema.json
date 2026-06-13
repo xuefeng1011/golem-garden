@@ -33,6 +33,8 @@
     "approval": "boolean",
     "on_fail": "string(abort|continue|goto:<step_id>)",
     "status": "string(pending|waiting_approval|approved|running|done|failed|skipped)",
-    "run_id": "string(uuid, optional — 단계 실행 트래젝토리 링크, 단계별 결과 보기용)"
+    "run_id": "string(uuid, optional — 단계 실행 트래젝토리 링크, 단계별 결과 보기용)",
+    "type": "string(input|agent, optional, default agent — input 노드는 task값이 곧 출력)",
+    "output": "string(optional, 런타임 — 단계 산출 텍스트, 하류 {{step_id}} 치환 소스, 캡 4000자)"
   }
 }

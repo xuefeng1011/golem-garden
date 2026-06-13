@@ -631,3 +631,62 @@ JSON
   head_status=$(sed 's/"steps".*//' "$state" | grep -o '"status":"[a-z]*"')
   [ "$head_status" = '"status":"failed"' ]
 }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 18. 파이프라인: input 타입 + 단계 출력 + {{id}} 데이터 전달
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: input 노드 — task값이 곧 출력" {
+  _mk_steps <<'JSON'
+[{"id":"in1","soul":"","task":"주제 텍스트","deps":[],"type":"input"}]
+JSON
+  run flow_create "input flow" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+  flow_step_run "$flow_id" in1
+  [ "$(flow_step_output "$state" in1)" = "주제 텍스트" ]
+  grep -q '"id":"in1"[^}]*"status":"done"' "$state"
+}
+
+@test "flow: set/get step output — add-or-replace + 이스케이프" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t","deps":[],"type":"agent"}]
+JSON
+  run flow_create "out" "$TEST_PROJECT/steps.json"
+  local state="${FLOW_DIR}/${output}/state.json"
+  flow_set_step_output "$state" s1 'line1
+line2 "quoted"'
+  # 저장된 output 에 이스케이프된 개행/따옴표 포함
+  run flow_step_output "$state" s1
+  [[ "$output" == *'line1\nline2'* ]]
+  [[ "$output" == *'\"quoted\"'* ]]
+  # 재기록(replace) — 중복 안 생김
+  flow_set_step_output "$state" s1 "second"
+  [ "$(_fc_steps_lines < "$state" | grep -F '"id":"s1"' | grep -oc '"output"')" -eq 1 ]
+}
+
+@test "flow: {{id}} 치환 — 상류 출력이 하류 task로 주입" {
+  _mk_steps <<'JSON'
+[{"id":"in1","soul":"","task":"고양이","deps":[],"type":"input"},
+ {"id":"a1","soul":"zen","task":"요약: {{in1}}","deps":["in1"],"type":"agent"}]
+JSON
+  run flow_create "chain" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+  # in1 실행 → 출력 설정
+  flow_step_run "$flow_id" in1
+  # mock agent_run: 받은 task를 출력으로
+  agent_run() { echo "GOT:$2"; echo "<usage> run=11111111-2222-4333-8444-555555555555"; return 0; }
+  run flow_step_run "$flow_id" a1
+  [[ "$output" == *"GOT:요약: 고양이"* ]]
+}
+
+@test "flow: 미존재 {{id}} 는 그대로 보존" {
+  _mk_steps <<'JSON'
+[{"id":"a1","soul":"zen","task":"ref {{ghost}}","deps":[],"type":"agent"}]
+JSON
+  run flow_create "noref" "$TEST_PROJECT/steps.json"
+  local state="${FLOW_DIR}/${output}/state.json"
+  run _flow_subst "$state" "ref {{ghost}}"
+  [ "$output" = "ref {{ghost}}" ]
+}

@@ -155,6 +155,15 @@ _LINEAR_BODY = {
     ],
 }
 
+# Mixed type flow: input step + agent step.
+_MIXED_TYPE_BODY = {
+    "goal": "input then agent",
+    "steps": [
+        {"id": "inp", "task": "gather data", "soul": "", "type": "input"},
+        {"id": "ag1", "task": "process data", "soul": "ryn", "type": "agent", "deps": ["inp"]},
+    ],
+}
+
 
 # ---------------------------------------------------------------------------
 # GET tests (regression — original 4 cases)
@@ -415,3 +424,99 @@ async def test_delete_flow_not_found_404(registered_project) -> None:
 async def test_delete_flow_unknown_project_404() -> None:
     resp = await _delete("no-such-project", "00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# type / output field tests (new)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_post_flow_mixed_types_preserved(registered_project) -> None:
+    """POST with mixed input/agent types — GET must reflect the types."""
+    project_id, project_path = registered_project
+    resp = await _post(project_id, _MIXED_TYPE_BODY)
+    assert resp.status_code == 201, resp.text
+    flow_id = resp.json()["flow_id"]
+
+    # Verify persisted state.json contains correct types.
+    state = json.loads(
+        (project_path / ".golem" / "flows" / flow_id / "state.json").read_text(encoding="utf-8")
+    )
+    assert state["steps"][0]["type"] == "input"
+    assert state["steps"][1]["type"] == "agent"
+
+    # Verify GET response exposes types.
+    get_resp = await _get(project_id)
+    assert get_resp.status_code == 200
+    flows = get_resp.json()
+    assert len(flows) == 1
+    steps = {s["id"]: s for s in flows[0]["steps"]}
+    assert steps["inp"]["type"] == "input"
+    assert steps["ag1"]["type"] == "agent"
+
+
+@pytest.mark.asyncio
+async def test_post_flow_input_step_no_deps_happy(registered_project) -> None:
+    """input step with empty deps must be accepted (not a cycle, not a bad dep)."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "simple input",
+        "steps": [{"id": "inp", "task": "collect input", "soul": "", "type": "input"}],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_post_flow_invalid_type_422(registered_project) -> None:
+    """type value not in {input, agent} must return 422."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "bad type",
+        "steps": [{"id": "s1", "task": "do it", "soul": "ryn", "type": "foo"}],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_flow_output_passthrough(registered_project) -> None:
+    """GET must expose output field when state.json contains it (runtime passthrough)."""
+    project_id, project_path = registered_project
+    steps_with_output = [
+        {
+            "id": "s1", "soul": "ryn", "task": "build", "deps": [],
+            "retry": 1, "approval": False, "on_fail": "abort",
+            "status": "done", "type": "agent", "output": "build succeeded",
+        },
+        {
+            "id": "s2", "soul": "", "task": "deploy", "deps": ["s1"],
+            "retry": 1, "approval": False, "on_fail": "abort",
+            "status": "pending", "type": "agent", "output": None,
+        },
+    ]
+    _write_flow(project_path, "flow_output_test", goal="output test", steps=steps_with_output)
+
+    resp = await _get(project_id)
+    assert resp.status_code == 200
+    flows = resp.json()
+    assert len(flows) == 1
+    steps = {s["id"]: s for s in flows[0]["steps"]}
+    assert steps["s1"]["output"] == "build succeeded"
+    assert steps["s2"]["output"] is None
+
+
+@pytest.mark.asyncio
+async def test_default_type_agent_when_missing(registered_project) -> None:
+    """Steps in state.json without a type field default to 'agent' in GET response."""
+    project_id, project_path = registered_project
+    # _write_flow default steps have no 'type' key.
+    _write_flow(project_path, "flow_no_type", goal="legacy flow")
+
+    resp = await _get(project_id)
+    assert resp.status_code == 200
+    flows = resp.json()
+    assert len(flows) == 1
+    for step in flows[0]["steps"]:
+        assert step["type"] == "agent"

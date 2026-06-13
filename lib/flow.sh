@@ -30,6 +30,38 @@ _flow_set_flow_status() {
   return "$rc"
 }
 
+# ── 데이터 전달: {{step_id}} 치환 ──────────────────────────────────────────────
+# JSON 이스케이프된 output 을 실제 텍스트로 복원 (\n→줄바꿈, \"→", \\→\)
+_flow_unescape() {
+  printf '%s' "$1" | sed -e 's/\\"/"/g' -e 's/\\n/\
+/g' -e 's/\\\\/\\/g'
+}
+
+# _flow_subst <state_file> <text> — text 내 {{<step_id>}} 를 그 step 의 저장된
+# output 으로 리터럴 치환(완료된 step 만). bash ${//} 리터럴 — 정규식/특수문자 안전.
+_flow_subst() {
+  local state_file="$1" text="$2"
+  local ids id out
+  # _fc_get_field 는 개행을 안 붙이므로(printf '%s') 명시적으로 줄바꿈 추가 —
+  # 안 하면 id 들이 'in1a1' 로 붙어 치환 매칭이 깨진다.
+  ids=$(_fc_steps_lines < "$state_file" | while IFS= read -r l; do
+    [ -n "$l" ] && { _fc_get_field id "$l"; echo; }
+  done)
+  while IFS= read -r id; do
+    [ -z "$id" ] && continue
+    case "$text" in
+      *"{{$id}}"*) : ;;
+      *) continue ;;
+    esac
+    out=$(flow_step_output "$state_file" "$id" 2>/dev/null)
+    out=$(_flow_unescape "$out")
+    text="${text//"{{$id}}"/$out}"
+  done <<EOF
+$ids
+EOF
+  printf '%s' "$text"
+}
+
 # ── 1. flow_step_run ──────────────────────────────────────────────────────────
 # flow_step_run <flow_id> <step_id>
 flow_step_run() {
@@ -42,17 +74,30 @@ flow_step_run() {
   step_line=$(_fc_steps_lines < "$state_file" | grep -F "\"id\":\"${step_id}\"")
   [ -z "$step_line" ] && { echo "[ERROR] flow_step_run: step '${step_id}' 없음" >&2; return 1; }
 
-  local soul task retry on_fail
+  local soul task retry on_fail type
   soul=$(_fc_get_field "soul" "$step_line")
   task=$(_fc_get_field "task" "$step_line")
   retry=$(_fc_get_field "retry" "$step_line")
   on_fail=$(_fc_get_field "on_fail" "$step_line")
-  retry=${retry:-0}; on_fail=${on_fail:-abort}
+  type=$(_fc_get_field "type" "$step_line")
+  retry=${retry:-0}; on_fail=${on_fail:-abort}; type=${type:-agent}
 
   flow_set_step_status "$state_file" "$step_id" "running"
 
+  # 입력 노드 — task 값이 곧 출력(하류로 흐름). agent 소환 없음.
+  if [ "$type" = "input" ]; then
+    printf 'INPUT:%s\n' "$task"
+    flow_set_step_output "$state_file" "$step_id" "$task"
+    flow_set_step_status "$state_file" "$step_id" "done"
+    return 0
+  fi
+
+  # 상류 단계 출력 주입 ({{id}} 치환) — input/agent 출력이 task 로 흐름
+  task=$(_flow_subst "$state_file" "$task")
+
   if [ -z "$soul" ]; then
     printf 'HOST:%s\n' "$task"
+    flow_set_step_output "$state_file" "$step_id" "$task"
     flow_set_step_status "$state_file" "$step_id" "done"
     return 0
   fi
@@ -72,6 +117,11 @@ flow_step_run() {
   local _step_run
   _step_run=$(printf '%s' "$_out" | grep -o 'run=[0-9a-fA-F-]\{8,\}' | head -1 | sed 's/run=//')
   [ -n "$_step_run" ] && flow_set_step_run_id "$state_file" "$step_id" "$_step_run" 2>/dev/null || true
+
+  # 산출 텍스트 캡처(= _out 에서 <usage> 라인 제거) → 하류 {{id}} 치환용 + 결과 표시
+  local _out_text
+  _out_text=$(printf '%s\n' "$_out" | sed '/^<usage>/d')
+  flow_set_step_output "$state_file" "$step_id" "$_out_text" 2>/dev/null || true
 
   if [ "$rc" -eq 0 ]; then
     flow_set_step_status "$state_file" "$step_id" "done"

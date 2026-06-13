@@ -361,3 +361,73 @@ EOF
   local tmp="${state_file}.tmp.$$"
   printf '%s' "$updated" > "$tmp" && mv -f "$tmp" "$state_file"
 }
+
+# ── flow_set_step_output — step 에 산출 텍스트 기록 (단계 간 데이터 전달) ──────
+# flow_set_step_output <state_file> <step_id> <text>
+# 값은 캡(4000자) + JSON 이스케이프. add-or-replace, 잠금/재조립 패턴 동일.
+_FLOW_OUTPUT_CAP=4000
+
+# 자기완결 JSON 문자열 이스케이프 (\\ " \t \r 줄바꿈→\n)
+_flow_json_escape() {
+  printf '%s' "$1" \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\r//g' \
+    | awk '{if(NR>1) printf "\\n"; printf "%s",$0}'
+}
+
+flow_set_step_output() {
+  local state_file="$1"
+  [ -f "$state_file" ] || return 1
+  [ -z "$2" ] && return 1
+  _flow_lock "$state_file" || return 1
+  local _rc=0
+  _flow_set_step_output_locked "$@" || _rc=$?
+  _flow_unlock "$state_file"
+  return "$_rc"
+}
+
+_flow_set_step_output_locked() {
+  local state_file="$1" step_id="$2" text="$3"
+  # 캡(이스케이프 전) 후 이스케이프
+  text="${text:0:$_FLOW_OUTPUT_CAP}"
+  local esc
+  esc=$(_flow_json_escape "$text")
+  local json head steps_lines rebuilt="" line s_id found=0
+  json=$(tr -d '\n\r' < "$state_file")
+  case "$json" in *'"steps"'*) : ;; *) return 1 ;; esac
+  head="${json%%\"steps\"*}"
+  steps_lines=$(printf '%s\n' "$json" | _fc_steps_lines) || return 1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    s_id=$(_fc_get_field "id" "$line")
+    if [ "$s_id" = "$step_id" ]; then
+      # 기존 output(선행 콤마 포함) 제거
+      line=$(printf '%s' "$line" | sed -E 's/,?"output":"([^"\\]|\\.)*"//')
+      # 닫는 } 앞에 삽입 — bash 문자열 연산(awk -v/sed 는 esc의 \n·\" 를
+      # 재해석/충돌시킴). esc 는 이미 JSON 이스케이프된 리터럴.
+      local _brace='}'
+      line="${line%$_brace},\"output\":\"${esc}\"}"
+      found=1
+    fi
+    if [ -z "$rebuilt" ]; then rebuilt="$line"; else rebuilt="${rebuilt},${line}"; fi
+  done <<EOF
+$steps_lines
+EOF
+  [ "$found" -eq 1 ] || return 1
+  local updated="${head}\"steps\":[${rebuilt}]}"
+  local tmp="${state_file}.tmp.$$"
+  printf '%s' "$updated" > "$tmp" && mv -f "$tmp" "$state_file"
+}
+
+# ── flow_step_output — step 의 저장된 output 텍스트 조회 (치환용) ──────────────
+# flow_step_output <state_file> <step_id> → stdout (이스케이프된 원본; \n 유지)
+flow_step_output() {
+  local state_file="$1" step_id="$2"
+  [ -f "$state_file" ] || return 1
+  local line
+  line=$(_fc_steps_lines < "$state_file" | grep -F "\"id\":\"${step_id}\"")
+  [ -z "$line" ] && return 1
+  # "output":"..." 값 추출 (이스케이프된 \" 포함) — grep -o + 앞뒤 제거
+  printf '%s' "$line" \
+    | grep -oE '"output":"([^"\\]|\\.)*"' \
+    | sed -E 's/^"output":"//; s/"$//'
+}

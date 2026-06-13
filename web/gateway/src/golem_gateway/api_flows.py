@@ -55,6 +55,8 @@ class FlowStep(BaseModel):
     on_fail: str = "abort"
     # 단계 실행 트래젝토리 링크 (단계별 결과 보기) — 미실행 단계는 None
     run_id: str | None = None
+    type: str = "agent"
+    output: str | None = None
 
 
 class FlowSummary(BaseModel):
@@ -70,6 +72,9 @@ class FlowSummary(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+_STEP_TYPE_VALID = {"input", "agent"}
+
+
 class FlowStepInput(BaseModel):
     id: str
     soul: str = ""
@@ -78,6 +83,7 @@ class FlowStepInput(BaseModel):
     retry: int = 1
     approval: bool = False
     on_fail: str = "abort"
+    type: str = "agent"
 
     @field_validator("id")
     @classmethod
@@ -108,6 +114,15 @@ class FlowStepInput(BaseModel):
         if not _ON_FAIL_RE.match(v):
             raise ValueError(
                 f"on_fail {v!r} must be abort|continue|goto:<id>"
+            )
+        return v
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        if v not in _STEP_TYPE_VALID:
+            raise ValueError(
+                f"type {v!r} must be one of: {sorted(_STEP_TYPE_VALID)}"
             )
         return v
 
@@ -192,6 +207,8 @@ def _load_flow(state_path: Path) -> dict[str, Any] | None:
                 "approval": bool(s.get("approval", False)),
                 "on_fail": s.get("on_fail", "abort"),
                 "run_id": s.get("run_id"),
+                "type": s.get("type", "agent"),
+                "output": s.get("output"),
             }
             for s in raw.get("steps", [])
         ]
@@ -218,6 +235,7 @@ def _build_state_json(flow_id: str, req: FlowWriteRequest, created: str) -> dict
             "retry": s.retry,
             "approval": s.approval,
             "on_fail": s.on_fail,
+            "type": s.type,
             "status": "pending",
         }
         for s in req.steps
