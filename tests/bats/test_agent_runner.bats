@@ -60,6 +60,32 @@ _source_agent_runner() {
 }
 
 # ─────────────────────────────────────────────────────────
+# _agent_kill_tree — 벽시계 워치독 강제 종료 (Windows/POSIX 공통)
+# ─────────────────────────────────────────────────────────
+
+@test "agent-runner: _agent_kill_tree — 빈 pid 는 무해(rc 0)" {
+  _source_agent_runner
+  run _agent_kill_tree ""
+  [ "$status" -eq 0 ]
+}
+
+@test "agent-runner: _agent_kill_tree — 존재하지 않는 pid 는 무해(rc 0)" {
+  _source_agent_runner
+  run _agent_kill_tree 999999
+  [ "$status" -eq 0 ]
+}
+
+@test "agent-runner: _agent_kill_tree — 살아있는 자식 프로세스를 실제로 종료" {
+  _source_agent_runner
+  sleep 30 &
+  local _pid=$!
+  kill -0 "$_pid" 2>/dev/null   # 시작 확인
+  _agent_kill_tree "$_pid"
+  sleep 1
+  ! kill -0 "$_pid" 2>/dev/null  # 종료 확인
+}
+
+# ─────────────────────────────────────────────────────────
 # _tools_csv
 # ─────────────────────────────────────────────────────────
 

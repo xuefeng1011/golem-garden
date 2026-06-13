@@ -161,6 +161,23 @@ _agent_timeout_cmd() {
   fi
 }
 
+# 프로세스 트리 강제 종료 (벽시계 워치독용).
+# Git Bash 의 `timeout`/`kill` 은 네이티브 Windows 자식(claude.exe)에 시그널을
+# 전달하지 못해 무한 대기/좀비가 된다. 그래서 winpid 기반 `taskkill //F //T` 로
+# 트리를 먼저 죽이고, POSIX 에서는 kill 로 폴백한다. dead pid 여도 무해(rc 0).
+_agent_kill_tree() {
+  local pid="$1"
+  [ -n "$pid" ] || return 0
+  local winpid=""
+  [ -r "/proc/${pid}/winpid" ] && winpid=$(cat "/proc/${pid}/winpid" 2>/dev/null)
+  if [ -n "$winpid" ] && command -v taskkill >/dev/null 2>&1; then
+    taskkill //F //T //PID "$winpid" >/dev/null 2>&1 || true
+  fi
+  kill -TERM "$pid" 2>/dev/null || true
+  kill -KILL "$pid" 2>/dev/null || true
+  return 0
+}
+
 # ─────────────────────────────────────────────────────────
 # 헬퍼
 # ─────────────────────────────────────────────────────────
@@ -534,14 +551,38 @@ ${_ar_body}"
   stream_file=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/agent_run_$$_$RANDOM")
   local rc=0
   local _ar_timed_out=0
-  if [ "${#_ar_timeout_pfx[@]}" -gt 0 ]; then
-    # timeout 124 → 타임아웃, 137 → KILL(타임아웃 후 강제 종료). 둘 다 타임아웃으로 처리.
-    "${_ar_timeout_pfx[@]}" "${_ar_soul_env[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
-    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+  # D1 — 벽시계 가드. MSYS/Git Bash 의 `timeout` 은 네이티브 Windows claude.exe 에
+  # 시그널을 전달하지 못해 무한 대기(timeout 좀비)했다 → 단계가 'running' 으로 영구
+  # 멈춤. 그래서 claude 를 백그라운드로 띄우고 워치독이 데드라인 초과 시 프로세스
+  # 트리를 _agent_kill_tree(taskkill//kill)로 강제 종료한다. 모든 플랫폼 공통 경로.
+  if [ "${max_secs:-0}" -gt 0 ] 2>/dev/null; then
+    local _ar_killflag="${stream_file}.killed"
+    rm -f "$_ar_killflag"
+    "${_ar_soul_env[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null &
+    local _ar_child=$!
+    (
+      _ar_w=0
+      while [ "$_ar_w" -lt "$max_secs" ]; do
+        kill -0 "$_ar_child" 2>/dev/null || exit 0   # 자식이 먼저 끝남 → 워치독 종료
+        sleep 1
+        _ar_w=$((_ar_w + 1))
+      done
+      kill -0 "$_ar_child" 2>/dev/null || exit 0
+      : > "$_ar_killflag"                            # 타임아웃 표식
+      _agent_kill_tree "$_ar_child"
+    ) &
+    local _ar_wd=$!
+    # set -e(bats/forge.sh) 안전 — wait 가 non-zero 면 || 로 흡수 (rc 는 위에서 0 초기화)
+    wait "$_ar_child" 2>/dev/null || rc=$?
+    kill "$_ar_wd" 2>/dev/null || true               # 자식이 먼저 끝났으면 워치독 취소
+    wait "$_ar_wd" 2>/dev/null || true
+    if [ -f "$_ar_killflag" ]; then
       _ar_timed_out=1
+      rc=124
     fi
+    rm -f "$_ar_killflag"
   else
-    echo "[agent-runner] WARNING: timeout/gtimeout 미존재 — claude 소환에 벽시계 가드 없음 (무한정 실행 가능)." >&2
+    echo "[agent-runner] WARNING: max_secs<=0 — claude 소환에 벽시계 가드 없음 (무한정 실행 가능)." >&2
     "${_ar_soul_env[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
   fi
 
