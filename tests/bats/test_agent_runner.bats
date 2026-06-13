@@ -322,3 +322,72 @@ EOF
   run agent_run "zen" "" --dry-run
   [ "$status" -ne 0 ]
 }
+
+# ─────────────────────────────────────────────────────────
+# P2-1: per-SOUL --resume 캐시 레버 (_agent_pick_session / _agent_ptr_update)
+# ─────────────────────────────────────────────────────────
+
+@test "agent-runner: pick_session — 포인터 없으면 fresh + 새 UUID" {
+  _source_agent_runner
+  result=$(_agent_pick_session "zen")
+  [[ "$result" =~ fresh$ ]]
+  uuid=${result%% *}
+  [[ "$uuid" =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]]
+}
+
+@test "agent-runner: ptr_update 후 윈도 내 + 마커 있으면 resume" {
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/.golem/sessions"
+  local uuid="11111111-2222-4333-8444-555555555555"
+  : > "$TEST_PROJECT/.golem/sessions/${uuid}.claude"
+  _agent_ptr_update "zen" "$uuid" "fresh"
+  result=$(_agent_pick_session "zen")
+  [ "$result" = "${uuid} resume" ]
+}
+
+@test "agent-runner: 윈도(WINDOW_SEC) 초과 시 fresh 로 복귀" {
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/.golem/sessions"
+  local uuid="11111111-2222-4333-8444-555555555555"
+  : > "$TEST_PROJECT/.golem/sessions/${uuid}.claude"
+  # 오래된 epoch 강제 (1년 전)
+  printf '%s %s %s\n' "$uuid" "1700000000" "1" \
+    > "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
+  result=$(GOLEM_RESUME_WINDOW_SEC=300 _agent_pick_session "zen")
+  [[ "$result" =~ fresh$ ]]
+  [ "${result%% *}" != "$uuid" ]
+}
+
+@test "agent-runner: 턴캡(MAX_TURNS) 도달 시 fresh 로 리셋" {
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/.golem/sessions"
+  local uuid="11111111-2222-4333-8444-555555555555"
+  : > "$TEST_PROJECT/.golem/sessions/${uuid}.claude"
+  local now; now=$(date +%s)
+  printf '%s %s %s\n' "$uuid" "$now" "8" \
+    > "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
+  result=$(GOLEM_RESUME_MAX_TURNS=8 _agent_pick_session "zen")
+  [[ "$result" =~ fresh$ ]]
+}
+
+@test "agent-runner: GOLEM_RESUME_DISABLE=1 이면 항상 fresh" {
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/.golem/sessions"
+  local uuid="11111111-2222-4333-8444-555555555555"
+  : > "$TEST_PROJECT/.golem/sessions/${uuid}.claude"
+  local now; now=$(date +%s)
+  printf '%s %s %s\n' "$uuid" "$now" "1" \
+    > "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
+  result=$(GOLEM_RESUME_DISABLE=1 _agent_pick_session "zen")
+  [[ "$result" =~ fresh$ ]]
+}
+
+@test "agent-runner: ptr_update resume 모드는 turn 카운트 증가" {
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/.golem/sessions"
+  local uuid="11111111-2222-4333-8444-555555555555"
+  _agent_ptr_update "zen" "$uuid" "fresh"   # turn=1
+  _agent_ptr_update "zen" "$uuid" "resume"  # turn=2
+  read -r _u _e t < "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
+  [ "$t" -eq 2 ]
+}

@@ -423,17 +423,27 @@ ${_ar_body}"
   # UUID 형식이 아니면 경고 후 버리고 새 UUID 를 생성한다 (forge 세션과
   # claude 세션은 별개 체계 — 연결은 세션 메타가 담당).
   if [ -n "$session_id" ] && ! printf '%s' "$session_id" | grep -qiE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
-    echo "[agent-runner] WARNING: session_id 가 UUID 형식이 아님('${session_id}') — 무시하고 새 claude 세션 생성" >&2
+    echo "[agent-runner] WARNING: session_id 가 UUID 형식이 아님('${session_id}') — 무시하고 세션 선택 위임" >&2
     session_id=""
   fi
-  local session_args
-  if [ -z "$session_id" ]; then
-    session_id=$(_gen_uuid)
-    session_args=(--session-id "$session_id")
-  elif _agent_session_has_turns "$session_id"; then
-    session_args=(--resume "$session_id")
+  local session_args _ar_sess_mode
+  if [ -n "$session_id" ]; then
+    # 명시적 UUID — 호출자 의도 존중 (마커 있으면 resume)
+    if _agent_session_has_turns "$session_id"; then
+      session_args=(--resume "$session_id"); _ar_sess_mode="resume"
+    else
+      session_args=(--session-id "$session_id"); _ar_sess_mode="fresh"
+    fi
   else
-    session_args=(--session-id "$session_id")
+    # per-SOUL recency-gated resume (P2-1 캐시 레버)
+    local _ar_pick; _ar_pick=$(_agent_pick_session "$soul_name")
+    session_id=${_ar_pick%% *}; _ar_sess_mode=${_ar_pick##* }
+    if [ "$_ar_sess_mode" = "resume" ]; then
+      session_args=(--resume "$session_id")
+      echo "[agent-runner] 세션 재사용(--resume) soul=${soul_name} sid=${session_id:0:8} — 캐시 적중 시도" >&2
+    else
+      session_args=(--session-id "$session_id")
+    fi
   fi
 
   # (d) claude argv 조립 — 게이트웨이와 동일 + bash 경로 전용 --model/--allowedTools
@@ -548,6 +558,9 @@ ${_ar_body}"
     mkdir -p "$_ar_sess_dir" 2>/dev/null
     : > "${_ar_sess_dir}/${session_id}.claude" 2>/dev/null \
       || touch "${_ar_sess_dir}/${session_id}.claude" 2>/dev/null
+    # per-SOUL 세션 포인터 갱신 — 후속 동일-SOUL 소환이 윈도 내면 --resume 으로
+    # 캐시 재사용 (명시적 UUID 가 외부에서 주입된 경우는 포인터를 건드리지 않음)
+    _agent_ptr_update "$soul_name" "$session_id" "$_ar_sess_mode"
   fi
 
   local total_tokens=$(( _AR_TOKENS_IN + _AR_TOKENS_OUT ))
@@ -596,7 +609,7 @@ ${_ar_body}"
   fi
 
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
 
   [ "$result" = "fail" ] && return 1
   return 0
@@ -652,4 +665,53 @@ _agent_session_has_turns() {
     return 0
   fi
   return 1
+}
+
+# ── 캐시 적중 레버 (P2-1): 같은 SOUL 연속 소환을 같은 claude 세션으로 --resume ──
+# byte-stable 시스템 프롬프트(75dc905)가 캐시 TTL(5분) 내에서 cache_read 되도록
+# per-SOUL 세션 포인터를 유지한다. forge sess_* 는 claude 가 거부하는 비-UUID라
+# 지금까지 매 run 새 세션 → 캐시 미적중이었다(--resume 인프라 사문화).
+# recency 게이트가 핵심: 윈도(캐시 TTL) 초과 후 resume 는 식은 누적 컨텍스트만
+# 비싸지므로 그때는 새 세션이 같거나 낫다. 턴캡으로 컨텍스트 무한 증식도 차단.
+GOLEM_RESUME_WINDOW_SEC="${GOLEM_RESUME_WINDOW_SEC:-300}"
+GOLEM_RESUME_MAX_TURNS="${GOLEM_RESUME_MAX_TURNS:-8}"
+
+_agent_ptr_file() {
+  printf '%s/soul-%s.ptr' "${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/sessions" "$1"
+}
+
+# 세션 선택 — echoes "<uuid> resume" (윈도 내 따뜻한 세션) 또는 "<newuuid> fresh".
+_agent_pick_session() {
+  local soul="$1"
+  local ptr; ptr=$(_agent_ptr_file "$soul")
+  if [ "${GOLEM_RESUME_DISABLE:-0}" = "1" ] || [ ! -f "$ptr" ]; then
+    printf '%s fresh' "$(_gen_uuid)"; return
+  fi
+  local p_uuid p_epoch p_turns now age
+  read -r p_uuid p_epoch p_turns < "$ptr" 2>/dev/null
+  now=$(date +%s 2>/dev/null || echo 0)
+  age=$(( now - ${p_epoch:-0} ))
+  if [ -n "$p_uuid" ] \
+     && [ "${p_epoch:-0}" -gt 0 ] \
+     && [ "$age" -ge 0 ] && [ "$age" -le "$GOLEM_RESUME_WINDOW_SEC" ] \
+     && [ "${p_turns:-0}" -lt "$GOLEM_RESUME_MAX_TURNS" ] \
+     && [ -f "${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/sessions/${p_uuid}.claude" ]; then
+    printf '%s resume' "$p_uuid"
+  else
+    printf '%s fresh' "$(_gen_uuid)"
+  fi
+}
+
+# 성공 소환 후 포인터 갱신 — fresh 면 turn=1, resume 면 turn+1.
+_agent_ptr_update() {
+  local soul="$1" uuid="$2" mode="$3"
+  local ptr; ptr=$(_agent_ptr_file "$soul")
+  local turns=1 now
+  now=$(date +%s 2>/dev/null || echo 0)
+  if [ "$mode" = "resume" ] && [ -f "$ptr" ]; then
+    local _u _e _t; read -r _u _e _t < "$ptr" 2>/dev/null
+    turns=$(( ${_t:-0} + 1 ))
+  fi
+  local tmp="${ptr}.tmp.$$"
+  printf '%s %s %s\n' "$uuid" "$now" "$turns" > "$tmp" 2>/dev/null && mv -f "$tmp" "$ptr" 2>/dev/null
 }

@@ -78,7 +78,7 @@
 | 항목 | 내용 | 대상 |
 |------|------|------|
 | P2-1 | **역할 기반 모델 라우팅 정책**: 판단직(director/verifier/sage) → 상위 모델, 실행직(executor류) → 중위, 정형 태스크(문서/로그/리네임) → haiku. `effort:` 필드를 실제 소비: `effort=high` → 모델 1단계 승급. SOUL frontmatter 정적 지정은 오버라이드로 유지 | W9 |
-| P2-2 | **캐시 관측·최적화**: cache_read/cache_creation 분리 기록 → `forge insights`에 히트율 표시. 프롬프트 빌더의 공통 블록(전 SOUL 동일)을 바이트 단위 고정해 캐시 히트 보장 (현재 SOUL별 블록이 앞에 섞이면 캐시 무효) | 비용 |
+| ✅ P2-2 | **캐시 관측·최적화 (완료 2026-06-13, 75dc905·4d62268 + resume 커밋)**: ① cache_read/cache_creation 분리 기록(usage·meta·`/console` cache_hit_rate) ② 프롬프트를 정적(byte-stable 시스템)/휘발(유저 메시지)로 분리 — 태스크 이중 전송 제거 ③ **per-SOUL `--resume` 캐시 레버**: 같은 SOUL 연속 소환을 같은 claude 세션으로 이어 윈도(`GOLEM_RESUME_WINDOW_SEC`=300, 캐시 TTL) 내 cache_read 재사용. recency+턴캡(`GOLEM_RESUME_MAX_TURNS`=8) 게이트, `GOLEM_RESUME_DISABLE=1` 옵트아웃. **실측: resume 런 cache_creation 18,173→367 (98%↓)** — 정적 프롬프트가 재생성 대신 캐시 히트. forge가 넘기던 비-UUID sess_*로 인해 사문화돼 있던 `--resume` 인프라를 살림 | 비용 |
 | P2-3 | **골든 태스크 스위트 (모델 이식성 벤치)**: `tests/golden/` 에 대표 태스크 5~10개(버그수정·함수추가·문서·리뷰판정) + 결정론 채점기(테스트 통과/마커 정확도). `forge bench <model>` 로 모델별 실행 → 동일 하네스에서 모델 교체 시 성능 회귀를 수치로 확인. **"Fable 없이 같은 성능" 의 검증 장치** | 이식성 |
 | P2-4 | **forge build 멀티-SOUL e2e 라이브 검증**: 남은 최대 검증 공백. mission 자율 모드 풀런 포함 | 검증 |
 | P2-5 | **미션 복잡도 메트릭**: state.json에 태스크당 `turns_used`/`tokens_used` 기록 → 분해 품질·모델 적합성 분석 기반 | 관측 |
