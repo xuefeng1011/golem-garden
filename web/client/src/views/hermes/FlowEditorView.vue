@@ -86,7 +86,22 @@ const souls = ref<Soul[]>([])
 // ── Run panel ─────────────────────────────────────────────────────────────────
 const running = ref(false)
 const runLines = ref<string[]>([])
+// 실행 단계 표시: idle | running | waiting(승인 대기) | done | failed
+const runPhase = ref<'idle' | 'running' | 'waiting' | 'done' | 'failed'>('idle')
 let sseAbort: (() => void) | null = null
+// 실행 중 노드 상태 라이브 갱신용 폴링 (캔버스에서 진행 가시화)
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function _startPolling() {
+  _stopPolling()
+  pollTimer = setInterval(refreshFlowStatus, 1500)
+}
+function _stopPolling() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
 
 // Waiting approval steps derived from current nodes
 const waitingSteps = computed(() =>
@@ -306,7 +321,9 @@ async function run() {
   }
 
   running.value = true
+  runPhase.value = 'running'
   runLines.value = []
+  _startPolling()
 
   try {
     const { run_id } = await startForge(pid, 'flow', ['run', flowId.value])
@@ -316,20 +333,38 @@ async function run() {
       (evt) => {
         if (evt.line) runLines.value = [...runLines.value, evt.line]
       },
-      () => {
+      async () => {
         running.value = false
         sseAbort = null
-        refreshFlowStatus()
+        _stopPolling()
+        await refreshFlowStatus()
+        // 승인 대기 단계가 남았으면 waiting, 아니면 전체 종결 판정
+        if (waitingSteps.value.length > 0) {
+          runPhase.value = 'waiting'
+          message.warning(t('flowEditor.runWaiting'))
+        } else {
+          const failed = nodes.value.some(
+            (n) => (n.data as EditorNodeData).status === 'failed',
+          )
+          runPhase.value = failed ? 'failed' : 'done'
+          if (failed) message.error(t('flowEditor.runFailed'))
+          else message.success(t('flowEditor.runDone'))
+        }
       },
       (err) => {
         running.value = false
         sseAbort = null
+        _stopPolling()
+        runPhase.value = 'failed'
+        refreshFlowStatus()
         message.error(err.message)
       },
     ).abort
 
   } catch (err) {
     running.value = false
+    _stopPolling()
+    runPhase.value = 'failed'
     message.error(err instanceof Error ? err.message : String(err))
   }
 }
@@ -363,7 +398,9 @@ async function approve(stepId: string) {
   try {
     await startForge(pid, 'flow', ['approve', flowId.value, stepId])
     message.success(t('flowEditor.approved'))
-    refreshFlowStatus()
+    await refreshFlowStatus()
+    // 승인 후 자동으로 플로우 재개 — 사용자가 ▶실행을 다시 누를 필요 없음
+    await run()
   } catch (err) {
     message.error(err instanceof Error ? err.message : String(err))
   }
@@ -453,6 +490,7 @@ window.addEventListener('keydown', onKeyDown)
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   sseAbort?.()
+  _stopPolling()
 })
 
 // ── Route leave guard ─────────────────────────────────────────────────────────
@@ -570,6 +608,7 @@ onBeforeRouteLeave((_to, _from, next) => {
       <RunPanel
         :lines="runLines"
         :running="running"
+        :phase="runPhase"
         :waiting-steps="waitingSteps"
         @approve="approve"
         @reject="reject"

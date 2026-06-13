@@ -8,9 +8,12 @@ import { useI18n } from 'vue-i18n'
 import { NButton, NIcon } from 'naive-ui'
 import { ChevronDownOutline, ChevronUpOutline, CheckmarkOutline, CloseOutline } from '@vicons/ionicons5'
 
+import { computed } from 'vue'
+
 const props = defineProps<{
   lines: string[]
   running: boolean
+  phase?: 'idle' | 'running' | 'waiting' | 'done' | 'failed'
   waitingSteps: { stepId: string; label: string }[]
 }>()
 
@@ -23,6 +26,22 @@ const { t } = useI18n()
 
 const collapsed = ref(false)
 const logEl = ref<HTMLElement | null>(null)
+
+// 실행 시작 시 패널 자동 펼침 (진행 상황이 바로 보이도록)
+watch(
+  () => props.running,
+  (r) => { if (r) collapsed.value = false },
+)
+
+// 결과 칩 — 실행 종료 후 단계 표시
+const resultChip = computed(() => {
+  switch (props.phase) {
+    case 'done':    return { text: t('flowEditor.phaseDone'),    cls: 'chip-done' }
+    case 'failed':  return { text: t('flowEditor.phaseFailed'),  cls: 'chip-failed' }
+    case 'waiting': return { text: t('flowEditor.phaseWaiting'), cls: 'chip-waiting' }
+    default:        return null
+  }
+})
 
 // Auto-scroll to bottom when new lines arrive
 watch(
@@ -42,6 +61,7 @@ watch(
     <div class="run-panel-header" @click="collapsed = !collapsed">
       <span class="run-panel-title">{{ t('flowEditor.runPanelTitle') }}</span>
       <span v-if="running" class="running-badge">{{ t('flowEditor.running') }}</span>
+      <span v-else-if="resultChip" class="result-chip" :class="resultChip.cls">{{ resultChip.text }}</span>
       <NIcon class="toggle-icon" :size="14">
         <ChevronUpOutline v-if="!collapsed" />
         <ChevronDownOutline v-else />
@@ -124,6 +144,17 @@ watch(
 @keyframes pulse-opacity {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.5; }
+}
+
+.result-chip {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 1px 8px;
+
+  &.chip-done    { color: $success; background: rgba(34, 197, 94, 0.14); }
+  &.chip-failed  { color: $error;   background: rgba(239, 68, 68, 0.14); }
+  &.chip-waiting { color: $warning;  background: rgba(245, 158, 11, 0.16); }
 }
 
 .toggle-icon {
