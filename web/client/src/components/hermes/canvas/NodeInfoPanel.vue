@@ -104,19 +104,32 @@ function fmtDuration(ms: number | undefined): string {
       </div>
     </template>
 
-    <!-- Task-specific -->
+    <!-- Task / flow-step -->
     <template v-else-if="data.nodeType === 'task'">
       <div class="info-row">
         <span class="info-key">SOUL</span>
-        <span class="info-val">{{ data.soul }}</span>
+        <span class="info-val">{{ data.soul && data.soul.length ? data.soul : '(host)' }}</span>
       </div>
       <div class="info-row">
         <span class="info-key">Status</span>
-        <span class="info-val">{{ data.status }}</span>
+        <span class="info-val" :class="`status--${data.status}`">{{ data.status }}</span>
       </div>
-      <div class="info-row">
+      <div v-if="data.taskIdx !== undefined" class="info-row">
         <span class="info-key">Task #</span>
         <span class="info-val">{{ data.taskIdx }}</span>
+      </div>
+      <!-- flow-step extras -->
+      <div v-if="data.stepId" class="info-row">
+        <span class="info-key">Step</span>
+        <span class="info-val mono">{{ data.stepId }}</span>
+      </div>
+      <div v-if="data.onFail" class="info-row">
+        <span class="info-key">On fail</span>
+        <span class="info-val">{{ data.onFail }}</span>
+      </div>
+      <div v-if="data.approval" class="info-row">
+        <span class="info-key">Approval</span>
+        <span class="info-val">🔒 required</span>
       </div>
     </template>
   </div>
@@ -198,6 +211,10 @@ function fmtDuration(ms: number | undefined): string {
   &.result--success { color: $success; font-weight: 600; }
   &.result--error   { color: $error;   font-weight: 600; }
   &.result--timeout { color: $warning; font-weight: 600; }
+  &.status--done, &.status--completed { color: $success; font-weight: 600; }
+  &.status--failed { color: $error; font-weight: 600; }
+  &.status--running { color: $accent-primary; font-weight: 600; }
+  &.status--waiting_approval { color: $warning; font-weight: 600; }
 }
 
 .info-btn {

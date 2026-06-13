@@ -554,4 +554,28 @@ describe('buildFlowDag', () => {
     const { nodes } = buildFlowDag(flow)
     expect(nodes[0].data.label.length).toBeLessThanOrEqual(53)
   })
+
+  it('lays out left→right (source.x < target.x for a dep edge)', () => {
+    const flow = makeFlow()
+    const { nodes } = buildFlowDag(flow)
+    const s1 = nodes.find((n) => n.data.stepId === 's1')!
+    const s2 = nodes.find((n) => n.data.stepId === 's2')!
+    // LR: dependency target sits to the right of its source
+    expect(s1.position.x).toBeLessThan(s2.position.x)
+  })
+
+  it('animates only edges entering a running step', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 'a', soul: 'ryn', task: 'A', deps: [], status: 'done', approval: false, on_fail: 'abort' },
+        { id: 'b', soul: 'nex', task: 'B', deps: ['a'], status: 'running', approval: false, on_fail: 'abort' },
+        { id: 'c', soul: 'ryn', task: 'C', deps: ['b'], status: 'pending', approval: false, on_fail: 'abort' },
+      ],
+    })
+    const { edges } = buildFlowDag(flow)
+    const toB = edges.find((e) => e.target === 'fs__b')!
+    const toC = edges.find((e) => e.target === 'fs__c')!
+    expect(toB.animated).toBe(true)   // a→b: b is running
+    expect(toC.animated).toBe(false)  // b→c: c is pending
+  })
 })

@@ -55,6 +55,7 @@ export interface GraphEdge {
   source: string
   target: string
   label?: string
+  animated?: boolean
 }
 
 export interface GraphData {
@@ -64,19 +65,23 @@ export interface GraphData {
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
+// n8n 식 노드 치수 — N8nNode.vue 와 일치(width 210). 여백은 n8n 처럼 넉넉히.
+const NODE_W = 210
+const NODE_H = 66
+
 export function layoutWithDagre(
   nodes: GraphNode[],
   edges: GraphEdge[],
-  direction: 'TB' | 'LR' = 'TB',
+  direction: 'TB' | 'LR' = 'LR',
 ): GraphNode[] {
   if (nodes.length === 0) return nodes
 
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: direction, nodesep: 60, ranksep: 80, marginx: 20, marginy: 20 })
+  g.setGraph({ rankdir: direction, nodesep: 44, ranksep: 130, marginx: 24, marginy: 24 })
 
   for (const node of nodes) {
-    g.setNode(node.id, { width: 180, height: 60 })
+    g.setNode(node.id, { width: NODE_W, height: NODE_H })
   }
 
   for (const edge of edges) {
@@ -92,8 +97,8 @@ export function layoutWithDagre(
     return {
       ...node,
       position: {
-        x: pos ? pos.x - 90 : node.position.x,
-        y: pos ? pos.y - 30 : node.position.y,
+        x: pos ? pos.x - NODE_W / 2 : node.position.x,
+        y: pos ? pos.y - NODE_H / 2 : node.position.y,
       },
     }
   })
@@ -158,7 +163,8 @@ export function buildExecutionFlow(
         type: 'run',
         position: { x: 0, y: 0 },
         data: {
-          label: `${run.run_id.slice(0, 8)} (${run.result})`,
+          // 라벨 다이어트: 결과는 상태 점으로 표시 (n8n식) — 제목은 run id 만
+          label: run.run_id.slice(0, 8),
           nodeType: 'run',
           runId: run.run_id,
           soul: run.soul,
@@ -201,7 +207,7 @@ export function buildExecutionFlow(
     }
   }
 
-  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  const laidOut = layoutWithDagre(nodes, edges, 'LR')
   return { nodes: laidOut, edges }
 }
 
@@ -251,11 +257,12 @@ export function buildMissionDag(mission: Mission): GraphData {
       id: `e__task__${mission.id}__${task.idx}`,
       source: prevNodeId,
       target: taskNodeId,
+      animated: task.status === 'in_progress',
     })
     prevNodeId = taskNodeId
   }
 
-  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  const laidOut = layoutWithDagre(nodes, edges, 'LR')
   return { nodes: laidOut, edges }
 }
 
@@ -299,7 +306,8 @@ export function buildSessionTree(runs: RunMeta[]): GraphData {
         type: 'run',
         position: { x: 0, y: 0 },
         data: {
-          label: `${run.soul} (${run.result})`,
+          // 제목은 soul, 결과는 상태 점으로 (n8n식)
+          label: run.soul || 'host',
           nodeType: 'run',
           runId: run.run_id,
           soul: run.soul,
@@ -318,7 +326,7 @@ export function buildSessionTree(runs: RunMeta[]): GraphData {
     }
   }
 
-  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  const laidOut = layoutWithDagre(nodes, edges, 'LR')
   return { nodes: laidOut, edges }
 }
 
@@ -387,7 +395,8 @@ export function buildTimeline(runs: RunMeta[], range: TimelineRange = 'all'): Gr
       // G9: position computed once here — x = time-slot index, y = soul lane
       position: { x: i * X_STEP, y: soulIdx * Y_STEP },
       data: {
-        label: `${soul} · ${durSec} · ${run.result}`,
+        // 결과는 상태 점으로 — 제목은 soul · 소요시간
+        label: `${soul} · ${durSec}`,
         nodeType: 'run',
         runId: run.run_id,
         soul,
@@ -457,11 +466,13 @@ export function buildFlowDag(flow: Flow): GraphData {
           id: `fe__${dep}__${step.id}`,
           source: `fs__${dep}`,
           target: `fs__${step.id}`,
+          // 실행 중인 step 으로 들어가는 엣지는 애니메이션 (n8n 실행 표시)
+          animated: step.status === 'running',
         })
       }
     }
   }
 
-  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  const laidOut = layoutWithDagre(nodes, edges, 'LR')
   return { nodes: laidOut, edges }
 }

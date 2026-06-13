@@ -7,8 +7,8 @@
  *     vue-flow is in a separate chunk (manualChunks in vite.config.ts)
  */
 import { shallowRef, ref, computed, watch, markRaw } from 'vue'
-import { VueFlow, useVueFlow, type NodeMouseEvent, type NodeTypesObject } from '@vue-flow/core'
-import { Background } from '@vue-flow/background'
+import { VueFlow, useVueFlow, MarkerType, type NodeMouseEvent, type NodeTypesObject } from '@vue-flow/core'
+import { Background, BackgroundVariant } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { useI18n } from 'vue-i18n'
 import { NSpin, NIcon, NSelect } from 'naive-ui'
@@ -34,9 +34,7 @@ import type { Mission } from '@/api/hermes/missions'
 import type { Flow } from '@/api/hermes/flows'
 import type { RunMeta } from '@/api/hermes/console'
 
-import SoulNode from '@/components/hermes/canvas/SoulNode.vue'
-import RunNode from '@/components/hermes/canvas/RunNode.vue'
-import GenericNode from '@/components/hermes/canvas/GenericNode.vue'
+import N8nNode from '@/components/hermes/canvas/N8nNode.vue'
 import NodeInfoPanel from '@/components/hermes/canvas/NodeInfoPanel.vue'
 import RunDetailDrawer from '@/components/hermes/console/RunDetailDrawer.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -78,14 +76,21 @@ const { fitView } = useVueFlow()
 // G8: onlyRenderVisibleElements when nodes exceed 300
 const useVisibleOnly = computed(() => nodes.value.length > 300)
 
-// ── Node type registry (markRaw: skip reactivity on component definitions) ───
+// ── Node type registry — 단일 n8n 노드로 통일 (markRaw: 반응성 제외) ───
+const n8nNode = N8nNode as NodeTypesObject[string]
 const nodeTypes: NodeTypesObject = markRaw({
-  soul: SoulNode as NodeTypesObject[string],
-  run: RunNode as NodeTypesObject[string],
-  session: GenericNode as NodeTypesObject[string],
-  mission: GenericNode as NodeTypesObject[string],
-  task: GenericNode as NodeTypesObject[string],
-  flowstep: GenericNode as NodeTypesObject[string],
+  soul: n8nNode,
+  run: n8nNode,
+  session: n8nNode,
+  mission: n8nNode,
+  task: n8nNode,
+  flowstep: n8nNode,
+})
+
+// n8n식 엣지 — 부드러운 베지어 + 화살표 마커 (단일 옵션, 드래그 재계산 없음 G9)
+const defaultEdgeOptions = markRaw({
+  type: 'default',
+  markerEnd: MarkerType.ArrowClosed,
 })
 
 // ── Mission select options ────────────────────────────────────────────────────
@@ -383,12 +388,13 @@ const emptyDescription = computed(() => {
           :nodes="nodes"
           :edges="edges"
           :node-types="nodeTypes"
+          :default-edge-options="defaultEdgeOptions"
           :only-render-visible-elements="useVisibleOnly"
           fit-view-on-init
           class="golem-flow"
           @node-click="onNodeClick"
         >
-          <Background />
+          <Background :variant="BackgroundVariant.Dots" :gap="22" :size="1.4" />
           <Controls />
         </VueFlow>
 
@@ -529,6 +535,21 @@ const emptyDescription = computed(() => {
   width: 100%;
   height: 100%;
   background: $bg-secondary;
+
+  // n8n식 엣지 — 은은한 베지어 (Vue Flow 내부 path 를 :deep 로 스타일)
+  :deep(.vue-flow__edge-path) {
+    stroke: var(--border-color, #d0d5dd);
+    stroke-width: 1.6;
+  }
+
+  :deep(.vue-flow__edge.selected .vue-flow__edge-path),
+  :deep(.vue-flow__edge:hover .vue-flow__edge-path) {
+    stroke: $accent-primary;
+  }
+
+  :deep(.vue-flow__arrowhead) {
+    fill: var(--border-color, #d0d5dd);
+  }
 }
 
 .swimlane-legend {
