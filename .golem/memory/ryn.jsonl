@@ -8,3 +8,6 @@
 {"date":"2026-06-11","task":"eval v2 태스크 생성","lesson":"6파일+자가검증 단일 run은 360s 타임아웃 — 파일 생성과 검증을 분할 재시도로 해결","tags":"timeout,task-split,eval","ts":"2026-06-10T15:23:34"}
 {"date":"2026-06-12","task":"distillation@40-tasks","lesson":"40건 성공 누적 — 안정적으로 처리해온 태스크 패턴을 우선 재사용하고, 검증된 접근을 기본값으로 삼는다.","tags":"distilled,milestone","ts":"2026-06-11T16:22:06"}
 {"date":"2026-06-12","task":"distillation@45-tasks","lesson":"45건 성공 누적 — 안정적으로 처리해온 태스크 패턴을 우선 재사용하고, 검증된 접근을 기본값으로 삼는다.","tags":"distilled,milestone","ts":"2026-06-12T05:44:17"}
+{"date":"2026-06-13","task":"distillation@50-tasks","lesson":"50건 성공 누적 — 안정적으로 처리해온 태스크 패턴을 우선 재사용하고, 검증된 접근을 기본값으로 삼는다.","tags":"distilled,milestone","ts":"2026-06-12T23:15:07"}
+{"date":"2026-06-13","task":"flow-dag.sh 구현","lesson":"bash read는 탭 연속을 1구분자로 접어 빈 필드가 밀림 — 레코드 구분자는 US(0x1f) 사용","tags":"bash,ifs,parsing,jsonl","ts":"2026-06-12T23:57:32"}
+{"date":"2026-06-13","task":"flow-dag.sh 구현","lesson":"cmd | tr 파이프라인의 rc는 마지막 명령 것 — 폴백은 command -v 분기로","tags":"bash,pipeline,fallback","ts":"2026-06-12T23:57:33"}

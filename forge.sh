@@ -153,6 +153,21 @@ Mission (목표 완수 모드 — 디스크 상태 레이어):
   mission complete <id>
                       미션 완료 처리 (검증 후 호출)
 
+Flow (단계 승인 워크플로):
+  flow create "<goal>" <steps.json>
+                      플로우 생성 → flow_id 출력 + run 안내
+  flow run <flow_id> [session_id]
+                      상태 검증 후 플로우 실행
+  flow status <flow_id>
+                      플로우 상태 조회
+  flow list           전체 플로우 목록
+  flow validate <flow_id>
+                      state.json 유효성 검사
+  flow approve <flow_id> <step_id>
+                      단계 승인
+  flow reject <flow_id> <step_id>
+                      단계 거부
+
 Recovery (에러 복구):
   recover <soul> <task> <reason>
                       3단계 복구 실행
@@ -764,6 +779,64 @@ case "${1:-}" in
         ;;
       *)
         echo "Usage: forge mission <init|set-tasks|task|status|list|complete>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  flow)
+    _load flow.sh
+    case "${2:-}" in
+      create)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge flow create \"<goal>\" <steps.json>"
+          exit 1
+        fi
+        _flow_id=$(flow_create "$3" "$4")
+        echo "Flow 생성: ${_flow_id}"
+        echo "실행: forge flow run ${_flow_id}"
+        ;;
+      run)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge flow run <flow_id> [session_id]"
+          exit 1
+        fi
+        flow_validate "${GOLEM_DIR}/flows/${3}/state.json" && flow_run "$3" "${4:-}"
+        exit $?
+        ;;
+      status)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge flow status <flow_id>"
+          exit 1
+        fi
+        flow_status "$3"
+        ;;
+      list)
+        flow_list
+        ;;
+      validate)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge flow validate <flow_id>"
+          exit 1
+        fi
+        flow_validate "${GOLEM_DIR}/flows/${3}/state.json"
+        ;;
+      approve)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge flow approve <flow_id> <step_id>"
+          exit 1
+        fi
+        flow_approve "$3" "$4"
+        ;;
+      reject)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge flow reject <flow_id> <step_id>"
+          exit 1
+        fi
+        flow_reject "$3" "$4"
+        ;;
+      *)
+        echo "Usage: forge flow <create|run|status|list|validate|approve|reject>"
         exit 1
         ;;
     esac
