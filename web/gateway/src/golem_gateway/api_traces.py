@@ -40,6 +40,9 @@ class RunMeta(BaseModel):
     tokens_in: int
     tokens_out: int
     tokens_cache: int
+    # cache hit-rate split — absent in pre-2026-06-13 metas (None = unknown)
+    tokens_cache_read: int | None = None
+    tokens_cache_creation: int | None = None
     cost_usd: float
     result: str
     tool_counts: dict[str, int]

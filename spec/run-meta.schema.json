@@ -15,6 +15,11 @@
     "result",
     "tool_counts"
   ],
+  "optional": [
+    "tokens_cache_read",
+    "tokens_cache_creation"
+  ],
+  "optional_comment": "캐시 적중률 측정용 분리 카운트 (2026-06-13 추가). 구버전 meta에는 없음 — 소비자는 부재 시 null/스킵 처리. 적중률 = read / (read + creation + tokens_in)",
   "types": {
     "run_id": "string(uuid)",
     "session_id": "string(uuid)",
@@ -26,6 +31,8 @@
     "tokens_in": "integer",
     "tokens_out": "integer",
     "tokens_cache": "integer",
+    "tokens_cache_read": "integer",
+    "tokens_cache_creation": "integer",
     "cost_usd": "number",
     "result": "string(success|fail|timeout)",
     "tool_counts": "object(string->integer)"

@@ -77,6 +77,8 @@ def _write_meta(
     cost_usd: float = 0.001,
     tokens_out: int = 5,
     mtime_offset: float = 0.0,
+    cache_read: int | None = None,
+    cache_creation: int | None = None,
 ) -> None:
     """Write a minimal .meta.json (no .jsonl needed for console tests)."""
     runs_dir = project_path / ".golem" / "runs"
@@ -97,6 +99,11 @@ def _write_meta(
         "result": result,
         "tool_counts": {},
     }
+    if cache_read is not None:
+        meta["tokens_cache_read"] = cache_read
+        meta["tokens_cache_creation"] = cache_creation or 0
+        meta["tokens_cache"] = cache_read + (cache_creation or 0)
+
     meta_path = runs_dir / f"{run_id}.meta.json"
     meta_path.write_text(json.dumps(meta), encoding="utf-8")
 
@@ -263,3 +270,35 @@ async def test_console_active_runs_injected(registered_project, monkeypatch) -> 
     finally:
         # Clean up injected run so it doesn't leak into other tests
         manager._runs.pop(run.run_id, None)
+
+
+@pytest.mark.asyncio
+async def test_console_cache_hit_rate(registered_project) -> None:
+    """Hit rate aggregates only metas with the read/creation split."""
+    project_id, project_path = registered_project
+
+    # 구버전 meta (분리 키 없음) — 집계에서 제외돼야 함
+    _write_meta(project_path, str(uuid.uuid4()), result="success")
+    # 신버전 meta 2개: read 900/creation 90 + tokens_in 10×2 → 900/1010
+    _write_meta(project_path, str(uuid.uuid4()), result="success",
+                cache_read=450, cache_creation=45, mtime_offset=1.0)
+    _write_meta(project_path, str(uuid.uuid4()), result="success",
+                cache_read=450, cache_creation=45, mtime_offset=2.0)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/console")
+    assert resp.status_code == 200
+    stats = resp.json()["stats"]
+    assert stats["cache_hit_rate"] == pytest.approx(900 / 1010, abs=1e-3)
+
+
+@pytest.mark.asyncio
+async def test_console_cache_hit_rate_none_without_split(registered_project) -> None:
+    """Only legacy metas -> cache_hit_rate is None."""
+    project_id, project_path = registered_project
+    _write_meta(project_path, str(uuid.uuid4()), result="success")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/console")
+    assert resp.status_code == 200
+    assert resp.json()["stats"]["cache_hit_rate"] is None

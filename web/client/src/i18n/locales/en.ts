@@ -931,6 +931,7 @@ export default {
     loadFailed: 'Failed to load console data',
     pollHint: 'Auto-refreshes every 10s',
     totalRuns: 'Total Runs',
+    cacheHitRate: 'Cache Hit',
     successRate: 'Success Rate',
     avgDuration: 'Avg Duration',
     totalCost: 'Total Cost',

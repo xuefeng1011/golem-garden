@@ -132,9 +132,10 @@ _agent_persist_run() {
   tool_counts="{${tool_counts}}"
 
   # meta 사이드카 — 이미 파싱된 _AR_* 재사용 (추가 스캔 0)
-  printf '{"run_id":"%s","session_id":"%s","soul":"%s","model":"%s","source":"bash","ts_start":"%s","duration_ms":%s,"tokens_in":%s,"tokens_out":%s,"tokens_cache":%s,"cost_usd":%s,"result":"%s","tool_counts":%s}\n' \
+  printf '{"run_id":"%s","session_id":"%s","soul":"%s","model":"%s","source":"bash","ts_start":"%s","duration_ms":%s,"tokens_in":%s,"tokens_out":%s,"tokens_cache":%s,"tokens_cache_read":%s,"tokens_cache_creation":%s,"cost_usd":%s,"result":"%s","tool_counts":%s}\n' \
     "$run_id" "$session_id" "$soul_name" "$model" "$ts_start" \
     "${_AR_DURATION_MS:-0}" "${_AR_TOKENS_IN:-0}" "${_AR_TOKENS_OUT:-0}" "${_AR_TOKENS_CACHE:-0}" \
+    "${_AR_TOKENS_CACHE_READ:-0}" "${_AR_TOKENS_CACHE_CREATE:-0}" \
     "${cost:-0.000}" "$result" "$tool_counts" \
     > "${runs_dir}/${run_id}.meta.json" 2>/dev/null
 
@@ -241,6 +242,8 @@ _parse_stream() {
   _AR_TOKENS_IN=0
   _AR_TOKENS_OUT=0
   _AR_TOKENS_CACHE=0
+  _AR_TOKENS_CACHE_READ=0
+  _AR_TOKENS_CACHE_CREATE=0
   local result_field=""
 
   while IFS= read -r line; do
@@ -262,6 +265,10 @@ _parse_stream() {
       cc_t=$(_json_num_field "$line" "cache_creation_input_tokens")
       _AR_TOKENS_IN=${in_t:-0}
       _AR_TOKENS_OUT=${out_t:-0}
+      # read/creation 분리 보존 — 적중률(read/(read+creation+input)) 측정용.
+      # tokens_cache 합산은 기존 소비자(eval.sh/growth-log) 호환으로 유지.
+      _AR_TOKENS_CACHE_READ=${cr_t:-0}
+      _AR_TOKENS_CACHE_CREATE=${cc_t:-0}
       _AR_TOKENS_CACHE=$(( ${cr_t:-0} + ${cc_t:-0} ))
       # result 라인은 보통 "result" 키에 최종 텍스트를 담음 — 폴백용
       result_field=$(printf '%s' "$line" | sed -n 's/.*"result":"\(\([^"\\]\|\\.\)*\)".*/\1/p')
@@ -379,15 +386,21 @@ agent_run() {
     esac
   fi
 
-  # (b) 시스템 프롬프트 = identity 헤더 + prompt_build(SOUL 컨텍스트 + 태스크)
+  # (b) 시스템 프롬프트 = identity 헤더 + 정적 SOUL 컨텍스트만 (byte-stable).
+  # 휘발 값(이력/메모리)과 태스크는 유저 메시지로 — 시스템 프롬프트가 런마다
+  # 동일해야 API 프롬프트 캐시가 크로스-런으로 히트한다 (5분 TTL 내).
   # 명령 치환은 trailing newline 을 제거하므로 헤더/본문 사이에 명시적 개행 삽입
   local _ar_header _ar_body
   _ar_header="$(_build_agent_system_prompt "$soul_name")"
-  _ar_body="$(prompt_build "$soul_name" "$task_text")"
+  _ar_body="$(prompt_build_static "$soul_name")"
   local system_prompt
   system_prompt="${_ar_header}
 
 ${_ar_body}"
+
+  # 유저 메시지 = 휘발 블록(이력/메모리) + 태스크
+  local _ar_user_msg
+  _ar_user_msg="$(prompt_build_task_block "$soul_name" "$task_text")"
 
   # (c) 모델 매핑 + (d 일부) 도구 CSV
   # AGENT_MODEL_OVERRIDE — SOUL frontmatter 모델을 1회성으로 교체 (P2-3 eval
@@ -458,7 +471,7 @@ ${_ar_body}"
   if [ -n "$tools_csv" ]; then
     argv+=(--allowedTools "$tools_csv")
   fi
-  argv+=(-- "$task_text")
+  argv+=(-- "$_ar_user_msg")
 
   # 타임아웃 프리픽스 결정 (D1) — dry-run 에서는 가시화만, 실제 소환 시에는 prepend.
   # max_secs 를 AGENT_MAX_SECONDS env 로 전달해 _agent_timeout_cmd 가 해석값을 쓰도록 함.
@@ -583,7 +596,7 @@ ${_ar_body}"
   fi
 
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
 
   [ "$result" = "fail" ] && return 1
   return 0

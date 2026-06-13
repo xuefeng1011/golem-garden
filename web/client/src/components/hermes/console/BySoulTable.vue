@@ -9,9 +9,10 @@ defineProps<{
   entries: BySoulEntry[]
 }>()
 
+// success_rate는 서버가 0..1 비율로 보냄
 function rateClass(rate: number): string {
-  if (rate >= 70) return 'is-success'
-  if (rate < 40) return 'is-warning'
+  if (rate >= 0.7) return 'is-success'
+  if (rate < 0.4) return 'is-warning'
   return ''
 }
 </script>
@@ -33,7 +34,7 @@ function rateClass(rate: number): string {
           <td class="cell-soul">{{ entry.soul }}</td>
           <td class="cell-num">{{ entry.runs }}</td>
           <td class="cell-num" :class="rateClass(entry.success_rate)">
-            {{ entry.success_rate.toFixed(1) }}%
+            {{ (entry.success_rate * 100).toFixed(1) }}%
           </td>
           <td class="cell-num">{{ fmtUsd(entry.cost_usd) }}</td>
         </tr>

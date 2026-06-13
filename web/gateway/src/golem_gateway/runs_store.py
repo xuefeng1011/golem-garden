@@ -117,10 +117,11 @@ def persist_run(
         # --- Compute token counts from usage dict ---
         tokens_in: int = int(usage.get("input_tokens", 0) or 0)
         tokens_out: int = int(usage.get("output_tokens", 0) or 0)
-        tokens_cache: int = int(
-            (usage.get("cache_read_input_tokens") or 0)
-            + (usage.get("cache_creation_input_tokens") or 0)
-        )
+        # read/creation split preserved for cache hit-rate metrics;
+        # tokens_cache stays as the sum for backward compatibility.
+        tokens_cache_read: int = int(usage.get("cache_read_input_tokens") or 0)
+        tokens_cache_creation: int = int(usage.get("cache_creation_input_tokens") or 0)
+        tokens_cache: int = tokens_cache_read + tokens_cache_creation
         cost_usd: float = float(usage.get("total_cost_usd", 0.0) or 0.0)
 
         # --- Build meta (required keys per spec/run-meta.schema.json) ---
@@ -135,6 +136,8 @@ def persist_run(
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "tokens_cache": tokens_cache,
+            "tokens_cache_read": tokens_cache_read,
+            "tokens_cache_creation": tokens_cache_creation,
             "cost_usd": cost_usd,
             "result": result,
             "tool_counts": dict(Counter(tool_log)),

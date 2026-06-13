@@ -18,10 +18,11 @@ _extract_section() {
   ' "$file" | tr -d '\r'
 }
 
-# SOUL 기반 프롬프트 조립 (캐시 최적화: 공통 접두사 + SOUL별 접미사)
-prompt_build() {
+# SOUL 기반 프롬프트 — 정적 블록 (byte-stable: 같은 SOUL이면 런마다 동일)
+# 시스템 프롬프트로 들어가 API 프롬프트 캐시의 크로스-런 히트를 만든다.
+# 휘발 값(이력/메모리/태스크)은 prompt_build_task_block 으로 분리 (유저 메시지행).
+prompt_build_static() {
   local soul_name="$1"
-  local task="$2"
   local soul_file=$(_resolve_soul_file "$soul_name")
 
   if [ ! -f "$soul_file" ]; then
@@ -31,8 +32,6 @@ prompt_build() {
 
   soul_parse "$soul_file"
 
-  local task_count=$(growth_log_task_count "$soul_name")
-  local success_rate=$(growth_log_success_rate "$soul_name")
   local omc_agent=$(soul_to_omc_agent "$SOUL_ROLE")
 
   # 프로젝트 컨텍스트 추출
@@ -65,9 +64,11 @@ prompt_build() {
       ;;
   esac
 
-  # === 캐시 최적화 구조 ===
-  # Block 1: 공통 접두사 (모든 SOUL 동일 → API 캐시 히트)
-  # Block 2: SOUL별 접미사 (개별 차이만 → 캐시 미스 최소화)
+  # === 캐시 최적화 구조 (2026-06-13 재배치) ===
+  # 프롬프트 캐시는 "접두사 byte-identical" 조건 — 휘발 값이 앞에 있으면
+  # 같은 SOUL의 다음 런에서 그 지점부터 캐시가 전부 깨진다.
+  # 순서: 정적(공통→SOUL 정체성→skill-tree 준정적) → 휘발(이력) → 태스크별(memory) → 태스크
+  # 정적 블록의 문구/공백은 변경 금지 (byte-stable 계약).
 
   cat <<PROMPT
 [GolemGarden — Project Context (Cache-Optimized Common Block)]
@@ -93,30 +94,54 @@ ${principles}
 
 ${rank_constraint}
 
-이전 작업 이력: ${task_count}건, 성공률 ${success_rate}%
 현재 랭크: ${SOUL_RANK}
 허용 도구: [${tools}]
 최대 턴: ${max_turns}
 격리 모드: ${isolation}
 OMC 에이전트: ${omc_agent} (모델: ${SOUL_MODEL})
-
-이 컨텍스트와 행동 원칙을 준수하여 다음 태스크를 수행하라:
-${task}
 PROMPT
 
-  # SOUL Memory 자동 주입 (유사 태스크 기억이 있으면)
+  # Skill Tree 전문화 블록 (준정적 — 전문화 이벤트 시에만 변경)
+  if [ -f "${GOLEM_ROOT}/lib/skill-tree.sh" ]; then
+    source "${GOLEM_ROOT}/lib/skill-tree.sh" 2>/dev/null
+    local st_block=$(skill_tree_prompt_block "$soul_name" 2>/dev/null)
+    [ -n "$st_block" ] && echo "$st_block"
+  fi
+}
+
+# 휘발 블록 (이력 + SOUL 메모리 + 태스크) — 유저 메시지로 전달.
+# 시스템 프롬프트에 섞이면 한 줄만 바뀌어도 캐시 세그먼트 전체가 무효화된다
+# (실측: 연속 2런 cache_creation 18.4k 동일 = 크로스-런 히트 0).
+prompt_build_task_block() {
+  local soul_name="$1"
+  local task="$2"
+
+  local task_count=$(growth_log_task_count "$soul_name")
+  local success_rate=$(growth_log_success_rate "$soul_name")
+
+  echo "이전 작업 이력: ${task_count}건, 성공률 ${success_rate}%"
+
+  # SOUL Memory 자동 주입 (태스크별 — 유사 태스크 기억이 있으면)
   if [ -f "${GOLEM_ROOT}/lib/soul-memory.sh" ]; then
     source "${GOLEM_ROOT}/lib/soul-memory.sh" 2>/dev/null
     local mem_block=$(memory_prompt_block "$soul_name" "$task" 2>/dev/null)
     [ -n "$mem_block" ] && echo "$mem_block"
   fi
 
-  # Skill Tree 전문화 블록 주입 (전문화되어 있으면)
-  if [ -f "${GOLEM_ROOT}/lib/skill-tree.sh" ]; then
-    source "${GOLEM_ROOT}/lib/skill-tree.sh" 2>/dev/null
-    local st_block=$(skill_tree_prompt_block "$soul_name" 2>/dev/null)
-    [ -n "$st_block" ] && echo "$st_block"
-  fi
+  cat <<PROMPT
+
+이 컨텍스트와 행동 원칙을 준수하여 다음 태스크를 수행하라:
+${task}
+PROMPT
+}
+
+# 합성 (하위 호환 — forge.sh prompt 디버그 verb 등)
+prompt_build() {
+  local soul_name="$1"
+  local task="$2"
+  prompt_build_static "$soul_name" || return 1
+  echo ""
+  prompt_build_task_block "$soul_name" "$task"
 }
 
 # 리뷰어 전용 프롬프트 조립
@@ -323,9 +348,10 @@ ${principles}
 
 ${rank_constraint}
 
-이력: ${task_count}건, 성공률 ${success_rate}%
 랭크: ${SOUL_RANK} | 도구: [${tools}] | 턴: ${max_turns} | 격리: ${isolation}
 OMC: ${omc_agent} (${SOUL_MODEL})
+
+이력: ${task_count}건, 성공률 ${success_rate}%
 
 태스크: ${task}
 FORK_SUFFIX

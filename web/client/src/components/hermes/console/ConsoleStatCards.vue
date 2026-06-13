@@ -6,6 +6,7 @@ import {
   TrendingUpOutline,
   CashOutline,
   TimerOutline,
+  FlashOutline,
 } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
 import type { ConsoleStats } from '@/api/hermes/console'
@@ -21,12 +22,25 @@ const props = defineProps<{
   loading?: boolean
 }>()
 
+// success_rate는 0..1 비율 — 표시는 ×100
+const successRatePct = computed(() => {
+  const s = props.stats
+  if (!s) return '—'
+  return (s.success_rate * 100).toFixed(1) + '%'
+})
+
 const successRateClass = computed(() => {
   const s = props.stats
   if (!s || s.total_runs === 0) return ''
-  if (s.success_rate >= 70) return 'is-success'
-  if (s.success_rate < 40) return 'is-warning'
+  if (s.success_rate >= 0.7) return 'is-success'
+  if (s.success_rate < 0.4) return 'is-warning'
   return ''
+})
+
+const cacheHitPct = computed(() => {
+  const r = props.stats?.cache_hit_rate
+  if (r === null || r === undefined) return null
+  return (r * 100).toFixed(1) + '%'
 })
 
 const avgDurationSec = computed(() => {
@@ -58,8 +72,16 @@ const budgetWarning = computed(() => props.budget?.warning ?? null)
         <NIcon class="stat-icon" size="18"><TrendingUpOutline /></NIcon>
       </div>
       <div class="stat-value" :class="successRateClass">
-        {{ stats.success_rate.toFixed(1) }}%
+        {{ successRatePct }}
       </div>
+    </div>
+
+    <div v-if="cacheHitPct !== null" class="stat-card">
+      <div class="stat-top">
+        <span class="stat-label">{{ t('console.cacheHitRate') }}</span>
+        <NIcon class="stat-icon" size="18"><FlashOutline /></NIcon>
+      </div>
+      <div class="stat-value">{{ cacheHitPct }}</div>
     </div>
 
     <div class="stat-card">
@@ -86,7 +108,7 @@ const budgetWarning = computed(() => props.budget?.warning ?? null)
 
 .stat-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 

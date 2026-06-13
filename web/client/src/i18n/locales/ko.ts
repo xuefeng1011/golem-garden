@@ -872,6 +872,7 @@ export default {
     loadFailed: '콘솔 데이터를 불러오지 못했습니다',
     pollHint: '10초마다 자동 갱신',
     totalRuns: '총 실행 수',
+    cacheHitRate: '캐시 적중률',
     successRate: '성공률',
     avgDuration: '평균 실행 시간',
     totalCost: '총 비용',

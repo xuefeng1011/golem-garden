@@ -46,6 +46,9 @@ class RunStats(BaseModel):
     avg_duration_ms: int
     total_cost_usd: float
     total_tokens_out: int
+    # prompt-cache hit rate over metas that carry the read/creation split
+    # (post-2026-06-13); None when no such metas exist yet
+    cache_hit_rate: float | None = None
 
 
 class SoulStats(BaseModel):
@@ -113,6 +116,12 @@ async def get_console(
     soul_cost: dict[str, float] = {}
     soul_success: dict[str, int] = {}
 
+    # cache hit-rate accumulators (only metas with the split keys)
+    cache_read_sum = 0
+    cache_creation_sum = 0
+    cache_input_sum = 0
+    cache_meta_count = 0
+
     for meta in all_metas:
         result = str(meta.get("result") or "")
         if result == "success":
@@ -133,8 +142,19 @@ async def get_console(
         if result == "success":
             soul_success[soul] = soul_success.get(soul, 0) + 1
 
+        if meta.get("tokens_cache_read") is not None:
+            cache_meta_count += 1
+            cache_read_sum += int(meta.get("tokens_cache_read") or 0)
+            cache_creation_sum += int(meta.get("tokens_cache_creation") or 0)
+            cache_input_sum += int(meta.get("tokens_in") or 0)
+
     success_rate = round(success_count / total, 4) if total else 0.0
     avg_duration_ms = (total_duration_ms // total) if total else 0
+
+    cache_hit_rate: float | None = None
+    cache_denominator = cache_read_sum + cache_creation_sum + cache_input_sum
+    if cache_meta_count and cache_denominator:
+        cache_hit_rate = round(cache_read_sum / cache_denominator, 4)
 
     stats = RunStats(
         total_runs=total,
@@ -145,6 +165,7 @@ async def get_console(
         avg_duration_ms=avg_duration_ms,
         total_cost_usd=round(total_cost_usd, 6),
         total_tokens_out=total_tokens_out,
+        cache_hit_rate=cache_hit_rate,
     )
 
     by_soul: list[SoulStats] = sorted(

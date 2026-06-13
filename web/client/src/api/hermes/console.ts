@@ -13,10 +13,12 @@ export interface ConsoleStats {
   success: number
   error: number
   timeout: number
-  success_rate: number
+  success_rate: number // 0..1 비율 (표시 시 ×100)
   avg_duration_ms: number
   total_cost_usd: number
   total_tokens_out: number
+  // 프롬프트 캐시 적중률 0..1 — 분리 키 가진 런이 없으면 null
+  cache_hit_rate: number | null
 }
 
 export interface BySoulEntry {
