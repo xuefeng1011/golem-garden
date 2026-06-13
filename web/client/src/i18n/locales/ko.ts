@@ -987,6 +987,18 @@ export default {
     leaveTitle: '저장하지 않은 변경사항',
     leaveContent: '저장하지 않은 변경사항이 있습니다. 저장하지 않고 떠나시겠습니까?',
     leaveConfirm: '떠나기',
+    savedFlows: '저장된 워크플로우',
+    savedFlowsPlaceholder: '저장된 워크플로우 선택…',
+    newFlow: '새로 만들기',
+    deleteFlow: '삭제',
+    deleteFlowConfirm: '이 워크플로우를 삭제하시겠습니까? 되돌릴 수 없습니다.',
+    deleteFlowSuccess: '워크플로우가 삭제되었습니다',
+    deleteFlowFailed: '워크플로우 삭제 실패',
+    switchDirtyTitle: '저장하지 않은 변경사항',
+    switchDirtyContent: '저장하지 않은 변경사항이 있습니다. 저장하지 않고 전환하시겠습니까?',
+    switchDirtyConfirm: '전환',
+    progressCount: '{done}/{total} 완료',
+    emptyDescWithFlows: '저장된 플로우를 불러오거나 템플릿으로 시작하세요',
   },
 
   // 변경 이력

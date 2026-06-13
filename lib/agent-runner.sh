@@ -386,6 +386,12 @@ agent_run() {
     esac
   fi
 
+  # P1-1 SOUL_MAX_TURNS — 양의 정수면 advisory 주입용 카운터로 파싱.
+  local _ar_max_turns=0
+  if printf '%s' "${SOUL_MAX_TURNS:-}" | grep -qE '^[1-9][0-9]*$'; then
+    _ar_max_turns="$SOUL_MAX_TURNS"
+  fi
+
   # (b) 시스템 프롬프트 = identity 헤더 + 정적 SOUL 컨텍스트만 (byte-stable).
   # 휘발 값(이력/메모리)과 태스크는 유저 메시지로 — 시스템 프롬프트가 런마다
   # 동일해야 API 프롬프트 캐시가 크로스-런으로 히트한다 (5분 TTL 내).
@@ -401,6 +407,16 @@ ${_ar_body}"
   # 유저 메시지 = 휘발 블록(이력/메모리) + 태스크
   local _ar_user_msg
   _ar_user_msg="$(prompt_build_task_block "$soul_name" "$task_text")"
+
+  # P1-1 턴 캡 — claude CLI 가 --max-turns 를 미지원(설치본 --help 확인: --max-budget-usd
+  # 만 존재)하므로 하드 집행 불가. SOUL_MAX_TURNS 가 양의 정수면 advisory 로 유저
+  # 메시지에 주입한다(CLAUDE.md "프롬프트 가이드로 안내" 와 일치). 하드 런어웨이
+  # 가드는 별개로 _agent_timeout_cmd(벽시계) + AGENT_MAX_COST_USD(비용) 가 담당.
+  if [ "${_ar_max_turns:-0}" -gt 0 ] 2>/dev/null; then
+    _ar_user_msg="${_ar_user_msg}
+
+[실행 가이드] 이 작업은 최대 ${_ar_max_turns} 턴(도구 호출 왕복) 내에 완료하는 것을 목표로 하라. 불필요한 탐색을 줄이고 핵심 변경에 집중하라."
+  fi
 
   # (c) 모델 매핑 + (d 일부) 도구 CSV
   # AGENT_MODEL_OVERRIDE — SOUL frontmatter 모델을 1회성으로 교체 (P2-3 eval
@@ -609,7 +625,7 @@ ${_ar_body}"
   fi
 
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
 
   [ "$result" = "fail" ] && return 1
   return 0

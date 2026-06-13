@@ -1046,6 +1046,18 @@ export default {
     leaveTitle: 'Unsaved changes',
     leaveContent: 'You have unsaved changes. Leave without saving?',
     leaveConfirm: 'Leave',
+    savedFlows: 'Saved workflows',
+    savedFlowsPlaceholder: 'Select a saved workflow…',
+    newFlow: 'New',
+    deleteFlow: 'Delete',
+    deleteFlowConfirm: 'Delete this workflow? This cannot be undone.',
+    deleteFlowSuccess: 'Workflow deleted',
+    deleteFlowFailed: 'Failed to delete workflow',
+    switchDirtyTitle: 'Unsaved changes',
+    switchDirtyContent: 'You have unsaved changes. Switch without saving?',
+    switchDirtyConfirm: 'Switch',
+    progressCount: '{done}/{total} done',
+    emptyDescWithFlows: 'Load a saved workflow or start from a template',
   },
 
   // Changelog
