@@ -77,6 +77,11 @@ const router = createRouter({
       name: 'hermes.canvas',
       component: () => import('@/views/hermes/CanvasView.vue'),
     },
+    {
+      path: '/hermes/flow-editor',
+      name: 'hermes.flowEditor',
+      component: () => import('@/views/hermes/FlowEditorView.vue'),
+    },
   ],
 })
 

@@ -7,7 +7,10 @@ import {
   buildFlowDag,
   filterRunsByRange,
   layoutWithDagre,
+  stepsFromGraph,
+  editorGraphFromFlow,
 } from '@/utils/canvas-graph'
+import type { GraphNode, GraphEdge, EditorNodeData } from '@/utils/canvas-graph'
 import type { RunMeta } from '@/api/hermes/console'
 import type { MailboxMessage } from '@/api/hermes/souls'
 import type { Mission } from '@/api/hermes/missions'
@@ -577,5 +580,180 @@ describe('buildFlowDag', () => {
     const toC = edges.find((e) => e.target === 'fs__c')!
     expect(toB.animated).toBe(true)   // a→b: b is running
     expect(toC.animated).toBe(false)  // b→c: c is pending
+  })
+})
+
+// ── stepsFromGraph ────────────────────────────────────────────────────────────
+
+function makeEditorNode(
+  stepId: string,
+  overrides: Partial<EditorNodeData> = {},
+): GraphNode {
+  return {
+    id: `fe__${stepId}`,
+    type: 'task' as const,
+    position: { x: 0, y: 0 },
+    data: {
+      label: overrides.task ?? 'test task',
+      nodeType: 'task' as const,
+      stepId,
+      soul: 'ryn',
+      task: 'test task',
+      retry: 1,
+      approval: false,
+      on_fail: 'abort',
+      ...overrides,
+    } as EditorNodeData,
+  }
+}
+
+describe('stepsFromGraph', () => {
+  it('returns empty array for empty nodes', () => {
+    expect(stepsFromGraph([], [])).toEqual([])
+  })
+
+  it('each node becomes one step with correct id', () => {
+    const nodes = [makeEditorNode('s1'), makeEditorNode('s2')]
+    const steps = stepsFromGraph(nodes, [])
+    expect(steps).toHaveLength(2)
+    expect(steps.map((s) => s.id)).toEqual(['s1', 's2'])
+  })
+
+  it('deps populated from incoming edges', () => {
+    const nodes = [makeEditorNode('s1'), makeEditorNode('s2')]
+    const edges: GraphEdge[] = [{ id: 'e1', source: 'fe__s1', target: 'fe__s2' }]
+    const steps = stepsFromGraph(nodes, edges)
+    const s2 = steps.find((s) => s.id === 's2')!
+    expect(s2.deps).toEqual(['s1'])
+  })
+
+  it('node with no incoming edges has empty deps', () => {
+    const nodes = [makeEditorNode('s1'), makeEditorNode('s2')]
+    const edges: GraphEdge[] = [{ id: 'e1', source: 'fe__s1', target: 'fe__s2' }]
+    const steps = stepsFromGraph(nodes, edges)
+    const s1 = steps.find((s) => s.id === 's1')!
+    expect(s1.deps).toEqual([])
+  })
+
+  it('preserves soul, task, retry, approval, on_fail from node data', () => {
+    const nodes = [
+      makeEditorNode('s1', { soul: 'nex', task: 'Review', retry: 2, approval: true, on_fail: 'continue' }),
+    ]
+    const [step] = stepsFromGraph(nodes, [])
+    expect(step.soul).toBe('nex')
+    expect(step.task).toBe('Review')
+    expect(step.retry).toBe(2)
+    expect(step.approval).toBe(true)
+    expect(step.on_fail).toBe('continue')
+  })
+
+  it('multiple deps (fan-in) all appear in deps array', () => {
+    const nodes = [makeEditorNode('a'), makeEditorNode('b'), makeEditorNode('c')]
+    const edges: GraphEdge[] = [
+      { id: 'e1', source: 'fe__a', target: 'fe__c' },
+      { id: 'e2', source: 'fe__b', target: 'fe__c' },
+    ]
+    const steps = stepsFromGraph(nodes, edges)
+    const c = steps.find((s) => s.id === 'c')!
+    expect(c.deps.sort()).toEqual(['a', 'b'])
+  })
+
+  it('round-trip: editorGraphFromFlow → stepsFromGraph preserves ids', () => {
+    const flow = makeFlow()
+    const { nodes, edges } = editorGraphFromFlow(flow)
+    const steps = stepsFromGraph(nodes, edges)
+    const ids = steps.map((s) => s.id).sort()
+    expect(ids).toEqual(['s1', 's2', 's3'])
+  })
+
+  it('round-trip: deps are preserved after editorGraphFromFlow → stepsFromGraph', () => {
+    const flow = makeFlow()
+    const { nodes, edges } = editorGraphFromFlow(flow)
+    const steps = stepsFromGraph(nodes, edges)
+    const s2 = steps.find((s) => s.id === 's2')!
+    const s3 = steps.find((s) => s.id === 's3')!
+    expect(s2.deps).toEqual(['s1'])
+    expect(s3.deps).toEqual(['s2'])
+  })
+})
+
+// ── editorGraphFromFlow ───────────────────────────────────────────────────────
+
+describe('editorGraphFromFlow', () => {
+  it('returns empty graph for flow with no steps', () => {
+    const flow = makeFlow({ steps: [] })
+    const { nodes, edges } = editorGraphFromFlow(flow)
+    expect(nodes).toHaveLength(0)
+    expect(edges).toHaveLength(0)
+  })
+
+  it('creates one node per step', () => {
+    const flow = makeFlow()
+    const { nodes } = editorGraphFromFlow(flow)
+    expect(nodes).toHaveLength(3)
+  })
+
+  it('nodes have stepId in data', () => {
+    const flow = makeFlow()
+    const { nodes } = editorGraphFromFlow(flow)
+    const stepIds = nodes.map((n) => (n.data as EditorNodeData).stepId).sort()
+    expect(stepIds).toEqual(['s1', 's2', 's3'])
+  })
+
+  it('creates dep edges between editor nodes', () => {
+    const flow = makeFlow()
+    const { edges } = editorGraphFromFlow(flow)
+    expect(edges).toHaveLength(2)
+    expect(edges.find((e) => e.source === 'fe__s1' && e.target === 'fe__s2')).toBeDefined()
+    expect(edges.find((e) => e.source === 'fe__s2' && e.target === 'fe__s3')).toBeDefined()
+  })
+
+  it('all nodes have dagre-assigned numeric positions', () => {
+    const flow = makeFlow()
+    const { nodes } = editorGraphFromFlow(flow)
+    for (const n of nodes) {
+      expect(typeof n.position.x).toBe('number')
+      expect(typeof n.position.y).toBe('number')
+    }
+  })
+
+  it('LR layout: s1.x < s2.x < s3.x (sequential deps)', () => {
+    const flow = makeFlow()
+    const { nodes } = editorGraphFromFlow(flow)
+    const s1 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's1')!
+    const s2 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's2')!
+    const s3 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's3')!
+    expect(s1.position.x).toBeLessThan(s2.position.x)
+    expect(s2.position.x).toBeLessThan(s3.position.x)
+  })
+
+  it('all node data fields are scalars (G7 compliance)', () => {
+    const flow = makeFlow()
+    const { nodes } = editorGraphFromFlow(flow)
+    for (const node of nodes) {
+      for (const [, val] of Object.entries(node.data)) {
+        if (val !== undefined && val !== null) {
+          expect(typeof val).not.toBe('object')
+        }
+      }
+    }
+  })
+
+  it('approval and on_fail are preserved from flow steps', () => {
+    const flow = makeFlow()
+    const { nodes } = editorGraphFromFlow(flow)
+    const s2 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's2')!
+    expect((s2.data as EditorNodeData).approval).toBe(true)
+    expect((s2.data as EditorNodeData).on_fail).toBe('abort')
+  })
+
+  it('ignores deps that reference missing step ids', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: 'ryn', task: 'Build', deps: ['ghost'], status: 'done', approval: false, on_fail: 'abort' },
+      ],
+    })
+    const { edges } = editorGraphFromFlow(flow)
+    expect(edges).toHaveLength(0)
   })
 })

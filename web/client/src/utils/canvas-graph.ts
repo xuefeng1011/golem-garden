@@ -7,7 +7,7 @@ import dagre from 'dagre'
 import type { RunMeta } from '@/api/hermes/console'
 import type { MailboxMessage } from '@/api/hermes/souls'
 import type { Mission } from '@/api/hermes/missions'
-import type { Flow } from '@/api/hermes/flows'
+import type { Flow, WriteStep } from '@/api/hermes/flows'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -468,6 +468,98 @@ export function buildFlowDag(flow: Flow): GraphData {
           target: `fs__${step.id}`,
           // 실행 중인 step 으로 들어가는 엣지는 애니메이션 (n8n 실행 표시)
           animated: step.status === 'running',
+        })
+      }
+    }
+  }
+
+  const laidOut = layoutWithDagre(nodes, edges, 'LR')
+  return { nodes: laidOut, edges }
+}
+
+// ── Editor serialization helpers ──────────────────────────────────────────────
+
+/**
+ * EditorNodeData — full form fields for editor nodes (scalars only — G7)
+ */
+export interface EditorNodeData extends GraphNodeData {
+  stepId: string
+  soul: string
+  task: string
+  retry: number
+  approval: boolean
+  on_fail: string
+  hasError?: boolean
+}
+
+/**
+ * stepsFromGraph — serialize editor graph back to WriteStep[].
+ * deps = edges whose target === this nodeId, mapped to source stepId.
+ */
+export function stepsFromGraph(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): WriteStep[] {
+  const nodeToStep = new Map<string, string>()
+  for (const node of nodes) {
+    const d = node.data as EditorNodeData
+    nodeToStep.set(node.id, d.stepId)
+  }
+
+  return nodes.map((node) => {
+    const d = node.data as EditorNodeData
+    const deps = edges
+      .filter((e) => e.target === node.id)
+      .map((e) => nodeToStep.get(e.source) ?? '')
+      .filter(Boolean)
+
+    return {
+      id: d.stepId,
+      soul: d.soul ?? '',
+      task: d.task ?? '',
+      deps,
+      retry: d.retry ?? 1,
+      approval: d.approval ?? false,
+      on_fail: d.on_fail ?? 'abort',
+    }
+  })
+}
+
+/**
+ * editorGraphFromFlow — load an existing Flow into editor nodes/edges with dagre LR layout.
+ */
+export function editorGraphFromFlow(flow: Flow): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  if (flow.steps.length === 0) return { nodes: [], edges: [] }
+
+  const nodes: GraphNode[] = flow.steps.map((step) => ({
+    id: `fe__${step.id}`,
+    type: 'task' as const,
+    position: { x: 0, y: 0 },
+    data: {
+      label: step.task.length > 40 ? step.task.slice(0, 37) + '…' : step.task,
+      nodeType: 'task' as const,
+      stepId: step.id,
+      soul: step.soul ?? '',
+      task: step.task,
+      retry: 1,
+      approval: step.approval,
+      on_fail: step.on_fail,
+      status: step.status,
+      flowId: flow.flow_id,
+      onFail: step.on_fail,
+    } as EditorNodeData,
+  }))
+
+  const stepIds = new Set(flow.steps.map((s) => s.id))
+  const edges: GraphEdge[] = []
+
+  for (const step of flow.steps) {
+    for (const dep of step.deps) {
+      if (stepIds.has(dep)) {
+        edges.push({
+          id: `efe__${dep}__${step.id}`,
+          source: `fe__${dep}`,
+          target: `fe__${step.id}`,
         })
       }
     }

@@ -18,8 +18,55 @@ export interface Flow {
   steps: FlowStep[]
 }
 
+// Write-only step payload (no status)
+export interface WriteStep {
+  id: string
+  soul: string
+  task: string
+  deps: string[]
+  retry: number
+  approval: boolean
+  on_fail: string
+}
+
+export interface CreateFlowPayload {
+  goal: string
+  steps: WriteStep[]
+}
+
 export async function fetchFlows(projectId: string, limit = 20): Promise<Flow[]> {
   return request<Flow[]>(
     `/v1/projects/${encodeURIComponent(projectId)}/flows?limit=${limit}`,
+  )
+}
+
+export async function createFlow(
+  projectId: string,
+  payload: CreateFlowPayload,
+): Promise<{ flow_id: string }> {
+  return request<{ flow_id: string }>(
+    `/v1/projects/${encodeURIComponent(projectId)}/flows`,
+    { method: 'POST', body: JSON.stringify(payload) },
+  )
+}
+
+export async function updateFlow(
+  projectId: string,
+  flowId: string,
+  payload: CreateFlowPayload,
+): Promise<void> {
+  await request<unknown>(
+    `/v1/projects/${encodeURIComponent(projectId)}/flows/${encodeURIComponent(flowId)}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  )
+}
+
+export async function deleteFlow(
+  projectId: string,
+  flowId: string,
+): Promise<void> {
+  await request<unknown>(
+    `/v1/projects/${encodeURIComponent(projectId)}/flows/${encodeURIComponent(flowId)}`,
+    { method: 'DELETE' },
   )
 }
