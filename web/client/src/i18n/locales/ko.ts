@@ -1011,7 +1011,7 @@ export default {
     nodeKindInput: '입력',
     inputValueLabel: '입력 내용',
     inputValuePlaceholder: '파이프라인으로 전달할 값…',
-    insertRefHint: '{{단계id}} 로 앞 단계 출력을 끼워넣을 수 있어요',
+    insertRefHint: "{'{{단계id}}'} 로 앞 단계 출력을 끼워넣을 수 있어요",
     refChipsLabel: '상류 단계',
     runInputTitle: '입력값 입력',
     runInputDesc: '이 워크플로우는 입력 노드로 시작합니다. 실행에 사용할 값을 입력하세요.',

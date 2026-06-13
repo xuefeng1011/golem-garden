@@ -374,8 +374,11 @@ function _addNode(kind: 'input' | 'agent') {
   selectedNodeId.value = newNode.id
 
   // 새 노드를 항상 화면 안으로 — 뷰포트가 직전 플로우 위치에 남아있어
-  // 추가한 노드가 화면 밖에 떨어지는 문제 방지 (autoLayout 과 동일 패턴)
-  setTimeout(() => fitView({ padding: 0.2 }), 50)
+  // 추가한 노드가 화면 밖에 떨어지는 문제 방지 (autoLayout 과 동일 패턴).
+  // 첫 노드 추가 시 viewport 미초기화면 fitView 가 경고를 내므로 조용히 무시.
+  setTimeout(() => {
+    try { fitView({ padding: 0.2 }) } catch { /* viewport not ready yet — ignore */ }
+  }, 50)
 }
 
 function addInput() { _addNode('input') }
