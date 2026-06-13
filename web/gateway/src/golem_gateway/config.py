@@ -7,24 +7,85 @@ import shutil
 from pathlib import Path
 
 
-def to_bash_path(p: Path | str) -> str:
-    """Convert a Windows-style path to /mnt/<drive>/... form for Git for
-    Windows / WSL bash. On non-Windows platforms returns the path unchanged.
+# ---------------------------------------------------------------------------
+# Bash bridge resolution (Git Bash vs WSL)
+# ---------------------------------------------------------------------------
+#
+# The gateway shells out to forge.sh via bash. On Windows the bare name "bash"
+# resolves through PATH and very often hits C:\Windows\System32\bash.exe — the
+# WSL launcher — which (a) needs /mnt/<drive>/ paths and (b) fails entirely if
+# WSL is not installed/healthy. Git Bash (MSYS2, shipped with Git for Windows)
+# is the bash GolemGarden actually targets and uses /<drive>/ mount paths.
+#
+# We therefore resolve an explicit bash binary, preferring Git Bash, and derive
+# the matching mount style so to_bash_path() emits paths that bash understands.
+# Overrides: GOLEM_BASH_BIN (executable), GOLEM_BASH_MOUNT ("msys"|"wsl"|"posix").
 
-    Background: Python's subprocess on Windows passes argv as Unicode via
-    CreateProcessW, but Git for Windows bash (the bash that ships with the
-    Git installer and is what shutil.which('bash') typically finds) interprets
-    argv via its own MSYS path translator. Native Windows forms like
-    'C:/foo/bar' silently fail with 'No such file or directory' from this
-    bash; '/mnt/c/foo/bar' works. Korean (or any non-ASCII) characters in the
-    path additionally trigger codepage conversion bugs — we mitigate that with
-    GOLEM_FORGE_SH env override (see FORGE_SH_PATH).
+
+def _resolve_bash() -> tuple[str, str]:
+    """Return (bash_executable, mount_style).
+
+    mount_style: "msys" → /c/...  | "wsl" → /mnt/c/...  | "posix" → unchanged.
     """
+    override = os.environ.get("GOLEM_BASH_BIN")
+    if override:
+        return override, os.environ.get("GOLEM_BASH_MOUNT", "msys")
+
     if os.name != "nt":
+        return (shutil.which("bash") or "/bin/bash"), "posix"
+
+    # Windows: prefer Git Bash over WSL. Search well-known install locations
+    # plus a path derived from the resolved `git` executable.
+    candidates: list[str] = [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+    ]
+    git = shutil.which("git")
+    if git:
+        # .../Git/cmd/git.exe → .../Git ; .../Git/bin/git.exe → .../Git
+        git_root = Path(git).parent.parent
+        candidates.append(str(git_root / "bin" / "bash.exe"))
+        candidates.append(str(git_root / "usr" / "bin" / "bash.exe"))
+    for cand in candidates:
+        if Path(cand).is_file():
+            return cand, "msys"
+
+    # Fallback: whatever `bash` PATH resolution finds. If it is the System32
+    # WSL launcher, mark it as WSL so paths get /mnt/ form.
+    which_bash = shutil.which("bash")
+    if which_bash:
+        mount = "wsl" if "system32" in which_bash.lower() else "msys"
+        return which_bash, mount
+
+    return "bash", "msys"
+
+
+BASH_BIN, _BASH_MOUNT = _resolve_bash()
+_BASH_MOUNT = os.environ.get("GOLEM_BASH_MOUNT", _BASH_MOUNT)
+
+
+def to_bash_path(p: Path | str) -> str:
+    """Convert a Windows path to the form the resolved bash understands.
+
+    Git Bash (MSYS2) mounts drives at /<drive>/ (e.g. /c/foo); WSL uses
+    /mnt/<drive>/ (e.g. /mnt/c/foo). The mount style is detected from the
+    resolved bash binary (_resolve_bash) and overridable via GOLEM_BASH_MOUNT.
+    On non-Windows / posix bash the path is returned unchanged.
+
+    Native Windows forms like 'C:/foo' silently fail with 'No such file or
+    directory' from MSYS bash, so callers must pass results of this function.
+    Non-ASCII path components work in Git Bash directly; if a particular setup
+    hits codepage issues, set GOLEM_FORGE_SH_BASH to an ASCII junction path.
+    """
+    if os.name != "nt" or _BASH_MOUNT == "posix":
         return str(p)
     s = (p.as_posix() if isinstance(p, Path) else str(p).replace("\\", "/"))
     if len(s) > 2 and s[1] == ":" and s[2] == "/":
-        return "/mnt/" + s[0].lower() + s[2:]
+        drive = s[0].lower()
+        if _BASH_MOUNT == "wsl":
+            return "/mnt/" + drive + s[2:]
+        return "/" + drive + s[2:]  # msys (Git Bash): /c/...
     return s
 
 # Server

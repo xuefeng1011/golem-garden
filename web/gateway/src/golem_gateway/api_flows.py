@@ -23,7 +23,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, field_validator, model_validator
 
-from golem_gateway.config import FORGE_SH_BASH_PATH, FORGE_SH_PATH, to_bash_path
+from golem_gateway.config import BASH_BIN, FORGE_SH_BASH_PATH, FORGE_SH_PATH, to_bash_path
 from golem_gateway.registry import ProjectRegistry
 
 logger = logging.getLogger(__name__)
@@ -266,7 +266,7 @@ async def _validate_with_forge(state_path: Path, project_path: Path) -> str | No
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            "bash",
+            BASH_BIN,
             FORGE_SH_BASH_PATH,
             "flow",
             "validate",

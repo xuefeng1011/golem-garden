@@ -147,10 +147,21 @@ class TestPathConversion:
             result = to_bash_path(Path("/home/user/project"))
             assert result == "/home/user/project"
 
-    def test_to_bash_path_windows_drive_conversion(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """C:/foo/bar → /mnt/c/foo/bar on Windows (os.name == 'nt')."""
+    def test_to_bash_path_msys_drive_conversion(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Git Bash (msys): C:/foo/bar → /c/foo/bar on Windows."""
         import golem_gateway.config as cfg_mod
         monkeypatch.setattr(cfg_mod.os, "name", "nt")
+        monkeypatch.setattr(cfg_mod, "_BASH_MOUNT", "msys")
+        from golem_gateway.config import to_bash_path
+
+        result = to_bash_path(Path("C:/foo/bar"))
+        assert result == "/c/foo/bar"
+
+    def test_to_bash_path_wsl_drive_conversion(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """WSL: C:/foo/bar → /mnt/c/foo/bar on Windows."""
+        import golem_gateway.config as cfg_mod
+        monkeypatch.setattr(cfg_mod.os, "name", "nt")
+        monkeypatch.setattr(cfg_mod, "_BASH_MOUNT", "wsl")
         from golem_gateway.config import to_bash_path
 
         result = to_bash_path(Path("C:/foo/bar"))
@@ -162,7 +173,33 @@ class TestPathConversion:
         """Paths without a Windows drive letter are returned unchanged."""
         import golem_gateway.config as cfg_mod
         monkeypatch.setattr(cfg_mod.os, "name", "nt")
+        monkeypatch.setattr(cfg_mod, "_BASH_MOUNT", "msys")
         from golem_gateway.config import to_bash_path
 
-        result = to_bash_path("/mnt/c/already/converted")
-        assert result == "/mnt/c/already/converted"
+        result = to_bash_path("/c/already/converted")
+        assert result == "/c/already/converted"
+
+
+class TestBashResolution:
+    def test_env_override_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GOLEM_BASH_BIN override is honored verbatim."""
+        import golem_gateway.config as cfg_mod
+        monkeypatch.setenv("GOLEM_BASH_BIN", "/custom/bash")
+        monkeypatch.setenv("GOLEM_BASH_MOUNT", "wsl")
+        binpath, mount = cfg_mod._resolve_bash()
+        assert binpath == "/custom/bash"
+        assert mount == "wsl"
+
+    def test_prefers_git_bash_over_wsl(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """On Windows, a present Git Bash path is chosen with msys mount."""
+        import golem_gateway.config as cfg_mod
+        monkeypatch.delenv("GOLEM_BASH_BIN", raising=False)
+        monkeypatch.delenv("GOLEM_BASH_MOUNT", raising=False)
+        monkeypatch.setattr(cfg_mod.os, "name", "nt")
+        git_bash = r"C:\Program Files\Git\bin\bash.exe"
+        monkeypatch.setattr(
+            cfg_mod.Path, "is_file", lambda self: str(self) == git_bash
+        )
+        binpath, mount = cfg_mod._resolve_bash()
+        assert binpath == git_bash
+        assert mount == "msys"

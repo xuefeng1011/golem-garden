@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from golem_gateway.config import (
     ALLOWED_FORGE_COMMANDS,
+    BASH_BIN,
     FORGE_OUTPUT_CAP_BYTES,
     FORGE_SH_BASH_PATH,
     FORGE_SH_PATH,
@@ -189,13 +190,13 @@ class ForgeRunner:
         )
 
         # Build subprocess arg list — list-form, no shell=True.
-        # forge.sh is a bash script; invoke it via bash explicitly so we never
-        # rely on shebang execution (which fails on some Windows setups).
-        # Git for Windows bash needs /mnt/<drive>/... paths, not C:/...
-        # FORGE_SH_BASH_PATH already converted (and overridable via
-        # GOLEM_FORGE_SH_BASH for non-ASCII home dirs).
+        # forge.sh is a bash script; invoke it via the resolved bash binary
+        # (BASH_BIN — prefers Git Bash over WSL; see config._resolve_bash) so we
+        # never rely on shebang execution nor accidentally hit System32 WSL bash.
+        # FORGE_SH_BASH_PATH is mount-matched (/c/ for Git Bash) and overridable
+        # via GOLEM_FORGE_SH_BASH for non-ASCII home dirs.
         subprocess_args: list[str] = [
-            "bash",
+            BASH_BIN,
             FORGE_SH_BASH_PATH,
             command,
             *args,
