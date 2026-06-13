@@ -255,15 +255,7 @@ class ForgeRunner:
             return
 
         if run.proc is not None and run.proc.returncode is None:
-            try:
-                run.proc.terminate()
-                try:
-                    await asyncio.wait_for(run.proc.wait(), timeout=2.0)
-                except asyncio.TimeoutError:
-                    run.proc.kill()
-                    await run.proc.wait()
-            except ProcessLookupError:
-                pass
+            await self._terminate_proc_tree(run.proc)
 
         live_tasks = [
             t for t in (run.drain_task, run.stderr_task, run.watchdog_task)
@@ -275,6 +267,37 @@ class ForgeRunner:
             await asyncio.gather(*live_tasks, return_exceptions=True)
 
         run.done.set()
+
+    @staticmethod
+    async def _terminate_proc_tree(proc: "asyncio.subprocess.Process") -> None:
+        """Kill the subprocess AND its native children.
+
+        On Windows proc.terminate()/kill() (TerminateProcess) only target the
+        bash process, orphaning the native claude.exe grandchild — the same class
+        of leak that froze flow steps. `taskkill /F /T` kills the whole tree.
+        POSIX falls through to terminate→kill (which signals the process group).
+        """
+        pid = proc.pid
+        if os.name == "nt" and pid:
+            try:
+                tk = await asyncio.create_subprocess_exec(
+                    "taskkill", "/F", "/T", "/PID", str(pid),
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(tk.wait(), timeout=5.0)
+            except (OSError, asyncio.TimeoutError):
+                pass
+        # graceful + force fallback (POSIX, or if taskkill missed)
+        try:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+        except ProcessLookupError:
+            pass
 
     async def shutdown(self) -> None:
         """Terminate all live forge runs on app shutdown."""

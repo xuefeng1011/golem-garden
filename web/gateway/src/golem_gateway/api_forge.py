@@ -96,6 +96,23 @@ async def start_forge(
 # GET /v1/forge-runs/{run_id}/events  (SSE)
 # ---------------------------------------------------------------------------
 
+@router.delete("/v1/forge-runs/{run_id}", status_code=204)
+async def cancel_forge_run(
+    run_id: str,
+    request: Request,
+) -> None:
+    """Explicitly terminate a running forge subprocess (and its native tree).
+
+    Lets the UI stop button reliably kill the backend run instead of relying
+    solely on SSE disconnect detection. 404 if the run is unknown/already gone.
+    """
+    runner: ForgeRunner = get_forge_runner(request)
+    run = await runner.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"forge run {run_id!r} not found")
+    await runner.terminate_run(run_id)
+
+
 @router.get("/v1/forge-runs/{run_id}/events")
 async def forge_events(
     run_id: str,

@@ -29,7 +29,7 @@ import { useConsoleStore } from '@/stores/hermes/console'
 import { fetchSouls } from '@/api/hermes/souls'
 import { fetchFlows, createFlow, updateFlow, deleteFlow } from '@/api/hermes/flows'
 import type { Flow } from '@/api/hermes/flows'
-import { startForge, streamForgeEvents } from '@/api/hermes/forge'
+import { startForge, streamForgeEvents, cancelForgeRun } from '@/api/hermes/forge'
 import type { Soul } from '@/api/hermes/souls'
 import type { GraphNode, GraphEdge, EditorNodeData } from '@/utils/canvas-graph'
 import {
@@ -104,6 +104,8 @@ const runLines = ref<string[]>([])
 // 실행 단계 표시: idle | running | waiting(승인 대기) | done | failed
 const runPhase = ref<'idle' | 'running' | 'waiting' | 'done' | 'failed'>('idle')
 let sseAbort: (() => void) | null = null
+// 현재 진행 중인 forge run_id — 중지 시 서버 측 실행을 실제로 종료하기 위함
+let currentRunId: string | null = null
 // 실행 중 노드 상태 라이브 갱신용 폴링 (캔버스에서 진행 가시화)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -524,6 +526,7 @@ async function _doRun() {
 
   try {
     const { run_id } = await startForge(pid, 'flow', ['run', flowId.value])
+    currentRunId = run_id
 
     sseAbort = streamForgeEvents(
       run_id,
@@ -533,6 +536,7 @@ async function _doRun() {
       async () => {
         running.value = false
         sseAbort = null
+        currentRunId = null  // run 종료 — 취소 대상 없음
         _stopPolling()
         await refreshFlowStatus()
         // 승인 대기 단계가 남았으면 waiting, 아니면 전체 종결 판정
@@ -551,6 +555,7 @@ async function _doRun() {
       (err) => {
         running.value = false
         sseAbort = null
+        currentRunId = null
         _stopPolling()
         runPhase.value = 'failed'
         refreshFlowStatus()
@@ -560,6 +565,7 @@ async function _doRun() {
 
   } catch (err) {
     running.value = false
+    currentRunId = null
     _stopPolling()
     runPhase.value = 'failed'
     message.error(err instanceof Error ? err.message : String(err))
@@ -606,13 +612,16 @@ async function refreshFlowStatus() {
   }
 }
 
-// 실행 중지 — SSE 끊고 폴링 정지
-function stopRun() {
+// 실행 중지 — 서버 측 forge run 종료(프로세스 트리 kill) + SSE 끊고 폴링 정지
+async function stopRun() {
+  const rid = currentRunId
+  currentRunId = null
   sseAbort?.()
   sseAbort = null
   _stopPolling()
   running.value = false
   runPhase.value = 'idle'
+  if (rid) await cancelForgeRun(rid)  // best-effort — 서버 서브프로세스 실제 종료
 }
 
 // ── Approve / Reject ──────────────────────────────────────────────────────────

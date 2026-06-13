@@ -42,6 +42,20 @@ export async function startForge(
   )
 }
 
+/**
+ * Best-effort cancel of a running forge run — terminates the backend subprocess
+ * tree. Uses a direct fetch (204 No Content has no JSON body) and swallows
+ * errors so the client-side stop path never breaks if the run already ended.
+ */
+export async function cancelForgeRun(runId: string): Promise<void> {
+  const url = `${getBaseUrlValue()}/v1/forge-runs/${encodeURIComponent(runId)}`
+  try {
+    await fetch(url, { method: 'DELETE' })
+  } catch {
+    // ignore — cancellation is best-effort; SSE abort still runs client-side
+  }
+}
+
 export function streamForgeEvents(
   runId: string,
   onEvent: (event: ForgeEvent) => void,

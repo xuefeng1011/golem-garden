@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,10 +10,82 @@ import pytest
 
 from golem_gateway.config import ALLOWED_FORGE_COMMANDS
 from golem_gateway.forge_runner import (
+    ForgeRun,
     ForgeRunner,
     _build_forge_env,
     _FORBIDDEN_ARG_CHARS,
 )
+
+
+def _make_run(run_id: str, proc=None) -> ForgeRun:
+    """Minimal ForgeRun for terminate/cancel tests (no real subprocess)."""
+    return ForgeRun(
+        run_id=run_id,
+        command="flow",
+        args=["run", "x"],
+        project_id="p",
+        project_path=Path("."),
+        proc=proc,
+        queue=asyncio.Queue(),
+        done=asyncio.Event(),
+        started_at=0.0,
+    )
+
+
+class TestTerminateAndCancel:
+    @pytest.mark.asyncio
+    async def test_terminate_run_evicts_and_sets_done(self):
+        runner = ForgeRunner()
+        run = _make_run("rid-1")
+        runner._runs["rid-1"] = run
+
+        await runner.terminate_run("rid-1")
+
+        assert await runner.get_run("rid-1") is None
+        assert run.done.is_set()
+
+    @pytest.mark.asyncio
+    async def test_terminate_run_unknown_is_noop(self):
+        runner = ForgeRunner()
+        # must not raise
+        await runner.terminate_run("does-not-exist")
+
+    @pytest.mark.asyncio
+    async def test_terminate_proc_tree_posix_graceful(self):
+        # Force POSIX path so taskkill is skipped; assert graceful terminate→wait.
+        proc = MagicMock()
+        proc.returncode = None
+        proc.pid = 4242
+        proc.terminate = MagicMock()
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock(return_value=0)
+
+        with patch("golem_gateway.forge_runner.os.name", "posix"):
+            await ForgeRunner._terminate_proc_tree(proc)
+
+        proc.terminate.assert_called_once()
+        proc.wait.assert_awaited()
+        proc.kill.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_forge_run_endpoint(self):
+        """DELETE /v1/forge-runs/{id} → 204 + evicted; unknown → 404."""
+        from httpx import ASGITransport, AsyncClient
+
+        from golem_gateway.main import app
+
+        runner = ForgeRunner()
+        app.state.forge_runner = runner
+        runner._runs["rid-http"] = _make_run("rid-http")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.delete("/v1/forge-runs/rid-http")
+            assert resp.status_code == 204, resp.text
+            assert await runner.get_run("rid-http") is None
+
+            resp = await client.delete("/v1/forge-runs/rid-http")
+            assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
