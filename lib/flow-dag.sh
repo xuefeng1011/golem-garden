@@ -16,6 +16,26 @@ _flow_gen_id() {
 
 FLOW_DIR="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/flows"
 
+# state.json read-modify-write 잠금 — mv 원자성만으로는 동시 writer의
+# last-writer-wins 유실을 못 막는다 (리뷰 HIGH-4). mkdir은 POSIX 원자적.
+# flock은 Git Bash에 없을 수 있어 미사용. 최대 5초 대기 후 실패.
+_flow_lock() {
+  local lock_dir="${1}.lock"
+  local i=0
+  until mkdir "$lock_dir" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -gt 50 ]; then
+      echo "[ERROR] flow: 잠금 획득 실패(5s): $lock_dir" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+}
+
+_flow_unlock() {
+  rmdir "${1}.lock" 2>/dev/null || true
+}
+
 # ── 1. flow_create ─────────────────────────────────────────────────────────
 # flow_create <goal> <steps_json_file>
 # FLOW_DIR/<flow_id>/state.json 생성
@@ -236,14 +256,25 @@ EOF
 
 # ── 4. flow_set_step_status ────────────────────────────────────────────────
 # flow_set_step_status <state_file> <step_id> <new_status>
-# 해당 step의 status 필드만 치환 (1depth 전제, 원자적 쓰기)
+# 해당 step의 status 필드만 치환 (1depth 전제, 원자적 쓰기 + 잠금)
 flow_set_step_status() {
+  local state_file="$1"
+
+  [ -f "$state_file" ] || { echo "[ERROR] flow_set_step_status: 파일 없음: $state_file" >&2; return 1; }
+  [ -z "$2" ] || [ -z "$3" ] && { echo "[ERROR] flow_set_step_status: step_id와 new_status 필수" >&2; return 1; }
+
+  _flow_lock "$state_file" || return 1
+  local _rc=0
+  _flow_set_step_status_locked "$@" || _rc=$?
+  _flow_unlock "$state_file"
+  return "$_rc"
+}
+
+# 잠금 보유 전제의 본체 — 직접 호출 금지
+_flow_set_step_status_locked() {
   local state_file="$1"
   local step_id="$2"
   local new_status="$3"
-
-  [ -f "$state_file" ] || { echo "[ERROR] flow_set_step_status: 파일 없음: $state_file" >&2; return 1; }
-  [ -z "$step_id" ] || [ -z "$new_status" ] && { echo "[ERROR] flow_set_step_status: step_id와 new_status 필수" >&2; return 1; }
 
   local json
   json=$(tr -d '\n\r' < "$state_file")

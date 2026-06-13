@@ -14,6 +14,8 @@ source "${GOLEM_ROOT}/lib/agent-runner.sh"
 _flow_set_flow_status() {
   local state_file="$1" new_status="$2"
   [ -f "$state_file" ] || return 1
+  _flow_lock "$state_file" || return 1
+  local rc=0
   local json
   json=$(tr -d '\n\r' < "$state_file")
   local head="${json%%\"steps\"*}"
@@ -23,7 +25,9 @@ _flow_set_flow_status() {
     sed "s/\"status\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"status\":\"${new_status}\"/")
   local updated="${new_head}\"steps\"${rest}"
   local tmp="${state_file}.tmp.$$"
-  printf '%s' "$updated" > "$tmp" && mv -f "$tmp" "$state_file"
+  printf '%s' "$updated" > "$tmp" && mv -f "$tmp" "$state_file" || rc=1
+  _flow_unlock "$state_file"
+  return "$rc"
 }
 
 # ── 1. flow_step_run ──────────────────────────────────────────────────────────
@@ -34,7 +38,8 @@ flow_step_run() {
   [ -f "$state_file" ] || { echo "[ERROR] flow_step_run: state.json 없음" >&2; return 1; }
 
   local step_line
-  step_line=$(_fc_steps_lines < "$state_file" | grep "\"id\"[[:space:]]*:[[:space:]]*\"${step_id}\"")
+  # -F: step_id의 정규식 메타문자 오매칭 차단 (_fc_steps_lines가 공백 정규화 보장)
+  step_line=$(_fc_steps_lines < "$state_file" | grep -F "\"id\":\"${step_id}\"")
   [ -z "$step_line" ] && { echo "[ERROR] flow_step_run: step '${step_id}' 없음" >&2; return 1; }
 
   local soul task retry on_fail
@@ -70,7 +75,18 @@ flow_step_run() {
   if [ "$on_fail" = "continue" ]; then
     return 0
   elif [ "${on_fail#goto:}" != "$on_fail" ]; then
-    flow_set_step_status "$state_file" "${on_fail#goto:}" "pending" 2>/dev/null || true
+    # goto 가드: target이 이미 failed(자기 자신 포함)면 abort로 격하 —
+    # goto 사이클이 max_iter까지 SOUL을 반복 소환하는 폭주 방지 (리뷰 HIGH-3)
+    local goto_target tgt_line tgt_status
+    goto_target="${on_fail#goto:}"
+    tgt_line=$(_fc_steps_lines < "$state_file" | grep -F "\"id\":\"${goto_target}\"")
+    tgt_status=$(_fc_get_field "status" "$tgt_line")
+    if [ "$tgt_status" = "failed" ]; then
+      echo "[FLOW] goto 격하: target '${goto_target}' 이미 failed — abort 처리" >&2
+      _flow_set_flow_status "$state_file" "failed"
+      return 1
+    fi
+    flow_set_step_status "$state_file" "$goto_target" "pending" 2>/dev/null || true
     return 0
   else
     _flow_set_flow_status "$state_file" "failed"
@@ -104,18 +120,23 @@ flow_run() {
   local flow_id="$1" session_id="${2:-}"
   local state_file="${FLOW_DIR}/${flow_id}/state.json"
   [ -f "$state_file" ] || { echo "[ERROR] flow_run: state.json 없음" >&2; return 1; }
-  local total_steps ready_lines got_approval step_id prefix has_pending has_failed
+  local total_steps ready_lines got_approval got_abort step_id prefix
+  local has_unfinished has_failed
   total_steps=$(_fc_steps_lines < "$state_file" | grep -c '"id"')
   local max_iter=$(( total_steps * 5 )); [ "$max_iter" -lt 5 ] && max_iter=5
   local iter=0
   while [ "$iter" -lt "$max_iter" ]; do
     iter=$((iter + 1))
     got_approval=0
+    got_abort=0
     ready_lines=$(flow_next_ready "$state_file") || break
     if [ -z "$ready_lines" ]; then
-      has_pending=$(_fc_steps_lines < "$state_file" | \
-        grep -c '"status":"pending"' 2>/dev/null) || has_pending=0
-      [ "${has_pending:-0}" -gt 0 ] && break
+      # 미종결(pending/승인대기/승인됨/실행중) step이 하나라도 남았으면
+      # 플로우 status를 건드리지 않고 중단 — waiting_approval만 남은 플로우를
+      # completed로 오기록하던 회귀 방지 (리뷰 HIGH-2)
+      has_unfinished=$(_fc_steps_lines < "$state_file" | \
+        grep -cE '"status":"(pending|waiting_approval|approved|running)"' 2>/dev/null) || has_unfinished=0
+      [ "${has_unfinished:-0}" -gt 0 ] && break
       has_failed=$(_fc_steps_lines < "$state_file" | \
         grep -c '"status":"failed"' 2>/dev/null) || has_failed=0
       if [ "${has_failed:-0}" -gt 0 ]; then
@@ -134,11 +155,17 @@ flow_run() {
           printf '[FLOW] 승인 대기: step=%s\n  → flow_approve %s %s\n' \
             "$prefix" "$flow_id" "$prefix"
           got_approval=1 ;;
-        *) flow_step_run "$flow_id" "$step_id" ;;
+        *)
+          # abort(rc 1) 시 같은 ready 그룹의 잔여 step 실행 중단 (리뷰 HIGH-1)
+          if ! flow_step_run "$flow_id" "$step_id"; then
+            got_abort=1
+            break
+          fi ;;
       esac
     done <<EOF
 $ready_lines
 EOF
+    [ "$got_abort" -eq 1 ] && break
     [ "$got_approval" -eq 1 ] && break
   done
 }

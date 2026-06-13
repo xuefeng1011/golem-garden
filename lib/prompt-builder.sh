@@ -309,6 +309,9 @@ FORK_PREFIX
 
 # Fork 개별 접미사 생성 (SOUL별로 다른 부분만)
 # prompt_build_fork_suffix <soul_name> <task>
+# NOTE: fork 경로는 정적/휘발 분리(캐시 최적화) 미적용 — agent-runner가
+# 사용하지 않는 경로라 보류. fork 소환을 실사용하게 되면 prompt_build_static/
+# task_block 패턴으로 동일하게 분리할 것 (P2-1 트랙).
 prompt_build_fork_suffix() {
   local soul_name="$1"
   local task="$2"

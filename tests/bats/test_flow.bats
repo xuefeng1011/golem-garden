@@ -567,3 +567,67 @@ EOF
   # s1은 done이어야 함
   grep -q '"id":"s1"[^}]*"status":"done"' "$state"
 }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 10. 리뷰 후속 회귀 (2026-06-13 code-review HIGH 1~3)
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: abort — 같은 ready 그룹의 잔여 step 실행 중단 (HIGH-1)" {
+  _mk_steps <<'JSON'
+[
+  {"id": "boom", "soul": "zen", "task": "fails", "deps": [], "retry": 0, "on_fail": "abort"},
+  {"id": "other", "soul": "zen", "task": "parallel", "deps": [], "retry": 0, "on_fail": "abort"}
+]
+JSON
+  run flow_create "abort group" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  export MOCK_AGENT_RC=1
+  flow_run "$flow_id" || true
+
+  # boom은 failed, 같은 그룹의 other는 실행되지 않고 pending 유지
+  grep -q '"id":"boom"[^}]*"status":"failed"' "$state"
+  grep -q '"id":"other"[^}]*"status":"pending"' "$state"
+}
+
+@test "flow: waiting_approval만 잔존 시 completed 오기록 금지 (HIGH-2)" {
+  _mk_steps <<'JSON'
+[
+  {"id": "gate", "soul": "zen", "task": "needs ok", "deps": [], "retry": 0, "approval": true, "on_fail": "abort"}
+]
+JSON
+  run flow_create "approval only" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  export MOCK_AGENT_RC=0
+  flow_run "$flow_id"   # gate → waiting_approval, 중단
+  flow_run "$flow_id"   # 승인 없이 재진입 — completed로 빠지면 안 됨
+
+  grep -q '"id":"gate"[^}]*"status":"waiting_approval"' "$state"
+  local head_status
+  head_status=$(sed 's/"steps".*//' "$state" | grep -o '"status":"[a-z]*"')
+  [ "$head_status" = '"status":"pending"' ]
+}
+
+@test "flow: goto 자기참조 — failed target이면 abort 격하, 재소환 폭주 금지 (HIGH-3)" {
+  _mk_steps <<'JSON'
+[
+  {"id": "loopy", "soul": "zen", "task": "self goto", "deps": [], "retry": 0, "on_fail": "goto:loopy"}
+]
+JSON
+  run flow_create "goto self" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  export MOCK_AGENT_RC=1
+  printf '0' > "$TEST_PROJECT/.agent_call_count"
+  flow_run "$flow_id" || true
+
+  # 폭주 금지: agent_run 1회만 (실패 → 자기 자신 failed → goto 격하 abort)
+  [ "$(cat "$TEST_PROJECT/.agent_call_count")" -eq 1 ]
+  local head_status
+  head_status=$(sed 's/"steps".*//' "$state" | grep -o '"status":"[a-z]*"')
+  [ "$head_status" = '"status":"failed"' ]
+}

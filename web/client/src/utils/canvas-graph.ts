@@ -348,9 +348,11 @@ export function buildTimeline(runs: RunMeta[], range: TimelineRange = 'all'): Gr
   const filtered = filterRunsByRange(runs, range)
   if (filtered.length === 0) return { nodes: [], edges: [] }
 
-  // Sort runs by ts_start ascending
+  // Sort runs by ts_start ascending (run_id 타이브레이커 — 동시각 런의 결정론적 배치)
   const sorted = [...filtered].sort(
-    (a, b) => new Date(a.ts_start).getTime() - new Date(b.ts_start).getTime(),
+    (a, b) =>
+      new Date(a.ts_start).getTime() - new Date(b.ts_start).getTime() ||
+      a.run_id.localeCompare(b.run_id),
   )
 
   // Build soul index (insertion order = first-appearance order)

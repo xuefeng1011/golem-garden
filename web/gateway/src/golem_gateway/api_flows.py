@@ -5,6 +5,7 @@ GET /v1/projects/{project_id}/flows?limit=20
 
 from __future__ import annotations
 
+import heapq
 import json
 import logging
 import re
@@ -133,10 +134,11 @@ async def list_flows(
             continue
         entries.append((entry.stat().st_mtime, state_path))
 
-    entries.sort(key=lambda x: x[0], reverse=True)
+    # full sort 대신 상위 limit개만 추출 — 디렉토리가 커져도 O(n log limit)
+    top_entries = heapq.nlargest(limit, entries, key=lambda x: x[0])
 
     results: list[FlowSummary] = []
-    for _, state_path in entries:
+    for _, state_path in top_entries:
         if len(results) >= limit:
             break
         data = _load_flow(state_path)
