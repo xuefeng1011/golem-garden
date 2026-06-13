@@ -572,7 +572,8 @@ ${_ar_body}"
       _agent_kill_tree "$_ar_child"
     ) &
     local _ar_wd=$!
-    # set -e(bats/forge.sh) 안전 — wait 가 non-zero 면 || 로 흡수 (rc 는 위에서 0 초기화)
+    # set -e 안전 — wait 가 non-zero 면 || 로 흡수 (rc 는 위에서 0 초기화).
+    # (tests/bats/run.sh 는 set -euo pipefail; forge.sh 는 의도적으로 set -e 미사용)
     wait "$_ar_child" 2>/dev/null || rc=$?
     kill "$_ar_wd" 2>/dev/null || true               # 자식이 먼저 끝났으면 워치독 취소
     wait "$_ar_wd" 2>/dev/null || true
@@ -594,7 +595,7 @@ ${_ar_body}"
   # _agent_persist_run 이 마스킹 보존 + 제거를 담당한다 (Phase A).
 
   # D1 — 타임아웃 시: 결과 텍스트를 명확한 사유로 덮어쓰고 fail 처리.
-  # (child 는 timeout(1) 이 SIGTERM/SIGKILL 로 이미 종료시킴 — 추가 kill 불필요.)
+  # (child 는 워치독이 _agent_kill_tree(taskkill//kill)로 이미 종료시킴 — 추가 kill 불필요.)
   if [ "$_ar_timed_out" -eq 1 ]; then
     _AR_RESULT_TEXT="[agent-runner] TIMEOUT after ${max_secs}s"
     _AR_IS_ERROR=1

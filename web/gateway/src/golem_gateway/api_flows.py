@@ -301,9 +301,13 @@ def _build_state_json(
             "type": s.type,
             "status": "pending",
         }
-        if s.id in preserved:
+        # 완료(done)된 단계만 결과를 승계한다. running/waiting_approval/failed 를
+        # 그대로 보존하면 재실행 시 그 단계가 ready(pending|approved)도 done 도 아니어서
+        # flow_next_ready 가 영영 선택하지 못하고 하류 deps 도 충족 안 돼 플로우가
+        # 영구 정지한다(무한 'running' 재발 방지 — 코드리뷰 HIGH).
+        if s.id in preserved and prev_by_id[s.id].get("status") == "done":
             prev = prev_by_id[s.id]
-            step["status"] = prev.get("status", "pending")
+            step["status"] = "done"
             if prev.get("run_id") is not None:
                 step["run_id"] = prev["run_id"]
             if prev.get("output") is not None:

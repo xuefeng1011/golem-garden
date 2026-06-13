@@ -505,6 +505,52 @@ async def test_put_flow_preserves_when_deps_reordered(registered_project) -> Non
 
 
 @pytest.mark.asyncio
+async def test_put_flow_resets_nonterminal_status_even_if_unchanged(registered_project) -> None:
+    """Only 'done' is inherited — running/waiting_approval/failed reset to pending.
+
+    Preserving a non-terminal status would re-introduce a permanent stall: a
+    'running' step is never re-selected (not pending/approved) nor satisfies its
+    dependents (not done), so the flow freezes forever.
+    """
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "r1", "soul": "ryn", "task": "t1", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "running", "run_id": "run-r1", "output": "partial"},
+        {"id": "w1", "soul": "ryn", "task": "t2", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "waiting_approval"},
+        {"id": "f1", "soul": "ryn", "task": "t3", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "failed", "output": "boom"},
+    ]
+    _write_flow(project_path, "flow_550_5", status="failed", steps=seeded)
+
+    # Identical definitions → defs "unchanged", but statuses are non-terminal.
+    body = {
+        "goal": "g",
+        "steps": [
+            {"id": "r1", "task": "t1", "soul": "ryn"},
+            {"id": "w1", "task": "t2", "soul": "ryn"},
+            {"id": "f1", "task": "t3", "soul": "ryn"},
+        ],
+    }
+    resp = await _put(project_id, "flow_550_5", body)
+    assert resp.status_code == 200, resp.text
+
+    by_id = {
+        s["id"]: s
+        for s in json.loads(
+            (project_path / ".golem" / "flows" / "flow_550_5" / "state.json").read_text(encoding="utf-8")
+        )["steps"]
+    }
+    for sid in ("r1", "w1", "f1"):
+        assert by_id[sid]["status"] == "pending", f"{sid} must reset to pending"
+        assert "run_id" not in by_id[sid], f"{sid} run_id must be dropped"
+        assert "output" not in by_id[sid], f"{sid} output must be dropped"
+
+
+@pytest.mark.asyncio
 async def test_put_flow_not_found_404(registered_project) -> None:
     project_id, _ = registered_project
     resp = await _put(project_id, "00000000-0000-0000-0000-000000000000", _SIMPLE_BODY)
