@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from golem_gateway.api_activity import router as activity_router
 from golem_gateway.api_console import router as console_router
 from golem_gateway.api_forge import router as forge_router
+from golem_gateway.api_flows import router as flows_router
 from golem_gateway.api_missions import router as missions_router
 from golem_gateway.api_projects import router as projects_router
 from golem_gateway.api_runs import router as runs_router
@@ -65,6 +66,7 @@ app.include_router(sessions_router)
 app.include_router(forge_router)
 app.include_router(traces_router)
 app.include_router(missions_router)
+app.include_router(flows_router)
 app.include_router(console_router)
 
 

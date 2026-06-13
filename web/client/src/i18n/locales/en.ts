@@ -969,15 +969,21 @@ export default {
   // Canvas (Phase C)
   canvas: {
     title: 'Canvas',
+    viewTimeline: 'Task Timeline',
+    viewFlowDag: 'Flow View',
     viewFlow: 'Execution Flow',
     viewMission: 'Mission DAG',
     viewSession: 'Session Tree',
     selectMission: 'Select a mission…',
+    selectFlow: 'Select a flow…',
+    rangeAll: 'All',
     refresh: 'Refresh',
     noProject: 'Please select a project first',
     noProjectDescription: 'Pick a project to visualise its execution graph',
     emptyTitle: 'No data to display',
     emptyDescription: 'Run forge commands to generate execution data',
+    emptyFlowDescription: 'No flows found — use `forge flow create` to build a workflow',
+    timelineLegend: 'Rows = SOULs · Columns = time · Edges = same session',
   },
 
   // Changelog

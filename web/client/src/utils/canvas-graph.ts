@@ -7,12 +7,13 @@ import dagre from 'dagre'
 import type { RunMeta } from '@/api/hermes/console'
 import type { MailboxMessage } from '@/api/hermes/souls'
 import type { Mission } from '@/api/hermes/missions'
+import type { Flow } from '@/api/hermes/flows'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface GraphNode {
   id: string
-  type: 'soul' | 'run' | 'session' | 'mission' | 'task'
+  type: 'soul' | 'run' | 'session' | 'mission' | 'task' | 'flowstep'
   position: { x: number; y: number }
   data: GraphNodeData
 }
@@ -39,6 +40,14 @@ export interface GraphNodeData {
   missionId?: string
   status?: string
   taskIdx?: number
+  // flowstep extras
+  flowId?: string
+  stepId?: string
+  onFail?: string
+  approval?: boolean
+  // timeline extras
+  timeIndex?: number
+  soulIndex?: number
 }
 
 export interface GraphEdge {
@@ -306,6 +315,148 @@ export function buildSessionTree(runs: RunMeta[]): GraphData {
         source: sessionNodeId,
         target: runNodeId,
       })
+    }
+  }
+
+  const laidOut = layoutWithDagre(nodes, edges, 'TB')
+  return { nodes: laidOut, edges }
+}
+
+// ── Timeline Duration Filter ──────────────────────────────────────────────────
+
+export type TimelineRange = '24h' | '7d' | 'all'
+
+export function filterRunsByRange(runs: RunMeta[], range: TimelineRange): RunMeta[] {
+  if (range === 'all') return runs
+  const now = Date.now()
+  const cutoff = range === '24h' ? now - 24 * 60 * 60 * 1000 : now - 7 * 24 * 60 * 60 * 1000
+  return runs.filter((r) => new Date(r.ts_start).getTime() >= cutoff)
+}
+
+// ── Timeline (Swimlane) ───────────────────────────────────────────────────────
+
+const X_STEP = 220  // horizontal gap between time-slots (G9: fixed, no recompute)
+const Y_STEP = 100  // vertical gap between soul rows
+
+/**
+ * Build a swimlane timeline graph (G9: positions computed once, never on drag).
+ * - Rows: one per unique soul (sorted by first appearance)
+ * - Columns: runs sorted by ts_start ascending
+ * - Edges: consecutive runs in the same session_id are connected
+ */
+export function buildTimeline(runs: RunMeta[], range: TimelineRange = 'all'): GraphData {
+  const filtered = filterRunsByRange(runs, range)
+  if (filtered.length === 0) return { nodes: [], edges: [] }
+
+  // Sort runs by ts_start ascending
+  const sorted = [...filtered].sort(
+    (a, b) => new Date(a.ts_start).getTime() - new Date(b.ts_start).getTime(),
+  )
+
+  // Build soul index (insertion order = first-appearance order)
+  const soulOrder: string[] = []
+  const soulIndexMap = new Map<string, number>()
+  for (const run of sorted) {
+    const soul = run.soul || 'unknown'
+    if (!soulIndexMap.has(soul)) {
+      soulIndexMap.set(soul, soulOrder.length)
+      soulOrder.push(soul)
+    }
+  }
+
+  const nodes: GraphNode[] = []
+  const edges: GraphEdge[] = []
+
+  // Track last run per session for edge building
+  const lastRunInSession = new Map<string, string>()
+
+  for (let i = 0; i < sorted.length; i++) {
+    const run = sorted[i]
+    const soul = run.soul || 'unknown'
+    const soulIdx = soulIndexMap.get(soul) ?? 0
+    const sid = run.session_id || ''
+    const runNodeId = `tl__${run.run_id}`
+
+    const durSec = run.duration_ms != null ? (run.duration_ms / 1000).toFixed(1) + 's' : '—'
+
+    nodes.push({
+      id: runNodeId,
+      type: 'run',
+      // G9: position computed once here — x = time-slot index, y = soul lane
+      position: { x: i * X_STEP, y: soulIdx * Y_STEP },
+      data: {
+        label: `${soul} · ${durSec} · ${run.result}`,
+        nodeType: 'run',
+        runId: run.run_id,
+        soul,
+        result: run.result,
+        durationMs: run.duration_ms,
+        costUsd: run.cost_usd,
+        model: run.model,
+        tsStart: run.ts_start,
+        timeIndex: i,
+        soulIndex: soulIdx,
+      },
+    })
+
+    // Connect to previous run in the same session (workflow narrative edge)
+    if (sid) {
+      const prevId = lastRunInSession.get(sid)
+      if (prevId) {
+        edges.push({
+          id: `tl_sess__${sid}__${run.run_id}`,
+          source: prevId,
+          target: runNodeId,
+        })
+      }
+      lastRunInSession.set(sid, runNodeId)
+    }
+  }
+
+  return { nodes, edges }
+}
+
+// ── Flow DAG ──────────────────────────────────────────────────────────────────
+
+/**
+ * Build a DAG for a single Flow (from Flow Engine):
+ * - Each step becomes a node
+ * - deps[] become edges (source dep → target step)
+ * - Uses dagre TB layout (same as buildMissionDag)
+ */
+export function buildFlowDag(flow: Flow): GraphData {
+  if (flow.steps.length === 0) return { nodes: [], edges: [] }
+
+  const nodes: GraphNode[] = []
+  const edges: GraphEdge[] = []
+
+  const stepIds = new Set(flow.steps.map((s) => s.id))
+
+  for (const step of flow.steps) {
+    nodes.push({
+      id: `fs__${step.id}`,
+      type: 'flowstep',
+      position: { x: 0, y: 0 },
+      data: {
+        label: step.task.length > 50 ? step.task.slice(0, 47) + '…' : step.task,
+        nodeType: 'task',
+        soul: step.soul,
+        status: step.status,
+        stepId: step.id,
+        flowId: flow.flow_id,
+        onFail: step.on_fail,
+        approval: step.approval,
+      },
+    })
+
+    for (const dep of step.deps) {
+      if (stepIds.has(dep)) {
+        edges.push({
+          id: `fe__${dep}__${step.id}`,
+          source: `fs__${dep}`,
+          target: `fs__${step.id}`,
+        })
+      }
     }
   }
 

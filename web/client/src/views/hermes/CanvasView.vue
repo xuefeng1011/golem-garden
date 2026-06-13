@@ -21,9 +21,17 @@ import { useConsoleStore } from '@/stores/hermes/console'
 import { fetchRuns } from '@/api/hermes/traces'
 import { fetchMailbox } from '@/api/hermes/souls'
 import { fetchMissions } from '@/api/hermes/missions'
-import { buildExecutionFlow, buildMissionDag, buildSessionTree } from '@/utils/canvas-graph'
-import type { GraphNodeData } from '@/utils/canvas-graph'
+import { fetchFlows } from '@/api/hermes/flows'
+import {
+  buildExecutionFlow,
+  buildMissionDag,
+  buildSessionTree,
+  buildTimeline,
+  buildFlowDag,
+} from '@/utils/canvas-graph'
+import type { GraphNodeData, TimelineRange } from '@/utils/canvas-graph'
 import type { Mission } from '@/api/hermes/missions'
+import type { Flow } from '@/api/hermes/flows'
 import type { RunMeta } from '@/api/hermes/console'
 
 import SoulNode from '@/components/hermes/canvas/SoulNode.vue'
@@ -39,8 +47,11 @@ const consoleStore = useConsoleStore()
 
 // ── View state ────────────────────────────────────────────────────────────────
 
-type ViewMode = 'flow' | 'mission' | 'session'
-const viewMode = ref<ViewMode>('flow')
+type ViewMode = 'timeline' | 'flowdag' | 'flow' | 'mission' | 'session'
+const viewMode = ref<ViewMode>('timeline')
+
+// ── Timeline range filter ─────────────────────────────────────────────────────
+const timelineRange = ref<TimelineRange>('7d')
 
 // ── Graph data (G7: shallowRef) ───────────────────────────────────────────────
 const nodes = shallowRef<ReturnType<typeof buildExecutionFlow>['nodes']>([])
@@ -51,7 +62,9 @@ const loading = ref(false)
 const loadError = ref<string | null>(null)
 const runs = ref<RunMeta[]>([])
 const missions = ref<Mission[]>([])
+const flows = ref<Flow[]>([])
 const selectedMissionId = ref<string | null>(null)
+const selectedFlowId = ref<string | null>(null)
 
 // ── Node click / info panel ───────────────────────────────────────────────────
 const selectedNodeData = ref<GraphNodeData | null>(null)
@@ -72,6 +85,7 @@ const nodeTypes: NodeTypesObject = markRaw({
   session: GenericNode as NodeTypesObject[string],
   mission: GenericNode as NodeTypesObject[string],
   task: GenericNode as NodeTypesObject[string],
+  flowstep: GenericNode as NodeTypesObject[string],
 })
 
 // ── Mission select options ────────────────────────────────────────────────────
@@ -82,15 +96,29 @@ const missionOptions = computed(() =>
   })),
 )
 
-// ── Graph rebuild (called on viewMode/mission change, NOT on drag — G9) ───────
+// ── Flow select options ───────────────────────────────────────────────────────
+const flowOptions = computed(() =>
+  flows.value.map((f) => ({
+    label: f.goal.length > 50 ? f.goal.slice(0, 47) + '…' : f.goal,
+    value: f.flow_id,
+  })),
+)
+
+// ── Graph rebuild (called on viewMode/mission/flow change, NOT on drag — G9) ─
 function rebuildGraph(
   currentRuns: RunMeta[],
   mailbox: ReturnType<typeof fetchMailbox> extends Promise<infer T> ? T : never,
   currentMissions: Mission[],
+  currentFlows: Flow[],
 ) {
   let graph: { nodes: typeof nodes.value; edges: typeof edges.value }
 
-  if (viewMode.value === 'flow') {
+  if (viewMode.value === 'timeline') {
+    graph = buildTimeline(currentRuns, timelineRange.value)
+  } else if (viewMode.value === 'flowdag') {
+    const flow = currentFlows.find((f) => f.flow_id === selectedFlowId.value)
+    graph = flow ? buildFlowDag(flow) : { nodes: [], edges: [] }
+  } else if (viewMode.value === 'flow') {
     graph = buildExecutionFlow(currentRuns, mailbox as Parameters<typeof buildExecutionFlow>[1])
   } else if (viewMode.value === 'mission') {
     const mission = currentMissions.find((m) => m.id === selectedMissionId.value)
@@ -118,20 +146,25 @@ async function loadAll() {
   loadError.value = null
 
   try {
-    const [fetchedRuns, mailbox, fetchedMissions] = await Promise.all([
+    const [fetchedRuns, mailbox, fetchedMissions, fetchedFlows] = await Promise.all([
       fetchRuns(pid, 200),
       fetchMailbox(pid, 200),
       fetchMissions(pid).catch(() => [] as Mission[]),
+      fetchFlows(pid).catch(() => [] as Flow[]),
     ])
     runs.value = fetchedRuns
     cachedMailbox.value = mailbox
     missions.value = fetchedMissions
+    flows.value = fetchedFlows
 
     if (fetchedMissions.length > 0 && !selectedMissionId.value) {
       selectedMissionId.value = fetchedMissions[0].id
     }
+    if (fetchedFlows.length > 0 && !selectedFlowId.value) {
+      selectedFlowId.value = fetchedFlows[0].flow_id
+    }
 
-    rebuildGraph(fetchedRuns, mailbox, fetchedMissions)
+    rebuildGraph(fetchedRuns, mailbox, fetchedMissions, fetchedFlows)
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -139,14 +172,26 @@ async function loadAll() {
   }
 }
 
-// Watch view mode / selected mission — G9: no dagre re-run on drag, only here
+// Watch view mode / selected mission / flow — G9: no recompute on drag, only here
 watch(viewMode, () => {
-  rebuildGraph(runs.value, cachedMailbox.value, missions.value)
+  rebuildGraph(runs.value, cachedMailbox.value, missions.value, flows.value)
+})
+
+watch(timelineRange, () => {
+  if (viewMode.value === 'timeline') {
+    rebuildGraph(runs.value, cachedMailbox.value, missions.value, flows.value)
+  }
 })
 
 watch(selectedMissionId, () => {
   if (viewMode.value === 'mission') {
-    rebuildGraph(runs.value, cachedMailbox.value, missions.value)
+    rebuildGraph(runs.value, cachedMailbox.value, missions.value, flows.value)
+  }
+})
+
+watch(selectedFlowId, () => {
+  if (viewMode.value === 'flowdag') {
+    rebuildGraph(runs.value, cachedMailbox.value, missions.value, flows.value)
   }
 })
 
@@ -198,6 +243,11 @@ function onLoadMore() {
   if (pid) consoleStore.loadMoreTrace(pid)
 }
 
+// ── Empty state description per view ─────────────────────────────────────────
+const emptyDescription = computed(() => {
+  if (viewMode.value === 'flowdag') return t('canvas.emptyFlowDescription')
+  return t('canvas.emptyDescription')
+})
 </script>
 
 <template>
@@ -211,9 +261,14 @@ function onLoadMore() {
         <div class="segment-group">
           <button
             class="segment-btn"
-            :class="{ active: viewMode === 'flow' }"
-            @click="viewMode = 'flow'"
-          >{{ t('canvas.viewFlow') }}</button>
+            :class="{ active: viewMode === 'timeline' }"
+            @click="viewMode = 'timeline'"
+          >{{ t('canvas.viewTimeline') }}</button>
+          <button
+            class="segment-btn"
+            :class="{ active: viewMode === 'flowdag' }"
+            @click="viewMode = 'flowdag'"
+          >{{ t('canvas.viewFlowDag') }}</button>
           <button
             class="segment-btn"
             :class="{ active: viewMode === 'mission' }"
@@ -224,6 +279,30 @@ function onLoadMore() {
             :class="{ active: viewMode === 'session' }"
             @click="viewMode = 'session'"
           >{{ t('canvas.viewSession') }}</button>
+          <button
+            class="segment-btn"
+            :class="{ active: viewMode === 'flow' }"
+            @click="viewMode = 'flow'"
+          >{{ t('canvas.viewFlow') }}</button>
+        </div>
+
+        <!-- Timeline range filter (only in timeline mode) -->
+        <div v-if="viewMode === 'timeline'" class="segment-group segment-group--sm">
+          <button
+            class="segment-btn"
+            :class="{ active: timelineRange === '24h' }"
+            @click="timelineRange = '24h'"
+          >24h</button>
+          <button
+            class="segment-btn"
+            :class="{ active: timelineRange === '7d' }"
+            @click="timelineRange = '7d'"
+          >7d</button>
+          <button
+            class="segment-btn"
+            :class="{ active: timelineRange === 'all' }"
+            @click="timelineRange = 'all'"
+          >{{ t('canvas.rangeAll') }}</button>
         </div>
 
         <!-- Mission selector (only shown in mission mode) -->
@@ -232,6 +311,16 @@ function onLoadMore() {
           v-model:value="selectedMissionId"
           :options="missionOptions"
           :placeholder="t('canvas.selectMission')"
+          size="small"
+          style="width: 240px"
+        />
+
+        <!-- Flow selector (only shown in flowdag mode) -->
+        <NSelect
+          v-if="viewMode === 'flowdag'"
+          v-model:value="selectedFlowId"
+          :options="flowOptions"
+          :placeholder="t('canvas.selectFlow')"
           size="small"
           style="width: 240px"
         />
@@ -269,15 +358,27 @@ function onLoadMore() {
         <button class="icon-btn" @click="loadAll">{{ t('common.retry') }}</button>
       </div>
 
+      <!-- Empty graph — flow dag special message -->
+      <EmptyState
+        v-else-if="!loading && nodes.length === 0 && viewMode === 'flowdag'"
+        :title="t('canvas.emptyTitle')"
+        :description="t('canvas.emptyFlowDescription')"
+      />
+
       <!-- Empty graph -->
       <EmptyState
         v-else-if="!loading && nodes.length === 0"
         :title="t('canvas.emptyTitle')"
-        :description="t('canvas.emptyDescription')"
+        :description="emptyDescription"
       />
 
       <!-- Vue Flow canvas -->
       <div v-else class="flow-container">
+        <!-- Swimlane labels for timeline mode -->
+        <div v-if="viewMode === 'timeline'" class="swimlane-legend" aria-hidden="true">
+          <span class="swimlane-hint">{{ t('canvas.timelineLegend') }}</span>
+        </div>
+
         <VueFlow
           :nodes="nodes"
           :edges="edges"
@@ -355,6 +456,10 @@ function onLoadMore() {
   border: 1px solid $border-color;
   border-radius: $radius-sm;
   overflow: hidden;
+
+  &--sm .segment-btn {
+    padding: 5px 8px;
+  }
 }
 
 .segment-btn {
@@ -424,6 +529,23 @@ function onLoadMore() {
   width: 100%;
   height: 100%;
   background: $bg-secondary;
+}
+
+.swimlane-legend {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  z-index: 5;
+  font-size: 11px;
+  color: $text-muted;
+  pointer-events: none;
+}
+
+.swimlane-hint {
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: $radius-sm;
+  padding: 3px 8px;
 }
 
 .center-state {

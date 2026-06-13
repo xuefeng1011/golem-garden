@@ -3,11 +3,15 @@ import {
   buildExecutionFlow,
   buildMissionDag,
   buildSessionTree,
+  buildTimeline,
+  buildFlowDag,
+  filterRunsByRange,
   layoutWithDagre,
 } from '@/utils/canvas-graph'
 import type { RunMeta } from '@/api/hermes/console'
 import type { MailboxMessage } from '@/api/hermes/souls'
 import type { Mission } from '@/api/hermes/missions'
+import type { Flow } from '@/api/hermes/flows'
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -332,5 +336,222 @@ describe('300-node synthetic stress test', () => {
       expect(nodeIds.has(edge.source)).toBe(true)
       expect(nodeIds.has(edge.target)).toBe(true)
     }
+  })
+})
+
+// ── filterRunsByRange ─────────────────────────────────────────────────────────
+
+describe('filterRunsByRange', () => {
+  const now = Date.now()
+
+  function makeTimedRun(hoursAgo: number, id: string): RunMeta {
+    return makeRun({
+      run_id: id,
+      ts_start: new Date(now - hoursAgo * 60 * 60 * 1000).toISOString(),
+    })
+  }
+
+  it('returns all runs for range "all"', () => {
+    const runs = [makeTimedRun(200, 'r1'), makeTimedRun(10, 'r2')]
+    expect(filterRunsByRange(runs, 'all')).toHaveLength(2)
+  })
+
+  it('filters to last 24h', () => {
+    const runs = [makeTimedRun(25, 'old'), makeTimedRun(10, 'recent')]
+    const result = filterRunsByRange(runs, '24h')
+    expect(result).toHaveLength(1)
+    expect(result[0].run_id).toBe('recent')
+  })
+
+  it('filters to last 7d', () => {
+    const runs = [makeTimedRun(8 * 24, 'old'), makeTimedRun(3 * 24, 'recent')]
+    const result = filterRunsByRange(runs, '7d')
+    expect(result).toHaveLength(1)
+    expect(result[0].run_id).toBe('recent')
+  })
+
+  it('returns empty array when no runs pass filter', () => {
+    const runs = [makeTimedRun(200, 'r1')]
+    expect(filterRunsByRange(runs, '24h')).toHaveLength(0)
+  })
+})
+
+// ── buildTimeline ─────────────────────────────────────────────────────────────
+
+describe('buildTimeline', () => {
+  it('returns empty graph for empty runs', () => {
+    const { nodes, edges } = buildTimeline([])
+    expect(nodes).toHaveLength(0)
+    expect(edges).toHaveLength(0)
+  })
+
+  it('places each soul on a distinct y-lane', () => {
+    const runs = [
+      makeRun({ soul: 'ryn', run_id: 'r1', ts_start: '2026-06-13T00:00:00Z', session_id: 'sa' }),
+      makeRun({ soul: 'nex', run_id: 'r2', ts_start: '2026-06-13T00:01:00Z', session_id: 'sb' }),
+    ]
+    const { nodes } = buildTimeline(runs, 'all')
+    const rynNode = nodes.find((n) => n.data.soul === 'ryn')!
+    const nexNode = nodes.find((n) => n.data.soul === 'nex')!
+    expect(rynNode.position.y).not.toBe(nexNode.position.y)
+  })
+
+  it('connects consecutive runs in the same session with edges', () => {
+    const runs = [
+      makeRun({ run_id: 'r1', ts_start: '2026-06-13T00:00:00Z', session_id: 'sess_x' }),
+      makeRun({ run_id: 'r2', ts_start: '2026-06-13T00:01:00Z', session_id: 'sess_x' }),
+      makeRun({ run_id: 'r3', ts_start: '2026-06-13T00:02:00Z', session_id: 'sess_x' }),
+    ]
+    const { edges } = buildTimeline(runs, 'all')
+    // r1→r2 and r2→r3
+    expect(edges).toHaveLength(2)
+    expect(edges[0].source).toBe('tl__r1')
+    expect(edges[0].target).toBe('tl__r2')
+    expect(edges[1].source).toBe('tl__r2')
+    expect(edges[1].target).toBe('tl__r3')
+  })
+
+  it('does not connect runs from different sessions', () => {
+    const runs = [
+      makeRun({ run_id: 'r1', ts_start: '2026-06-13T00:00:00Z', session_id: 'sess_a' }),
+      makeRun({ run_id: 'r2', ts_start: '2026-06-13T00:01:00Z', session_id: 'sess_b' }),
+    ]
+    const { edges } = buildTimeline(runs, 'all')
+    expect(edges).toHaveLength(0)
+  })
+
+  it('all node data fields are scalars (G7 compliance)', () => {
+    const runs = [makeRun({ run_id: 'r1', ts_start: '2026-06-13T00:00:00Z' })]
+    const { nodes } = buildTimeline(runs, 'all')
+    for (const node of nodes) {
+      for (const [, val] of Object.entries(node.data)) {
+        expect(typeof val).not.toBe('object')
+      }
+    }
+  })
+
+  it('applies 24h range filter correctly', () => {
+    const now = Date.now()
+    const recent = new Date(now - 1 * 60 * 60 * 1000).toISOString()
+    const old = new Date(now - 48 * 60 * 60 * 1000).toISOString()
+    const runs = [
+      makeRun({ run_id: 'r_old', ts_start: old }),
+      makeRun({ run_id: 'r_new', ts_start: recent }),
+    ]
+    const { nodes } = buildTimeline(runs, '24h')
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].data.runId).toBe('r_new')
+  })
+
+  it('assigns timeIndex and soulIndex as scalars', () => {
+    const runs = [
+      makeRun({ soul: 'ryn', run_id: 'r1', ts_start: '2026-06-13T00:00:00Z' }),
+      makeRun({ soul: 'nex', run_id: 'r2', ts_start: '2026-06-13T00:01:00Z' }),
+    ]
+    const { nodes } = buildTimeline(runs, 'all')
+    for (const n of nodes) {
+      expect(typeof n.data.timeIndex).toBe('number')
+      expect(typeof n.data.soulIndex).toBe('number')
+    }
+  })
+})
+
+// ── buildFlowDag ──────────────────────────────────────────────────────────────
+
+function makeFlow(overrides: Partial<Flow> = {}): Flow {
+  return {
+    flow_id: 'flow_001',
+    goal: 'Deploy the feature',
+    status: 'running',
+    created: '2026-06-13T00:00:00Z',
+    steps: [
+      { id: 's1', soul: 'ryn', task: 'Build', deps: [], status: 'done', approval: false, on_fail: 'abort' },
+      { id: 's2', soul: 'nex', task: 'Review', deps: ['s1'], status: 'waiting_approval', approval: true, on_fail: 'abort' },
+      { id: 's3', soul: 'ryn', task: 'Deploy', deps: ['s2'], status: 'pending', approval: false, on_fail: 'continue' },
+    ],
+    ...overrides,
+  }
+}
+
+describe('buildFlowDag', () => {
+  it('returns empty graph for flow with no steps', () => {
+    const flow = makeFlow({ steps: [] })
+    const { nodes, edges } = buildFlowDag(flow)
+    expect(nodes).toHaveLength(0)
+    expect(edges).toHaveLength(0)
+  })
+
+  it('creates one node per step', () => {
+    const flow = makeFlow()
+    const { nodes } = buildFlowDag(flow)
+    expect(nodes).toHaveLength(3)
+  })
+
+  it('creates edges from deps (s1→s2, s2→s3)', () => {
+    const flow = makeFlow()
+    const { edges } = buildFlowDag(flow)
+    expect(edges).toHaveLength(2)
+    expect(edges.find((e) => e.source === 'fs__s1' && e.target === 'fs__s2')).toBeDefined()
+    expect(edges.find((e) => e.source === 'fs__s2' && e.target === 'fs__s3')).toBeDefined()
+  })
+
+  it('ignores deps that reference non-existent step ids', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: 'ryn', task: 'Build', deps: ['ghost'], status: 'done', approval: false, on_fail: 'abort' },
+      ],
+    })
+    const { edges } = buildFlowDag(flow)
+    expect(edges).toHaveLength(0)
+  })
+
+  it('passes status through to node data', () => {
+    const flow = makeFlow()
+    const { nodes } = buildFlowDag(flow)
+    const s2 = nodes.find((n) => n.data.stepId === 's2')!
+    expect(s2.data.status).toBe('waiting_approval')
+  })
+
+  it('passes approval flag through to node data as scalar', () => {
+    const flow = makeFlow()
+    const { nodes } = buildFlowDag(flow)
+    const s2 = nodes.find((n) => n.data.stepId === 's2')!
+    expect(s2.data.approval).toBe(true)
+    expect(typeof s2.data.approval).toBe('boolean')
+  })
+
+  it('passes on_fail through to node data', () => {
+    const flow = makeFlow()
+    const { nodes } = buildFlowDag(flow)
+    const s3 = nodes.find((n) => n.data.stepId === 's3')!
+    expect(s3.data.onFail).toBe('continue')
+  })
+
+  it('all node data fields are scalars (G7 compliance)', () => {
+    const flow = makeFlow()
+    const { nodes } = buildFlowDag(flow)
+    for (const node of nodes) {
+      for (const [, val] of Object.entries(node.data)) {
+        expect(typeof val).not.toBe('object')
+      }
+    }
+  })
+
+  it('all nodes have dagre-assigned numeric positions', () => {
+    const flow = makeFlow()
+    const { nodes } = buildFlowDag(flow)
+    for (const node of nodes) {
+      expect(typeof node.position.x).toBe('number')
+      expect(typeof node.position.y).toBe('number')
+    }
+  })
+
+  it('truncates long task label to ≤50 chars + ellipsis', () => {
+    const longTask = 'X'.repeat(100)
+    const flow = makeFlow({
+      steps: [{ id: 's1', soul: 'ryn', task: longTask, deps: [], status: 'pending', approval: false, on_fail: 'abort' }],
+    })
+    const { nodes } = buildFlowDag(flow)
+    expect(nodes[0].data.label.length).toBeLessThanOrEqual(53)
   })
 })
