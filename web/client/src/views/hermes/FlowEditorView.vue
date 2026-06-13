@@ -26,13 +26,15 @@ import '@vue-flow/core/dist/theme-default.css'
 
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchSouls } from '@/api/hermes/souls'
-import { fetchFlows, createFlow, updateFlow } from '@/api/hermes/flows'
+import { fetchFlows, createFlow, updateFlow, deleteFlow } from '@/api/hermes/flows'
+import type { Flow } from '@/api/hermes/flows'
 import { startForge, streamForgeEvents } from '@/api/hermes/forge'
 import type { Soul } from '@/api/hermes/souls'
 import type { GraphNode, GraphEdge, EditorNodeData } from '@/utils/canvas-graph'
 import {
   layoutWithDagre,
   stepsFromGraph,
+  editorGraphFromFlow,
 } from '@/utils/canvas-graph'
 
 import N8nNode from '@/components/hermes/canvas/N8nNode.vue'
@@ -68,6 +70,14 @@ const dirty = ref(false)
 const saving = ref(false)
 const loading = ref(false)
 const loadError = ref<string | null>(null)
+
+// 저장된 플로우 목록
+const flows = ref<Flow[]>([])
+
+// 프로그램적 상태 갱신(폴링/로드) 동안 dirty watch 억제 — 사용자 편집만 dirty.
+// (핵심 버그 방지: 실행 중 refreshFlowStatus 가 노드 교체 → dirty=true → 재저장으로
+//  status 가 pending 으로 리셋되던 문제)
+let applyingStatus = false
 
 // Step counter for unique IDs
 let stepCounter = 0
@@ -122,7 +132,17 @@ const allStepOptions = computed(() =>
 )
 
 // ── Dirty tracking ────────────────────────────────────────────────────────────
-watch([nodes, edges, goal], () => { dirty.value = true }, { flush: 'sync' })
+// applyingStatus(폴링/로드)일 때는 무시 — 사용자 편집만 dirty 로 본다.
+watch([nodes, edges, goal], () => {
+  if (applyingStatus) return
+  dirty.value = true
+}, { flush: 'sync' })
+
+// ── 진행 카운트 (툴바 N/M) ────────────────────────────────────────────────────
+const doneCount = computed(
+  () => nodes.value.filter((n) => (n.data as EditorNodeData).status === 'done').length,
+)
+const totalCount = computed(() => nodes.value.length)
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadData() {
@@ -133,16 +153,108 @@ async function loadData() {
   loadError.value = null
 
   try {
-    const [fetchedSouls] = await Promise.all([
+    const [fetchedSouls, fetchedFlows] = await Promise.all([
       fetchSouls(pid).catch(() => [] as Soul[]),
+      fetchFlows(pid).catch(() => [] as Flow[]),
     ])
     souls.value = fetchedSouls
+    flows.value = fetchedFlows
     dirty.value = false
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
     loading.value = false
   }
+}
+
+// 저장된 플로우 목록 새로고침 (저장/삭제 후)
+async function reloadFlows() {
+  const pid = profilesStore.activeProfile?.id
+  if (!pid) return
+  flows.value = await fetchFlows(pid).catch(() => flows.value)
+}
+
+// ── 플로우 불러오기/전환/새로만들기/삭제 ──────────────────────────────────────
+function _loadFlow(flow: Flow) {
+  const { nodes: ns, edges: es } = editorGraphFromFlow(flow)
+  applyingStatus = true
+  goal.value = flow.goal
+  flowId.value = flow.flow_id
+  nodes.value = ns
+  edges.value = es
+  selectedNodeId.value = null
+  runPhase.value = 'idle'
+  runLines.value = []
+  // sync flush 라 즉시 해제해도 watch 가 이미 무시함
+  applyingStatus = false
+  dirty.value = false
+  setTimeout(() => fitView({ padding: 0.15 }), 50)
+}
+
+function onSelectFlow(id: string) {
+  if (id === flowId.value) return
+  const flow = flows.value.find((f) => f.flow_id === id)
+  if (!flow) return
+  if (dirty.value) {
+    dialog.warning({
+      title: t('flowEditor.leaveTitle'),
+      content: t('flowEditor.leaveContent'),
+      positiveText: t('flowEditor.leaveConfirm'),
+      negativeText: t('common.cancel'),
+      onPositiveClick: () => _loadFlow(flow),
+    })
+  } else {
+    _loadFlow(flow)
+  }
+}
+
+function _resetCanvas() {
+  applyingStatus = true
+  goal.value = ''
+  flowId.value = null
+  nodes.value = []
+  edges.value = []
+  selectedNodeId.value = null
+  runPhase.value = 'idle'
+  runLines.value = []
+  applyingStatus = false
+  dirty.value = false
+}
+
+function onNewFlow() {
+  if (dirty.value) {
+    dialog.warning({
+      title: t('flowEditor.leaveTitle'),
+      content: t('flowEditor.leaveContent'),
+      positiveText: t('flowEditor.leaveConfirm'),
+      negativeText: t('common.cancel'),
+      onPositiveClick: () => _resetCanvas(),
+    })
+  } else {
+    _resetCanvas()
+  }
+}
+
+function onDeleteFlow() {
+  const pid = profilesStore.activeProfile?.id
+  const id = flowId.value
+  if (!pid || !id) return
+  dialog.warning({
+    title: t('flowEditor.deleteTitle'),
+    content: t('flowEditor.deleteFlowConfirm'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        await deleteFlow(pid, id)
+        message.success(t('flowEditor.deleted'))
+        await reloadFlows()
+        _resetCanvas()
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  })
 }
 
 watch(
@@ -275,9 +387,15 @@ function validate(): boolean {
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────────
-async function save() {
+async function save(): Promise<boolean> {
   const pid = profilesStore.activeProfile?.id
-  if (!pid) return
+  if (!pid) return false
+  if (nodes.value.length === 0) {
+    message.warning(t('flowEditor.emptyTitle'))
+    return false
+  }
+  // 저장 전 검증 — 빈 task 는 서버 왕복 없이 인라인 차단
+  if (!validate()) return false
 
   saving.value = true
   try {
@@ -293,6 +411,8 @@ async function save() {
 
     dirty.value = false
     message.success(t('flowEditor.saveSuccess'))
+    await reloadFlows()  // 셀렉터 즉시 갱신
+    return true
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     message.error(`${t('flowEditor.saveFailed')}: ${msg}`)
@@ -305,6 +425,7 @@ async function save() {
         hasError: detail.includes((n.data as EditorNodeData).stepId),
       } as EditorNodeData,
     }))
+    return false
   } finally {
     saving.value = false
   }
@@ -313,11 +434,16 @@ async function save() {
 // ── Run ───────────────────────────────────────────────────────────────────────
 async function run() {
   const pid = profilesStore.activeProfile?.id
-  if (!pid || !flowId.value) return
+  if (!pid) return
+  if (nodes.value.length === 0) {
+    message.warning(t('flowEditor.emptyTitle'))
+    return
+  }
 
-  if (dirty.value) {
-    await save()
-    if (dirty.value) return // save failed
+  // 미저장(신규)이거나 변경분 있으면 먼저 저장 — 저장 실패 시 중단
+  if (!flowId.value || dirty.value) {
+    const ok = await save()
+    if (!ok || !flowId.value) return
   }
 
   running.value = true
@@ -374,11 +500,12 @@ async function refreshFlowStatus() {
   if (!pid || !flowId.value) return
 
   try {
-    const flows = await fetchFlows(pid)
-    const flow = flows.find((f) => f.flow_id === flowId.value)
+    const list = await fetchFlows(pid)
+    const flow = list.find((f) => f.flow_id === flowId.value)
     if (!flow) return
 
-    // Update node statuses without re-running dagre (G9: preserve positions)
+    // 상태 갱신은 프로그램적 — dirty 켜지지 않게 가드 (G9: dagre 미실행, 위치 보존)
+    applyingStatus = true
     const statusMap = new Map(flow.steps.map((s) => [s.id, s.status]))
     nodes.value = nodes.value.map((n) => {
       const d = n.data as EditorNodeData
@@ -386,9 +513,27 @@ async function refreshFlowStatus() {
       if (newStatus === undefined) return n
       return { ...n, data: { ...d, status: newStatus } as EditorNodeData }
     })
+    // running step 으로 들어가는 엣지만 흐름 애니메이션
+    const runningIds = new Set(
+      nodes.value
+        .filter((n) => (n.data as EditorNodeData).status === 'running')
+        .map((n) => n.id),
+    )
+    edges.value = edges.value.map((e) => ({ ...e, animated: runningIds.has(e.target) }))
+    applyingStatus = false
   } catch {
+    applyingStatus = false
     // ignore refresh errors silently
   }
+}
+
+// 실행 중지 — SSE 끊고 폴링 정지
+function stopRun() {
+  sseAbort?.()
+  sseAbort = null
+  _stopPolling()
+  running.value = false
+  runPhase.value = 'idle'
 }
 
 // ── Approve / Reject ──────────────────────────────────────────────────────────
@@ -546,11 +691,18 @@ onBeforeRouteLeave((_to, _from, next) => {
         :saving="saving"
         :has-flow-id="!!flowId"
         :running="running"
+        :flows="flows"
+        :selected-flow-id="flowId"
+        :done-count="doneCount"
+        :total-count="totalCount"
         @add-step="addStep"
         @auto-layout="autoLayout"
         @validate="validate"
         @save="save"
         @run="run"
+        @select-flow="onSelectFlow"
+        @new-flow="onNewFlow"
+        @delete-flow="onDeleteFlow"
       />
 
       <!-- Canvas + form panel -->
@@ -612,6 +764,7 @@ onBeforeRouteLeave((_to, _from, next) => {
         :waiting-steps="waitingSteps"
         @approve="approve"
         @reject="reject"
+        @stop="stopRun"
       />
     </template>
   </div>

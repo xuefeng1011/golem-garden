@@ -130,6 +130,12 @@ const subtitle = computed(() => {
     border-color: $accent-primary;
     box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.25);
   }
+
+  // 실행 중 노드 강조 — 옅은 글로우 (G8: plain div 유지)
+  &.is-running {
+    border-color: $accent-primary;
+    box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.18);
+  }
 }
 
 // ── 아이콘 칩 ──────────────────────────────────────────────

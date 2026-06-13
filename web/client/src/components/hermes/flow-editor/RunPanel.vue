@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'approve', stepId: string): void
   (e: 'reject', stepId: string): void
+  (e: 'stop'): void
 }>()
 
 const { t } = useI18n()
@@ -62,6 +63,12 @@ watch(
       <span class="run-panel-title">{{ t('flowEditor.runPanelTitle') }}</span>
       <span v-if="running" class="running-badge">{{ t('flowEditor.running') }}</span>
       <span v-else-if="resultChip" class="result-chip" :class="resultChip.cls">{{ resultChip.text }}</span>
+      <button
+        v-if="running"
+        class="stop-btn"
+        :title="t('flowEditor.btnStop')"
+        @click.stop="emit('stop')"
+      >■ {{ t('flowEditor.btnStop') }}</button>
       <NIcon class="toggle-icon" :size="14">
         <ChevronUpOutline v-if="!collapsed" />
         <ChevronDownOutline v-else />
@@ -144,6 +151,19 @@ watch(
 @keyframes pulse-opacity {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.5; }
+}
+
+.stop-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: $error;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: pointer;
+
+  &:hover { background: rgba(239, 68, 68, 0.18); }
 }
 
 .result-chip {
