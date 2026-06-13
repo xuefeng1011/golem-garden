@@ -9,6 +9,8 @@ export interface FlowStep {
   approval: boolean
   on_fail: string
   run_id?: string | null
+  type?: 'input' | 'agent'
+  output?: string | null
 }
 
 export interface Flow {
@@ -28,6 +30,7 @@ export interface WriteStep {
   retry: number
   approval: boolean
   on_fail: string
+  type?: 'input' | 'agent'
 }
 
 export interface CreateFlowPayload {

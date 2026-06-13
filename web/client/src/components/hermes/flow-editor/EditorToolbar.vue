@@ -13,6 +13,8 @@ import {
   SaveOutline,
   PlayOutline,
   TrashOutline,
+  EnterOutline,
+  HardwareChipOutline,
 } from '@vicons/ionicons5'
 import type { Flow } from '@/api/hermes/flows'
 
@@ -31,6 +33,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:goal', val: string): void
   (e: 'add-step'): void
+  (e: 'add-input'): void
+  (e: 'add-agent'): void
   (e: 'auto-layout'): void
   (e: 'validate'): void
   (e: 'save'): void
@@ -98,12 +102,22 @@ const showProgress = computed(
 
       <NTooltip trigger="hover">
         <template #trigger>
-          <NButton size="small" @click="emit('add-step')">
-            <template #icon><NIcon><AddOutline /></NIcon></template>
-            {{ t('flowEditor.btnAddStep') }}
+          <NButton size="small" @click="emit('add-input')">
+            <template #icon><NIcon><EnterOutline /></NIcon></template>
+            {{ t('flowEditor.btnAddInput') }}
           </NButton>
         </template>
-        {{ t('flowEditor.btnAddStepTip') }}
+        {{ t('flowEditor.btnAddInputTip') }}
+      </NTooltip>
+
+      <NTooltip trigger="hover">
+        <template #trigger>
+          <NButton size="small" @click="emit('add-agent')">
+            <template #icon><NIcon><HardwareChipOutline /></NIcon></template>
+            {{ t('flowEditor.btnAddAgent') }}
+          </NButton>
+        </template>
+        {{ t('flowEditor.btnAddAgentTip') }}
       </NTooltip>
 
       <NTooltip trigger="hover">

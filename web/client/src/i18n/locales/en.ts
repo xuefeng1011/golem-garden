@@ -1063,6 +1063,15 @@ export default {
     emptyDescWithFlows: 'Load a saved workflow or start from a template',
     btnDeleteStep: 'Delete this step',
     btnViewResult: 'View result',
+    btnAddInput: 'Add input',
+    btnAddInputTip: 'Add an input node (pipeline entry value)',
+    btnAddAgent: 'Add agent',
+    btnAddAgentTip: 'Add an agent step node',
+    nodeKindInput: 'Input',
+    inputValueLabel: 'Input value',
+    inputValuePlaceholder: 'Value passed into the pipeline…',
+    insertRefHint: '{{step-id}} inserts the output of that upstream step',
+    refChipsLabel: 'Upstream steps',
   },
 
   // Changelog

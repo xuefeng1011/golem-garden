@@ -602,6 +602,7 @@ function makeEditorNode(
       retry: 1,
       approval: false,
       on_fail: 'abort',
+      kind: 'agent' as const,
       ...overrides,
     } as EditorNodeData,
   }
@@ -780,5 +781,85 @@ describe('editorGraphFromFlow', () => {
     const { nodes } = editorGraphFromFlow(flow)
     const runId = (nodes[0].data as EditorNodeData).runId
     expect(typeof runId === 'string' || runId === null).toBe(true)
+  })
+
+  it('step.type=input maps to node data.kind=input', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: '', task: 'hello', deps: [], status: 'pending', approval: false, on_fail: 'abort', type: 'input' },
+        { id: 's2', soul: 'ryn', task: 'use it', deps: ['s1'], status: 'pending', approval: false, on_fail: 'abort', type: 'agent' },
+      ],
+    })
+    const { nodes } = editorGraphFromFlow(flow)
+    const s1 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's1')!
+    const s2 = nodes.find((n) => (n.data as EditorNodeData).stepId === 's2')!
+    expect((s1.data as EditorNodeData).kind).toBe('input')
+    expect((s2.data as EditorNodeData).kind).toBe('agent')
+  })
+
+  it('step.type missing defaults to kind=agent', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: 'ryn', task: 'Build', deps: [], status: 'pending', approval: false, on_fail: 'abort' },
+      ],
+    })
+    const { nodes } = editorGraphFromFlow(flow)
+    expect((nodes[0].data as EditorNodeData).kind).toBe('agent')
+  })
+
+  it('step.output propagates to node data.output as scalar', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: '', task: 'hi', deps: [], status: 'done', approval: false, on_fail: 'abort', type: 'input', output: 'hello world' },
+      ],
+    })
+    const { nodes } = editorGraphFromFlow(flow)
+    expect((nodes[0].data as EditorNodeData).output).toBe('hello world')
+  })
+
+  it('step.output null/missing yields null', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 's1', soul: 'ryn', task: 'Build', deps: [], status: 'pending', approval: false, on_fail: 'abort' },
+      ],
+    })
+    const { nodes } = editorGraphFromFlow(flow)
+    expect((nodes[0].data as EditorNodeData).output).toBeNull()
+  })
+})
+
+// ── stepsFromGraph kind→type serialization ────────────────────────────────────
+
+describe('stepsFromGraph kind→type serialization', () => {
+  it('kind=input node serializes to type=input in WriteStep', () => {
+    const nodes: GraphNode[] = [
+      makeEditorNode('s1', { kind: 'input' as const, soul: '', task: 'val' }),
+    ]
+    const [step] = stepsFromGraph(nodes, [])
+    expect(step.type).toBe('input')
+  })
+
+  it('kind=agent node serializes to type=agent in WriteStep', () => {
+    const nodes: GraphNode[] = [
+      makeEditorNode('s1', { kind: 'agent' as const }),
+    ]
+    const [step] = stepsFromGraph(nodes, [])
+    expect(step.type).toBe('agent')
+  })
+
+  it('round-trip: input node kind preserved through editorGraphFromFlow → stepsFromGraph', () => {
+    const flow = makeFlow({
+      steps: [
+        { id: 'in1', soul: '', task: 'start value', deps: [], status: 'pending', approval: false, on_fail: 'abort', type: 'input' },
+        { id: 'ag1', soul: 'ryn', task: 'use {{in1}}', deps: ['in1'], status: 'pending', approval: false, on_fail: 'abort', type: 'agent' },
+      ],
+    })
+    const { nodes, edges } = editorGraphFromFlow(flow)
+    const steps = stepsFromGraph(nodes, edges)
+    const inputStep = steps.find((s) => s.id === 'in1')!
+    const agentStep = steps.find((s) => s.id === 'ag1')!
+    expect(inputStep.type).toBe('input')
+    expect(agentStep.type).toBe('agent')
+    expect(agentStep.deps).toEqual(['in1'])
   })
 })

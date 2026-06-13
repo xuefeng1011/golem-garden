@@ -302,7 +302,7 @@ function applyTemplate(kind: 'serial' | 'parallel') {
 }
 
 // ── Node factory ──────────────────────────────────────────────────────────────
-function makeNode(stepId: string, task = '', soul = ''): GraphNode {
+function makeNode(stepId: string, task = '', soul = '', kind: 'input' | 'agent' = 'agent'): GraphNode {
   return {
     id: `fe__${stepId}`,
     type: 'task',
@@ -317,15 +317,16 @@ function makeNode(stepId: string, task = '', soul = ''): GraphNode {
       approval: false,
       on_fail: 'abort',
       status: 'pending',
+      kind,
     } as EditorNodeData,
   }
 }
 
-// ── Add step ──────────────────────────────────────────────────────────────────
-function addStep() {
+// ── Add step (internal helper) ────────────────────────────────────────────────
+function _addNode(kind: 'input' | 'agent') {
   stepCounter += 1
   const stepId = `step_${Date.now()}_${stepCounter}`
-  const firstSoul = souls.value[0]?.id ?? ''
+  const firstSoul = kind === 'agent' ? (souls.value[0]?.id ?? '') : ''
   const selected = getSelectedNodes.value
   const lastSelected = selected.length > 0 ? selected[selected.length - 1] : null
 
@@ -336,7 +337,7 @@ function addStep() {
       : { x: 100, y: 100 }
   )
 
-  const newNode = makeNode(stepId, '', firstSoul)
+  const newNode = makeNode(stepId, '', firstSoul, kind)
   newNode.position = { x: base.x + 260, y: base.y }
 
   const newEdges = [...edges.value]
@@ -353,6 +354,10 @@ function addStep() {
   edges.value = newEdges
   selectedNodeId.value = newNode.id
 }
+
+function addStep() { _addNode('agent') }
+function addInput() { _addNode('input') }
+function addAgent() { _addNode('agent') }
 
 // ── Auto layout (G9: only here, not on drag) ──────────────────────────────────
 function autoLayout() {
@@ -735,6 +740,8 @@ onBeforeRouteLeave((_to, _from, next) => {
         :done-count="doneCount"
         :total-count="totalCount"
         @add-step="addStep"
+        @add-input="addInput"
+        @add-agent="addAgent"
         @auto-layout="autoLayout"
         @validate="validate"
         @save="save"

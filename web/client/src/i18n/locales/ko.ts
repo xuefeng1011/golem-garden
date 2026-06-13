@@ -1004,6 +1004,15 @@ export default {
     emptyDescWithFlows: '저장된 플로우를 불러오거나 템플릿으로 시작하세요',
     btnDeleteStep: '이 단계 삭제',
     btnViewResult: '결과 보기',
+    btnAddInput: '입력 추가',
+    btnAddInputTip: '입력 노드 추가 (파이프라인 진입값)',
+    btnAddAgent: '에이전트 추가',
+    btnAddAgentTip: '에이전트 단계 노드 추가',
+    nodeKindInput: '입력',
+    inputValueLabel: '입력 내용',
+    inputValuePlaceholder: '파이프라인으로 전달할 값…',
+    insertRefHint: '{{단계id}} 로 앞 단계 출력을 끼워넣을 수 있어요',
+    refChipsLabel: '상류 단계',
   },
 
   // 변경 이력

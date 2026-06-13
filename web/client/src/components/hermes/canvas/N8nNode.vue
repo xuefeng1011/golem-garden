@@ -15,6 +15,7 @@ import {
   GitCommitOutline,
   LockClosedOutline,
   CloseOutline,
+  EnterOutline,
 } from '@vicons/ionicons5'
 import type { GraphNodeData } from '@/utils/canvas-graph'
 
@@ -45,13 +46,19 @@ const statusKey = computed(() => {
   return ''
 })
 
-// 아이콘 칩: soul 이 있으면 이니셜 아바타, 없으면 타입 아이콘
+// 입력 노드 여부 (EditorNodeData.kind — 스칼라, 미설정 시 agent 취급)
+const isInputKind = computed(() => (props.data as any).kind === 'input')
+
+// 아이콘 칩: 입력 노드면 EnterOutline 고정,
+//            soul 이 있으면 이니셜 아바타, 없으면 타입 아이콘
 const soulInitial = computed(() => {
+  if (isInputKind.value) return ''
   const s = props.data.soul
   return s && s.length > 0 ? s[0].toUpperCase() : ''
 })
 
 const typeIcon = computed(() => {
+  if (isInputKind.value) return EnterOutline
   switch (props.data.nodeType) {
     case 'soul': return HardwareChipOutline
     case 'run': return PlayCircleOutline
@@ -89,7 +96,7 @@ const subtitle = computed(() => {
   >
     <Handle type="target" :position="Position.Left" class="n8n-handle" />
 
-    <div class="node-icon" :class="[`icon-${data.nodeType}`, `is-${statusKey}`]">
+    <div class="node-icon" :class="[`icon-${data.nodeType}`, `is-${statusKey}`, { 'is-kind-input': isInputKind }]">
       <span v-if="soulInitial" class="icon-initial">{{ soulInitial }}</span>
       <component :is="typeIcon" v-else class="icon-svg" />
     </div>
@@ -177,6 +184,8 @@ const subtitle = computed(() => {
   &.is-running { background: rgba(59, 130, 246, 0.14); color: $accent-primary; }
   &.is-waiting { background: rgba(245, 158, 11, 0.16); color: $warning; }
   &.is-skipped { background: rgba(148, 163, 184, 0.16); color: $text-muted; }
+  // 입력 노드 — 보라색 계열로 구분
+  &.is-kind-input { background: rgba(139, 92, 246, 0.14); color: #8b5cf6; }
 }
 
 .icon-initial {

@@ -491,6 +491,8 @@ export interface EditorNodeData extends GraphNodeData {
   on_fail: string
   hasError?: boolean
   runId?: string | null
+  kind: 'input' | 'agent'
+  output?: string | null
 }
 
 /**
@@ -522,6 +524,7 @@ export function stepsFromGraph(
       retry: d.retry ?? 1,
       approval: d.approval ?? false,
       on_fail: d.on_fail ?? 'abort',
+      type: d.kind === 'input' ? 'input' : 'agent',
     }
   })
 }
@@ -549,6 +552,8 @@ export function editorGraphFromFlow(flow: Flow): { nodes: GraphNode[]; edges: Gr
       flowId: flow.flow_id,
       onFail: step.on_fail,
       runId: step.run_id ?? null,
+      kind: (step.type === 'input' ? 'input' : 'agent') as 'input' | 'agent',
+      output: step.output ?? null,
     } as EditorNodeData,
   }))
 
