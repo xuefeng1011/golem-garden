@@ -10,6 +10,7 @@ import {
   stepsFromGraph,
   editorGraphFromFlow,
   resolveTaskPreview,
+  findUnresolvedRefs,
 } from '@/utils/canvas-graph'
 import type { GraphNode, GraphEdge, EditorNodeData } from '@/utils/canvas-graph'
 import type { RunMeta } from '@/api/hermes/console'
@@ -892,5 +893,27 @@ describe('resolveTaskPreview', () => {
     // output containing a token-like string should be inserted verbatim, not re-resolved
     const out = resolveTaskPreview('{{a}}', { a: '{{b}}', b: 'deep' })
     expect(out).toBe('{{b}}')
+  })
+})
+
+describe('findUnresolvedRefs', () => {
+  it('flags refs not present among valid step ids', () => {
+    expect(findUnresolvedRefs('use {{in1}} and {{ghost}}', ['in1'])).toEqual(['ghost'])
+  })
+
+  it('returns empty when all refs resolve', () => {
+    expect(findUnresolvedRefs('{{a}} {{b}}', ['a', 'b'])).toEqual([])
+  })
+
+  it('returns empty when there are no refs', () => {
+    expect(findUnresolvedRefs('plain task', ['a'])).toEqual([])
+  })
+
+  it('dedupes repeated unresolved refs', () => {
+    expect(findUnresolvedRefs('{{x}} {{x}} {{y}}', [])).toEqual(['x', 'y'])
+  })
+
+  it('handles empty task', () => {
+    expect(findUnresolvedRefs('', ['a'])).toEqual([])
   })
 })

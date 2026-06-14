@@ -548,6 +548,25 @@ export function resolveTaskPreview(
 }
 
 /**
+ * findUnresolvedRefs — return the distinct {{id}} tokens in a task that don't
+ * match any existing step id (typo guard). Mirrors the engine's token syntax.
+ */
+export function findUnresolvedRefs(task: string, validIds: Iterable<string>): string[] {
+  if (!task) return []
+  const valid = new Set(validIds)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const m of task.matchAll(/\{\{([A-Za-z0-9_-]+)\}\}/g)) {
+    const id = m[1]
+    if (!valid.has(id) && !seen.has(id)) {
+      seen.add(id)
+      out.push(id)
+    }
+  }
+  return out
+}
+
+/**
  * editorGraphFromFlow — load an existing Flow into editor nodes/edges with dagre LR layout.
  */
 export function editorGraphFromFlow(flow: Flow): { nodes: GraphNode[]; edges: GraphEdge[] } {

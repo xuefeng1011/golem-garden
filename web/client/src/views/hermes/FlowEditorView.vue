@@ -134,6 +134,12 @@ const waitingSteps = computed(() =>
     })),
 )
 
+// 현재 실행 중인 단계 라벨 — RunPanel 헤더에 "어디까지 진행 중인지" 표시
+const activeStepLabel = computed(() => {
+  const n = nodes.value.find((x) => (x.data as EditorNodeData).status === 'running')
+  return n ? (n.data as EditorNodeData).label : ''
+})
+
 // ── All step options (for goto selector in form panel) ───────────────────────
 const allStepOptions = computed(() =>
   nodes.value.map((n) => {
@@ -883,6 +889,7 @@ onBeforeRouteLeave((_to, _from, next) => {
         :running="running"
         :phase="runPhase"
         :waiting-steps="waitingSteps"
+        :active-step="activeStepLabel"
         @approve="approve"
         @reject="reject"
         @stop="stopRun"

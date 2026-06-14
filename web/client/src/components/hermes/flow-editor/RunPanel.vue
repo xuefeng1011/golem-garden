@@ -3,7 +3,7 @@
  * RunPanel — collapsible bottom panel showing live forge stdout/stderr.
  * Approval/rejection buttons appear for waiting_approval nodes.
  */
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon } from 'naive-ui'
 import { ChevronDownOutline, ChevronUpOutline, CheckmarkOutline, CloseOutline } from '@vicons/ionicons5'
@@ -15,6 +15,8 @@ const props = defineProps<{
   running: boolean
   phase?: 'idle' | 'running' | 'waiting' | 'done' | 'failed'
   waitingSteps: { stepId: string; label: string }[]
+  // 현재 실행 중인 단계 라벨 (헤더에 "어디까지 진행 중인지" 표시)
+  activeStep?: string
 }>()
 
 const emit = defineEmits<{
@@ -28,11 +30,30 @@ const { t } = useI18n()
 const collapsed = ref(false)
 const logEl = ref<HTMLElement | null>(null)
 
-// 실행 시작 시 패널 자동 펼침 (진행 상황이 바로 보이도록)
+// 실행 시작 시 패널 자동 펼침 (진행 상황이 바로 보이도록) + 경과 시간 타이머
+const elapsedSec = ref(0)
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
 watch(
   () => props.running,
-  (r) => { if (r) collapsed.value = false },
+  (r) => {
+    if (r) {
+      collapsed.value = false
+      elapsedSec.value = 0
+      if (elapsedTimer) clearInterval(elapsedTimer)
+      elapsedTimer = setInterval(() => { elapsedSec.value += 1 }, 1000)
+    } else if (elapsedTimer) {
+      clearInterval(elapsedTimer)
+      elapsedTimer = null
+    }
+  },
 )
+onUnmounted(() => { if (elapsedTimer) clearInterval(elapsedTimer) })
+
+const elapsedLabel = computed(() => {
+  const s = elapsedSec.value
+  const m = Math.floor(s / 60)
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`
+})
 
 // 결과 칩 — 실행 종료 후 단계 표시
 const resultChip = computed(() => {
@@ -61,6 +82,8 @@ watch(
   <div class="run-panel" :class="{ collapsed }">
     <div class="run-panel-header" @click="collapsed = !collapsed">
       <span class="run-panel-title">{{ t('flowEditor.runPanelTitle') }}</span>
+      <span v-if="running && activeStep" class="active-step" :title="activeStep">▶ {{ activeStep }}</span>
+      <span v-if="running" class="elapsed">{{ elapsedLabel }}</span>
       <span v-if="running" class="running-badge">{{ t('flowEditor.running') }}</span>
       <span v-else-if="resultChip" class="result-chip" :class="resultChip.cls">{{ resultChip.text }}</span>
       <button
@@ -137,6 +160,21 @@ watch(
   font-weight: 600;
   color: $text-primary;
   flex: 1;
+}
+
+.active-step {
+  font-size: 11px;
+  color: $accent-primary;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elapsed {
+  font-size: 11px;
+  color: $text-muted;
+  font-variant-numeric: tabular-nums;
 }
 
 .running-badge {

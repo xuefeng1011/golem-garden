@@ -1019,6 +1019,8 @@ export default {
     resolvedInputLabel: '받은 입력 (해석됨)',
     outputLabel: '출력',
     directorWarning: '이 소울은 디렉터(위임 전용)라 콘텐츠를 직접 만들지 못해요 — 글·코드 생성 단계엔 쓰기 가능한 소울을 권장합니다.',
+    unresolvedRefWarning: '존재하지 않는 단계 참조: {refs} — 오타이거나 삭제된 단계예요. 칩을 눌러 올바른 참조를 넣어주세요.',
+    failureReasonLabel: '실패 사유',
   },
 
   // 변경 이력

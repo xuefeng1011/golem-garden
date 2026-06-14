@@ -19,7 +19,7 @@ import {
 } from 'naive-ui'
 import { CloseOutline, AlertCircleOutline } from '@vicons/ionicons5'
 import type { EditorNodeData } from '@/utils/canvas-graph'
-import { resolveTaskPreview } from '@/utils/canvas-graph'
+import { resolveTaskPreview, findUnresolvedRefs } from '@/utils/canvas-graph'
 import type { Soul } from '@/api/hermes/souls'
 
 const props = defineProps<{
@@ -60,6 +60,18 @@ const resolvedInput = computed(() =>
 
 // 이 단계의 출력 (실행 후 state.json 에 저장된 산출 텍스트)
 const stepOutput = computed(() => props.data.output ?? '')
+
+// 단계 실패 여부 — 실패 시 output 은 산출이 아니라 실패 사유(타임아웃/에이전트 에러)이므로
+// 빨간 "실패 사유" 블록으로 표시한다.
+const isFailed = computed(() => props.data.status === 'failed')
+
+// 존재하지 않는 단계를 가리키는 {{ref}} (오타 가드) — 자기 자신 제외 전체 단계가 유효 id
+const unresolvedRefs = computed(() =>
+  findUnresolvedRefs(
+    props.data.task ?? '',
+    props.allStepOptions.map((o) => o.value),
+  ),
+)
 
 // soul options: empty = host
 const soulOptions = computed(() => [
@@ -196,6 +208,12 @@ function insertRef(stepId: string) {
         />
       </NFormItem>
 
+      <!-- 미해결 {{ref}} 경고 — 존재하지 않는 단계를 가리키는 오타 가드 -->
+      <div v-if="unresolvedRefs.length > 0" class="soul-warning">
+        <NIcon :size="14"><AlertCircleOutline /></NIcon>
+        <span>{{ t('flowEditor.unresolvedRefWarning', { refs: unresolvedRefs.join(', ') }) }}</span>
+      </div>
+
       <!-- 상류 단계 참조 칩 -->
       <div v-if="upstreamOptions.length > 0" class="ref-chips-section">
         <div class="ref-chips-label">{{ t('flowEditor.refChipsLabel') }}</div>
@@ -258,10 +276,12 @@ function insertRef(stepId: string) {
         <div class="io-label">{{ t('flowEditor.resolvedInputLabel') }}</div>
         <pre class="io-text io-text--in">{{ resolvedInput }}</pre>
       </div>
-      <!-- 이 단계가 낸 출력 -->
+      <!-- 이 단계가 낸 출력 — 실패면 빨간 "실패 사유" 블록으로 -->
       <div v-if="stepOutput" class="io-block">
-        <div class="io-label">{{ t('flowEditor.outputLabel') }}</div>
-        <pre class="io-text io-text--out">{{ stepOutput }}</pre>
+        <div class="io-label" :class="{ 'io-label--err': isFailed }">
+          {{ isFailed ? t('flowEditor.failureReasonLabel') : t('flowEditor.outputLabel') }}
+        </div>
+        <pre class="io-text" :class="isFailed ? 'io-text--err' : 'io-text--out'">{{ stepOutput }}</pre>
       </div>
     </div>
 
@@ -444,6 +464,16 @@ function insertRef(stepId: string) {
     border: 1px solid rgba(34, 197, 94, 0.2);
     color: $text-primary;
   }
+
+  &--err {
+    background: rgba(var(--error-rgb), 0.08);
+    border: 1px solid rgba(var(--error-rgb), 0.25);
+    color: $text-primary;
+  }
+}
+
+.io-label--err {
+  color: $error;
 }
 
 // ── 액션 버튼 ─────────────────────────────────────────────────
