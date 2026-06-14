@@ -62,6 +62,19 @@ EOF
   printf '%s' "$text"
 }
 
+# 재시도 백오프 초 계산 (순수 함수, 테스트용) — base * 2^(attempt-1), 최대 30s.
+# 레이트리밋 시 즉시 재소환으로 토큰 낭비/한도 악화를 막는다.
+# GOLEM_FLOW_RETRY_BASE_SEC=0 이면 0 반환(백오프 비활성 — bats 고속화).
+_flow_retry_backoff_secs() {
+  local attempt="$1"
+  local base="${GOLEM_FLOW_RETRY_BASE_SEC:-2}"
+  printf '%s' "$attempt" | grep -qE '^[1-9][0-9]*$' || { echo 0; return 0; }
+  [ "$base" -le 0 ] 2>/dev/null && { echo 0; return 0; }
+  local secs=$(( base * (1 << (attempt - 1)) ))
+  [ "$secs" -gt 30 ] && secs=30
+  echo "$secs"
+}
+
 # ── 1. flow_step_run ──────────────────────────────────────────────────────────
 # flow_step_run <flow_id> <step_id>
 flow_step_run() {
@@ -111,6 +124,9 @@ flow_step_run() {
     [ "$rc" -eq 0 ] && break
     attempt=$((attempt + 1))
     if [ "$attempt" -gt "$retry" ]; then break; fi
+    # 재시도 전 지수 백오프 (레이트리밋 완화)
+    local _bk; _bk=$(_flow_retry_backoff_secs "$attempt")
+    [ "${_bk:-0}" -gt 0 ] 2>/dev/null && sleep "$_bk"
   done
 
   # <usage> ... run=<uuid> ... 에서 run_id 추출해 step 에 기록 (단계 클릭 시 결과 조회)

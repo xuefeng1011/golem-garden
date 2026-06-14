@@ -10,6 +10,8 @@ setup() {
   export GOLEM_ROOT
   GOLEM_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
   export GOLEM_DIR="$TEST_PROJECT/.golem" GOLEM_PROJECT="$TEST_PROJECT"
+  # 재시도 백오프 비활성 — 테스트가 실제 sleep 으로 느려지지 않게
+  export GOLEM_FLOW_RETRY_BASE_SEC=0
   mkdir -p "$GOLEM_DIR"
   source "${GOLEM_ROOT}/lib/flow.sh"
 
@@ -347,6 +349,18 @@ EOF
   # step 상태 확인
   local state="${FLOW_DIR}/${flow_id}/state.json"
   grep -q '"id":"retry_step"[^}]*"status":"failed"' "$state"
+}
+
+@test "flow: _flow_retry_backoff_secs — 지수 백오프 + 30s 캡 + 비활성" {
+  GOLEM_FLOW_RETRY_BASE_SEC=2
+  [ "$(_flow_retry_backoff_secs 1)" -eq 2 ]   # 2 * 2^0
+  [ "$(_flow_retry_backoff_secs 2)" -eq 4 ]   # 2 * 2^1
+  [ "$(_flow_retry_backoff_secs 3)" -eq 8 ]   # 2 * 2^2
+  [ "$(_flow_retry_backoff_secs 6)" -eq 30 ]  # 64 → 30 캡
+  GOLEM_FLOW_RETRY_BASE_SEC=0
+  [ "$(_flow_retry_backoff_secs 3)" -eq 0 ]   # 비활성
+  GOLEM_FLOW_RETRY_BASE_SEC=2
+  [ "$(_flow_retry_backoff_secs 0)" -eq 0 ]   # 비정상 attempt → 0
 }
 
 # ───────────────────────────────────────────────────────────────────────────────
