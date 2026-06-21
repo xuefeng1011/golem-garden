@@ -566,7 +566,7 @@ EOF
   # flow 초기 상태 확인
   local initial_json
   initial_json=$(tr -d '\n\r' < "$state")
-  initial_status=$(printf '%s' "$initial_json" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:"\|"//g')
+  initial_status=$(printf '%s' "$initial_json" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*:"|"//g')
   [ "$initial_status" = "pending" ]
 
   # step s1의 status를 done으로 변경
@@ -575,7 +575,7 @@ EOF
   # flow 레벨 status는 여전히 pending
   local after_json
   after_json=$(tr -d '\n\r' < "$state")
-  after_status=$(printf '%s' "$after_json" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:"\|"//g')
+  after_status=$(printf '%s' "$after_json" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*:"|"//g')
   [ "$after_status" = "pending" ]
 
   # s1은 done이어야 함

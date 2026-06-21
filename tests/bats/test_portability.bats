@@ -99,3 +99,16 @@ _grep_scope() {
     false
   fi
 }
+
+# ─────────────────────────────────────────────────────────
+# 7. sed \| alternation (GNU 전용) 금지 — BSD sed 는 \| 를 리터럴로 취급
+#    awk 문자단위 파싱으로 대체 (lib/mission.sh _json_get_string 참조)
+# ─────────────────────────────────────────────────────────
+@test "portability: sed 정규식 \\| alternation (GNU 전용) 재유입 차단" {
+  result=$(_grep_scope 'sed.*[\\][|]' || true)
+  if [ -n "$result" ]; then
+    echo "GNU 전용 sed \\| alternation 재유입 (awk 문자단위 파싱으로 대체):"
+    echo "$result"
+    false
+  fi
+}

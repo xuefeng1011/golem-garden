@@ -288,7 +288,25 @@ _parse_stream() {
       _AR_TOKENS_CACHE_CREATE=${cc_t:-0}
       _AR_TOKENS_CACHE=$(( ${cr_t:-0} + ${cc_t:-0} ))
       # result 라인은 보통 "result" 키에 최종 텍스트를 담음 — 폴백용
-      result_field=$(printf '%s' "$line" | sed -n 's/.*"result":"\(\([^"\\]\|\\.\)*\)".*/\1/p')
+      result_field=$(printf '%s' "$line" | awk '
+        {
+          pat = "\"result\":\""
+          plen = length(pat); n = length($0); i = 1
+          while (i <= n - plen + 1) {
+            if (substr($0, i, plen) == pat) {
+              i += plen; out = ""
+              while (i <= n) {
+                c = substr($0, i, 1)
+                if (c == "\\") {
+                  if (i < n) { d = substr($0, i+1, 1); out = out c d; i += 2; continue }
+                } else if (c == "\"") { printf "%s", out; exit 0 }
+                out = out c; i++
+              }
+              exit 0
+            }
+            i++
+          }
+        }')
     fi
   done
 
