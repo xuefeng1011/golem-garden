@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -191,8 +192,17 @@ class TestEnvAllowlist:
         assert env["GOLEM_PROJECT"]
 
     def test_build_forge_env_sets_msys_guard(
-        self, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        # MSYS 가드는 os.name == "nt" 일 때만 설정된다(9b93c9c 포터빌리티 가드).
+        # 비Windows 호스트에서도 Windows 분기를 검증하기 위해 os.name 을 패치한다.
+        # _build_forge_env → to_bash_path 통합 경로까지 Windows 분기를 타도록
+        # forge_runner 와 config 양쪽 모듈의 os.name 을 함께 패치한다 (Zen 리뷰).
+        import golem_gateway.config as cfg_mod
+        import golem_gateway.forge_runner as fr
+
+        monkeypatch.setattr(fr.os, "name", "nt")
+        monkeypatch.setattr(cfg_mod.os, "name", "nt")
         env = _build_forge_env(tmp_path)
         assert env.get("MSYS_NO_PATHCONV") == "1"
         assert env.get("MSYS2_ARG_CONV_EXCL") == "*"
@@ -263,6 +273,11 @@ class TestBashResolution:
         assert binpath == "/custom/bash"
         assert mount == "wsl"
 
+    @pytest.mark.skipif(
+        os.name != "nt",
+        reason="Windows Git Bash 경로 해석 — PosixPath 로는 Windows 경로 의미론"
+        "(Path(r'C:\\...').parent)을 시뮬레이션할 수 없어 비Windows 에서 스킵",
+    )
     def test_prefers_git_bash_over_wsl(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """On Windows, a present Git Bash path is chosen with msys mount."""
         import golem_gateway.config as cfg_mod

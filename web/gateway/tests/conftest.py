@@ -67,6 +67,15 @@ def temp_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         "golem_gateway.registry._registry_path", _fake_registry_path
     )
+    # Path.home() 도 tmp_path 로 리다이렉트 — _validate_project_path 가 등록 대상
+    # 프로젝트(테스트가 tmp_path 하위에 만든다)를 home 안으로 인정하게 한다.
+    # macOS 에서 tmp_path 는 /private/var/... 로 실제 $HOME 밖이라, 이 패치가
+    # 없으면 resolved.relative_to(home) 검증이 플랫폼 의존적으로 실패한다.
+    # TestPathValidation 의 테스트들은 with patch(...Path.home...) 로 자체
+    # override 하므로 영향받지 않는다.
+    monkeypatch.setattr(
+        "golem_gateway.registry.Path.home", lambda: tmp_path
+    )
     return registry_file
 
 
