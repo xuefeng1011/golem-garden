@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # explore.sh — grep-first 코드베이스 컨텍스트 도구 (CodeGraph 경량판)
 # Usage: source lib/explore.sh && explore_run "agent_run" [path]
 #        source lib/explore.sh && explore_files "mission_" [path]

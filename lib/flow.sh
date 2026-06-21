@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # flow.sh — Flow Engine 실행 계층
 # 의존: flow-contract.sh, flow-dag.sh, agent-runner.sh
 

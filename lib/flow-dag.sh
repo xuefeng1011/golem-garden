@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # flow-dag.sh — Flow Engine 상태·DAG 계층
 # Usage: source lib/flow-dag.sh
 # 의존: lib/flow-contract.sh (flow_validate_steps, flow_parse_steps, _fc_get_field, _fc_get_deps)

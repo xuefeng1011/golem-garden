@@ -9,6 +9,8 @@ FastAPI gateway for SOUL metadata, chat sessions, growth-log, forge runner.
 
 ## Run
 
+> **macOS/Linux quick start:** run `./web/setup.sh` from the project root (requires `uv`, `node`/`npm`, and `bash` — Bash 4+ recommended: `brew install bash`). Then use `./web/start-gateway.sh` / `./web/start-ui.sh`.
+
 ```bash
 cd web/gateway
 
@@ -22,7 +24,12 @@ python -m uv run python -m golem_gateway.main
 Or directly with uvicorn after activating the venv:
 
 ```bash
+# Windows
 .venv/Scripts/activate
+
+# macOS/Linux
+.venv/bin/activate
+
 uvicorn golem_gateway.main:app --host 127.0.0.1 --port 8642
 ```
 

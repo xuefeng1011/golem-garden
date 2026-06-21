@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # soul-to-skill.sh — SOUL.md -> Agent Skills (agentskills.io) 변환기
 # Usage:
 #   bash lib/soul-to-skill.sh souls/ryn.md [output-dir]

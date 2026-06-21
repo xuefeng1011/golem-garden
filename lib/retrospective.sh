@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # retrospective.sh — 자동 회고 시스템
 # forge build 완료 후 자동으로 회고 보고서를 생성
 # Usage: source lib/retrospective.sh && retro_generate "인증 시스템 구현" "nex,ryn,kai"

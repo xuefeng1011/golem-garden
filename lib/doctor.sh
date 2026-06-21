@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # doctor.sh — GolemGarden 엔진 상태 진단 (read-only, no state writes)
 # Usage: source lib/doctor.sh && doctor_run [--verbose]
 #
@@ -186,6 +186,33 @@ doctor_run() {
     pass=$((pass+1))
   else
     _dr_warn "timeout/gtimeout — 미설치 (에이전트 폭주 보호 비활성화됨)"
+    warn=$((warn+1))
+  fi
+
+  # 이식성 — bash 버전
+  if [ "${BASH_VERSINFO[0]}" -lt 4 ] 2>/dev/null; then
+    _dr_warn "bash ${BASH_VERSION} — macOS 기본 3.2 (Bash4+ 기능 미사용이라 동작하나 brew install bash 권장)"
+    warn=$((warn+1))
+  else
+    _dr_pass "bash ${BASH_VERSION}"
+    pass=$((pass+1))
+  fi
+
+  # 이식성 — sed 종류 (GNU vs BSD)
+  if sed --version 2>/dev/null | grep -q GNU; then
+    _dr_pass "sed — GNU"
+    pass=$((pass+1))
+  else
+    _dr_pass "sed — BSD/macOS ('' in-place via _sed_i)"
+    pass=$((pass+1))
+  fi
+
+  # 이식성 — flock
+  if command -v flock >/dev/null 2>&1; then
+    _dr_pass "flock — $(command -v flock)"
+    pass=$((pass+1))
+  else
+    _dr_warn "flock — 미설치 (Windows/macOS — 잠금 없이 직접 실행)"
     warn=$((warn+1))
   fi
 

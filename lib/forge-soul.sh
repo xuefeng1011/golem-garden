@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # forge-soul.sh — 커스텀 SOUL 생성기 + 프리셋 라이브러리
 # Usage: source lib/forge-soul.sh && soul_create_from_preset backend-developer
 

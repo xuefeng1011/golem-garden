@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # verify.sh — 검증 레인 (결정론적 테스트 + 독립 SOUL 심판)
 # Usage: source lib/verify.sh && verify_run "AuthController 구현 완료" [verifier_soul]
 #        source lib/verify.sh && verify_tests_only

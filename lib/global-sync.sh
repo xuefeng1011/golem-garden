@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # global-sync.sh — 프로젝트-글로벌 데이터 동기화
 # 등록된 모든 프로젝트의 growth-log를 합산하여 글로벌 랭크/업적/케미를 갱신
 # 프로젝트 SOUL에 랭크를 역전파

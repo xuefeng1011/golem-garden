@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # auto-dashboard-refresh.sh — 작업 완료 시 대시보드 데이터 자동 갱신
 # Stop hook: 세션 종료/작업 완료 시 dashboard/data.json 갱신
 # NOTE: 쿨다운 + 백그라운드 + timeout(settings.json)으로 블로킹 방지

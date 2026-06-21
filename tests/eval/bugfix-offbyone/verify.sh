@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ws="$1"
 [ -f "${ws}/count.sh" ] || exit 1
 out=$(bash "${ws}/count.sh" 5 2>/dev/null | tr -d '\r')

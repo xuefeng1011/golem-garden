@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # setup.sh — 경계 규칙이 본문 깊숙이 묻혀 있는 명세 파일 생성
 ws="$1"
 cat > "${ws}/spec.txt" <<'SPEC'

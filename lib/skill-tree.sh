@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # skill-tree.sh — SOUL 전문화 분기 시스템
 # Senior 승급 시 전문화 브랜치를 선택하여 역량 집중
 # Usage: source lib/skill-tree.sh && skill_tree_branches backend-developer

@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import signal
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -290,6 +291,7 @@ class SessionManager:
                 stdin=asyncio.subprocess.DEVNULL,
                 cwd=str(project_path),
                 env={**os.environ},
+                start_new_session=True,
             )
         except (OSError, FileNotFoundError) as exc:
             raise RuntimeError(f"failed to spawn claude subprocess: {exc}") from exc
@@ -336,17 +338,43 @@ class SessionManager:
         if run is None:
             return
 
-        # Terminate subprocess.
+        # Terminate subprocess tree — plain proc.terminate() only signals the
+        # direct child, leaving claude grandchildren as orphans on all platforms.
         if run.proc is not None and run.proc.returncode is None:
-            try:
-                run.proc.terminate()
+            proc = run.proc
+            pid = proc.pid
+            if os.name == "nt" and pid:
                 try:
-                    await asyncio.wait_for(run.proc.wait(), timeout=2.0)
-                except asyncio.TimeoutError:
-                    run.proc.kill()
-                    await run.proc.wait()
-            except ProcessLookupError:
-                pass
+                    tk = await asyncio.create_subprocess_exec(
+                        "taskkill", "/F", "/T", "/PID", str(pid),
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await asyncio.wait_for(tk.wait(), timeout=5.0)
+                except (OSError, asyncio.TimeoutError):
+                    pass
+            elif os.name != "nt" and pid and hasattr(os, "getpgid"):
+                try:
+                    pgid = os.getpgid(pid)
+                    os.killpg(pgid, signal.SIGTERM)
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        os.killpg(pgid, signal.SIGKILL)
+                        await proc.wait()
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass  # fall through to plain terminate/kill
+            # graceful + force fallback (if taskkill/killpg missed or failed)
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        proc.kill()
+                        await proc.wait()
+                except ProcessLookupError:
+                    pass
 
         # Cancel background tasks.
         live_tasks = [

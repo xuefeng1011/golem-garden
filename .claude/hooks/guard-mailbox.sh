@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # guard-mailbox.sh — mailbox JSONL 직접 수정 방지
 # PreToolUse hook: Edit/Write로 mailbox/*.jsonl 직접 수정 차단
 INPUT=$(cat)

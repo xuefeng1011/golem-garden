@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # error-recovery.sh — 3단계 실패 복구 시스템
 # Usage: source lib/error-recovery.sh && error_recover ryn "REST API 구현" "타입 오류"
 

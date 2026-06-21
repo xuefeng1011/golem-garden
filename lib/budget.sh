@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # budget.sh — 예산 추적 + 수확체감 감지 + 자동 중단
 # Usage: source lib/budget.sh && budget_check ryn
 

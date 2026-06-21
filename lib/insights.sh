@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # insights.sh — SOUL 성과 패턴 분석
 # growth-log 데이터로 SOUL별 인사이트를 생성한다.
 # Hermes Agent의 session insights 패턴을 GolemGarden에 적용.

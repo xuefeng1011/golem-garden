@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # prompt-builder.sh — SOUL 컨텍스트를 OMC 에이전트 프롬프트로 조립
 # Usage: source lib/prompt-builder.sh && prompt_build ryn "인증 API 구현"
 

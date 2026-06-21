@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 픽스처: json_escape 가 비어 있는 lib.sh
 ws="$1"
 cat > "${ws}/lib.sh" <<'EOF'

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # flow-contract.sh — Nex 분해 JSON 계약 파서 헬퍼
 # Usage: source lib/flow-contract.sh
 # 의존: sed, awk, grep (jq 불사용)

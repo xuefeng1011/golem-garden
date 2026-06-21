@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # mission.sh — `forge mission` 디스크/상태 레이어 (Kiro 스타일 미션 스펙 지속성)
 # Usage: source lib/mission.sh && mission_init "<goal>" "<criteria>" "<constraints>" "<out_of_scope>"
 #

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ws="$1"
 [ -f "${ws}/lib.sh" ] || exit 1
 # shellcheck source=/dev/null

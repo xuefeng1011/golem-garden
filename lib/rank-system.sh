@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # rank-system.sh — SOUL 랭크 시스템 관리
 # Usage: source lib/rank-system.sh && rank_check ryn
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import signal
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -74,13 +75,15 @@ def _build_forge_env(project_path: Path) -> dict[str, str]:
     """Build the env dict for forge subprocesses (Zen F5).
 
     Allowlist-based: only well-known variables flow through.  Always sets
-    GOLEM_PROJECT and the MSYS path-conversion guards so forge.sh sees a sane
-    environment regardless of what the operator launched the Gateway with.
+    GOLEM_PROJECT; on Windows also sets the MSYS path-conversion guards so
+    forge.sh sees a sane environment regardless of what the operator launched
+    the Gateway with.
     """
     base = {k: v for k, v in os.environ.items() if k in _FORGE_ENV_KEEP}
     base["GOLEM_PROJECT"] = to_bash_path(project_path)
-    base["MSYS_NO_PATHCONV"] = "1"
-    base["MSYS2_ARG_CONV_EXCL"] = "*"
+    if os.name == "nt":
+        base["MSYS_NO_PATHCONV"] = "1"
+        base["MSYS2_ARG_CONV_EXCL"] = "*"
     return base
 
 # Per-arg length cap.
@@ -221,6 +224,7 @@ class ForgeRunner:
                 stdin=asyncio.subprocess.DEVNULL,
                 cwd=str(project_path),
                 env=env,
+                start_new_session=True,
             )
         except (OSError, FileNotFoundError) as exc:
             raise RuntimeError(f"failed to spawn forge subprocess: {exc}") from exc
@@ -275,7 +279,11 @@ class ForgeRunner:
         On Windows proc.terminate()/kill() (TerminateProcess) only target the
         bash process, orphaning the native claude.exe grandchild — the same class
         of leak that froze flow steps. `taskkill /F /T` kills the whole tree.
-        POSIX falls through to terminate→kill (which signals the process group).
+
+        On POSIX the subprocess is started with start_new_session=True, making
+        it a process-group leader.  os.killpg() signals every process in that
+        group (bash + any claude grandchildren), preventing orphans.
+        Falls through to plain terminate→kill if killpg fails or is unavailable.
         """
         pid = proc.pid
         if os.name == "nt" and pid:
@@ -288,7 +296,19 @@ class ForgeRunner:
                 await asyncio.wait_for(tk.wait(), timeout=5.0)
             except (OSError, asyncio.TimeoutError):
                 pass
-        # graceful + force fallback (POSIX, or if taskkill missed)
+        elif os.name != "nt" and pid and hasattr(os, "getpgid"):
+            try:
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGTERM)
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    os.killpg(pgid, signal.SIGKILL)
+                    await proc.wait()
+                return
+            except (ProcessLookupError, PermissionError, OSError):
+                pass  # fall through to plain terminate/kill
+        # graceful + force fallback (if taskkill/killpg missed or failed)
         try:
             proc.terminate()
             try:

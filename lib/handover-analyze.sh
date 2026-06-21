@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # handover-analyze.sh — M1.5 LLM 분석 prompt 생성기
 # Usage: bash lib/handover-analyze.sh <handover_dir>
 # Output: <handover_dir>/.prompts/{00-nex,01-ryn,02-sage,03-bolt}.md

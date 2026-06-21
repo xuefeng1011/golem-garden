@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # tool-character.sh — 도구 성격 메타데이터 시스템
 # Claude Code의 Tool Character 패턴: isReadOnly, isConcurrencySafe, isDestructive, isIdempotent
 # Coordinator가 병렬 실행 안전성을 자동 판단하는 데 사용

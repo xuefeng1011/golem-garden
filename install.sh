@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # GolemGarden Installer — OMC 위에 설치
 # 사전 조건: oh-my-claudecode가 설치되어 있어야 함
 

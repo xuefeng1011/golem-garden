@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # soul-parser.sh — SOUL.md 파일에서 메타데이터 추출
 # Usage: source lib/soul-parser.sh && soul_parse souls/ryn.md
 

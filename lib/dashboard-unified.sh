@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # dashboard-unified.sh — 통합 대시보드
 # "한눈에" SOUL 팀 전체를 파악할 수 있는 단일 뷰.
 # forge overview 명령으로 호출.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # achievement.sh — 업적/뱃지 시스템
 # SOUL이 이정표를 달성하면 뱃지를 획득
 # Usage: source lib/achievement.sh && achievement_check ryn

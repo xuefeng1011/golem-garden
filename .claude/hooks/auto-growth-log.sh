@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # auto-growth-log.sh — 작업 완료 시 자동 growth-log 기록
 # Stop/SubagentStop hook: SOUL 작업 완료 시 자동으로 성장 기록 추가
 
@@ -32,14 +32,14 @@ growth_log_append "$GOLEM_SOUL_NAME" "$GOLEM_TASK" "$RESULT" "$FILES_CHANGED" 0
 
 # 자동 승급 (rank_promote 내부에서 eligibility 검증)
 source "${GOLEM_ROOT}/lib/rank-system.sh"
-LOCK="/tmp/golem-promote-${GOLEM_SOUL_NAME}.lock"
+LOCK="${TMPDIR:-/tmp}/golem-promote-${GOLEM_SOUL_NAME}.lock"
 if command -v flock >/dev/null 2>&1; then
   (
     flock -n 200 || exit 0
     PROMOTE_OUTPUT=$(rank_promote "$GOLEM_SOUL_NAME" 2>&1) && echo "[hook] ${PROMOTE_OUTPUT}"
   ) 200>"$LOCK"
 else
-  # Windows/Git Bash: flock 미지원 — 잠금 없이 직접 실행
+  # flock 미지원 (Windows Git Bash / macOS BSD) — 잠금 없이 직접 실행
   PROMOTE_OUTPUT=$(rank_promote "$GOLEM_SOUL_NAME" 2>&1) && echo "[hook] ${PROMOTE_OUTPUT}"
 fi
 

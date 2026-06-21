@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # project-dna.sh — 프로젝트 지문(DNA) + SOUL 적응 시스템
 # forge-init 시 프로젝트 DNA 생성, SOUL 이동 시 DNA 비교로 적응 자동 보정
 # Usage: source lib/project-dna.sh && dna_generate

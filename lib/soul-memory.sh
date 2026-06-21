@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # soul-memory.sh — SOUL별 학습 기억 시스템
 # 과거 태스크에서 배운 교훈을 기억하고, 유사 태스크 시 프롬프트에 자동 주입
 # Usage: source lib/soul-memory.sh && memory_record ryn "JWT 인증" "refresh token 만료 시 새 토큰 발급 필요"

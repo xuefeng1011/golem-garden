@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # verify.sh <workspace>
 # exit 0 = pass, exit 1 = fail
 # 채점: spec.txt 에 묻힌 엣지케이스 5개 검증

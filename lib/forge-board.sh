@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # forge-board.sh — forge-board.md 자동 업데이트
 # Usage: source lib/forge-board.sh && board_add_task "2026-04-09" "인증 API" "ryn" "success"
 

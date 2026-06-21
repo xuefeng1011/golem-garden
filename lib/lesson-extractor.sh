@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # lesson-extractor.sh — 태스크 완료 후 학습 자동 추출
 # Hermes Agent의 컨텍스트 압축 학습 추출 패턴을 GolemGarden에 적용.
 # 세션 종료 시 또는 forge-team Step 5에서 호출.

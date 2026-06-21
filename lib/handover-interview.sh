@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # handover-interview.sh — M2 인터뷰 Phase E: prompt 준비 + 메인 Claude 위임 메시지 출력
 # Usage: bash lib/handover-interview.sh <handover_dir>
 # 예:   bash lib/handover-interview.sh ./handover

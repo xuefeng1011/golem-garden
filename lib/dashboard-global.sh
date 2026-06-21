@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # dashboard-global.sh — 글로벌 대시보드 (전체 프로젝트 통합 현황)
 # 프로젝트별 대시보드와 별개로, GOLEM_ROOT(~/.claude/golem-garden/) 기준 전체 현황
 # Usage:

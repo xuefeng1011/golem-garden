@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # growth-log.sh — SOUL 성장 기록 관리
 # Usage: source lib/growth-log.sh && growth_log_append ryn "REST API 구현" success 5 12
 

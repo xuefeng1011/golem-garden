@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # domain-pack.sh — 도메인 스킬 팩 관리
 # Usage: source lib/domain-pack.sh && pack_install gamedev
 

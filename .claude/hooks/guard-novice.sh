@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # guard-novice.sh — Novice SOUL의 다중 파일 수정 차단 (P0-4)
 # PostToolUse hook: Edit 도구 사용 후 수정된 파일 수 체크
 # - SOUL 컨텍스트 없음(호스트 세션) → 통과

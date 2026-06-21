@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # verify.sh <workspace>
 # exit 0 = pass, exit 1 = fail
 ws="$1"

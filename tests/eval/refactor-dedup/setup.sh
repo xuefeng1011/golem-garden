@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # setup.sh — 중복 블록이 3개 있는 동작하는 process.sh 생성
 ws="$1"
 cat > "${ws}/process.sh" <<'SCRIPT'

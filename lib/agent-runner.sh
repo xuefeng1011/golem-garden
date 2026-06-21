@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # agent-runner.sh — OMC 비의존 SOUL 에이전트 실행기 (engine-native)
 # Usage: source lib/agent-runner.sh && agent_run ryn "REST API 구현"
 #

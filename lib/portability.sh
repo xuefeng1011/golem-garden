@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # portability.sh — SOUL 포터빌리티 (프로젝트 간 이동)
 # Usage: source lib/portability.sh && soul_export ryn /path/to/other/project
 

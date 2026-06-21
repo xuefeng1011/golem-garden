@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # handover-scan.sh — 프로젝트 자동 분석 스캐너 (handover M1 MVP)
 # Usage: bash lib/handover-scan.sh <project_root> <output_src_dir>
 # Output: <output_src_dir>/00-overview.md ~ 07-people.md (8 files)

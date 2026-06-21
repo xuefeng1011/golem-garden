@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # dashboard-web.sh — 웹 대시보드 (HTML 껍데기 + JSON 데이터 분리)
 # HTML은 한번만 생성, 데이터는 refresh로 갱신, 브라우저 자동 새로고침
 # Usage:

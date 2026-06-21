@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # worktree.sh — Git Worktree 기반 SOUL 격리 시스템
 # Usage: source lib/worktree.sh && forge_worktree_create ryn "인증 API"
 

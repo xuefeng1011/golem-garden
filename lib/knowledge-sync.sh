@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # knowledge-sync.sh — 지식 승격 시스템
 # Usage: source lib/knowledge-sync.sh
 
@@ -141,15 +141,23 @@ knowledge_promote() {
   local last_line
   last_line=$(awk '/^## 전문 지식/{start=NR; next} start && /^## /{exit} start && /^- /{line=NR} END{print line+0}' "$soul_file")
 
+  # BSD sed (macOS) 는 a\ 한 줄 형식을 지원하지 않으므로 awk + mktemp + mv 로 삽입
+  local _bullet _ins_line
+  _bullet="- ${learning} (자동 승격: $(date +%Y-%m-%d))"
   if [ "$last_line" -gt 0 ] 2>/dev/null; then
-    _sed_i "${last_line}a\\- ${learning} (자동 승격: $(date +%Y-%m-%d))" "$soul_file"
+    _ins_line="$last_line"
   else
     # 전문 지식 섹션 헤더 바로 다음에 삽입
     local header_line
     header_line=$(grep -n "^## 전문 지식" "$soul_file" | head -1 | cut -d: -f1)
-    if [ -n "$header_line" ]; then
-      _sed_i "${header_line}a\\- ${learning} (자동 승격: $(date +%Y-%m-%d))" "$soul_file"
-    fi
+    [ -n "$header_line" ] && _ins_line="$header_line"
+  fi
+
+  if [ -n "$_ins_line" ]; then
+    local _tmp
+    _tmp=$(mktemp "${soul_file}.XXXXXX") || return 1
+    awk -v n="$_ins_line" -v t="$_bullet" 'NR==n{print; print t; next} 1' "$soul_file" > "$_tmp" \
+      && mv "$_tmp" "$soul_file" || { rm -f "$_tmp"; return 1; }
   fi
 
   echo "[knowledge] ✅ 글로벌 반영: ${soul_name} ← ${learning}"

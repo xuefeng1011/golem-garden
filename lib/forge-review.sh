@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # forge-review.sh — 크로스 리뷰 실행 로직
 # Usage: source lib/forge-review.sh && review_execute ryn zen "AuthController"
 

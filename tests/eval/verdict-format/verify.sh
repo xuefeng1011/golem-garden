@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ws="$1"
 f="${ws}/verdict.txt"
 [ -f "$f" ] || exit 1

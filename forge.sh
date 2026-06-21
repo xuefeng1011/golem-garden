@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # forge.sh — GolemGarden CLI 진입점
 # Usage: bash forge.sh <command> [args...]
 

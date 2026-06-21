@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ws="$1"
 f="${ws}/log.jsonl"
 [ -f "$f" ] || exit 1

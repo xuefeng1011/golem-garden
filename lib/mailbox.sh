@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # mailbox.sh — SOUL 간 파일 기반 통신 시스템
 # Usage: source lib/mailbox.sh && mailbox_send nex ryn task_assign "REST API 구현"
 

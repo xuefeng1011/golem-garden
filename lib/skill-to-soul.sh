@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # skill-to-soul.sh — Agent Skill (agentskills.io) -> SOUL.md 역변환기
 # Usage:
 #   bash lib/skill-to-soul.sh path/to/golem-soul-ryn/ [output-dir]

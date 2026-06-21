@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # eval.sh — 골든 태스크 스위트 러너 (P2-3, Terminal-Bench 태스크 규격 차용)
 # Usage: source lib/eval.sh && eval_run --model sonnet
 #

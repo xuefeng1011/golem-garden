@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # chemistry.sh — SOUL Chemistry (팀 케미 추적)
 # SOUL 쌍별 협업 성과를 데이터로 추적하여 최적 팀 구성 근거 제공
 # Usage: source lib/chemistry.sh && chemistry_record ryn zen pass 0

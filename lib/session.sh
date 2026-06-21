@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # session.sh — 세션 지속성 시스템 (작업 트랜스크립트 + 재개)
 # Usage: source lib/session.sh && session_create "인증 API 구현" "nex,ryn,kai"
 

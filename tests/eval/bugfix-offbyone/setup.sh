@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 픽스처: off-by-one 버그가 있는 count.sh
 ws="$1"
 cat > "${ws}/count.sh" <<'EOF'
