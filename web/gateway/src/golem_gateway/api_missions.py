@@ -1,6 +1,8 @@
-"""APIRouter for mission listing.
+"""APIRouter for missions.
 
-GET /v1/projects/{project_id}/missions?limit=20
+GET  /v1/projects/{project_id}/missions?limit=20
+GET  /v1/projects/{project_id}/missions/{mission_id}
+POST /v1/projects/{project_id}/missions/{mission_id}/run
 """
 
 from __future__ import annotations
@@ -12,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from golem_gateway.forge_runner import ForgeRunner
 from golem_gateway.registry import ProjectRegistry
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,15 @@ class MissionSummary(BaseModel):
     status: str
     created: str
     tasks: list[MissionTask]
+
+
+class MissionRunRequest(BaseModel):
+    soul: str = Field(default="", max_length=64)
+    verifier: str = Field(default="", max_length=64)
+
+
+class MissionRunResponse(BaseModel):
+    run_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -144,3 +156,70 @@ async def list_missions(
             logger.warning("missions: model validation failed for %s", state_path)
 
     return results
+
+
+@router.get("/missions/{mission_id}", response_model=MissionSummary)
+async def get_mission(
+    project_id: str,
+    mission_id: str,
+    registry: ProjectRegistry = Depends(_get_registry),
+) -> MissionSummary:
+    """Fetch a single mission by id (msn_* directory name)."""
+    if not _MSN_DIR_RE.match(mission_id):
+        raise HTTPException(status_code=400, detail="invalid mission id")
+
+    project_path = await _resolve_project_path(project_id, registry)
+    state_path = project_path / ".golem" / "missions" / mission_id / "state.json"
+    if not state_path.is_file():
+        raise HTTPException(status_code=404, detail=f"mission {mission_id!r} not found")
+
+    data = _load_mission(state_path)
+    if data is None:
+        raise HTTPException(status_code=500, detail="mission state.json is corrupt")
+    return MissionSummary(**data)
+
+
+@router.post("/missions/{mission_id}/run", response_model=MissionRunResponse)
+async def run_mission(
+    project_id: str,
+    mission_id: str,
+    body: MissionRunRequest,
+    request: Request,
+    registry: ProjectRegistry = Depends(_get_registry),
+) -> MissionRunResponse:
+    """Start the deterministic mission loop (`forge mission run`) as a forge run.
+
+    Returns the forge run_id — the client streams progress via the existing
+    GET /v1/forge-runs/{run_id}/events SSE and stops via DELETE on the same id.
+    The long-form MAX_FLOW_SECONDS ceiling applies (forge_runner argv detection).
+    """
+    if not _MSN_DIR_RE.match(mission_id):
+        raise HTTPException(status_code=400, detail="invalid mission id")
+
+    project_path = await _resolve_project_path(project_id, registry)
+    state_path = project_path / ".golem" / "missions" / mission_id / "state.json"
+    if not state_path.is_file():
+        raise HTTPException(status_code=404, detail=f"mission {mission_id!r} not found")
+
+    runner: ForgeRunner = request.app.state.forge_runner
+
+    args = ["run", mission_id]
+    if body.soul:
+        args.append(body.soul)
+        if body.verifier:
+            args.append(body.verifier)
+
+    try:
+        run = await runner.spawn(
+            command="mission",
+            args=args,
+            project_id=project_id,
+            project_path=project_path,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        logger.error("failed to spawn mission run: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return MissionRunResponse(run_id=run.run_id)

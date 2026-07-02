@@ -77,7 +77,7 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
    ```
 
 **에러 처리:**
-- `forge run nex` 실패 시: `forge recover nex "{task}" "Director 분배 실패"` 실행
+- `forge run nex` 실패 시: 실패 원인을 프롬프트에 명시해 `forge run nex` 1회 재시도
 - Director 응답이 SOUL 이름을 포함하지 않을 시: 가용 SOUL 목록 보여주고 사용자에게 선택 요청
 - `forge run` 실행 실패(명령 없음/경로 오류) 시: "GolemGarden 미설치 또는 경로 오류. `forge status`로 확인하세요" 안내
 
@@ -133,12 +133,10 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
    - **Novice/Junior SOUL은 동일 파일 병렬 쓰기 금지** — 파일 충돌 위험. 파일 영역을 분리하거나 순차 실행한다
 
 **에러 처리 (3단계 복구 프로토콜):**
-- `forge run` 1회 실패 시 (`<usage> ... result=fail` 또는 비정상 종료): 같은 SOUL로 재시도 (실패 원인 주입)
-   ```bash
-   GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh recover {soul_name} "{task}" "{failure_reason}"
-   ```
+- `forge run` 1회 실패 시 (`<usage> ... result=fail` 또는 비정상 종료): 같은 SOUL로 재시도 — 실패 원인을 프롬프트 앞에 명시하고 "이전 실패를 참고하여 다른 접근법으로" 지시를 추가한다
 - 2회 실패 시: 대체 SOUL에 위임 (specialty 매칭) → `forge run {대체_soul} "{task}"`
 - 3회 실패 시: Director에게 에스컬레이션 → 사용자에게 보고
+- 참고: 결정론 재시도 루프(카운터 코드 강제)가 필요하면 `forge mission run` 완주 모드를 사용한다
 - `forge run` 명령 자체가 실패(미설치/경로 오류) 시: 해당 SOUL 건너뛰고 사용자에게 알림
 - 코드 충돌(동일 파일 수정) 시: 사용자에게 충돌 파일 보여주고 수동 해결 요청
 

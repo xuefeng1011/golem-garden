@@ -249,13 +249,98 @@ mission_set_tasks() {
   IFS="$OLD_IFS"
   tasks_json="${tasks_json}]"
 
-  _mission_rewrite_tasks "$mdir" "$tasks_json"
+  _mission_tasks_commit "$mdir" "$tasks_json" "$checklist"
+}
 
+# tasks 배열 + spec.md 체크리스트 확정 쓰기 (set-tasks / set-tasks-json 공용)
+# _mission_tasks_commit <mdir> <tasks_json> <checklist>
+_mission_tasks_commit() {
+  local mdir="$1" tasks_json="$2" checklist="$3"
+  _mission_rewrite_tasks "$mdir" "$tasks_json"
   # spec.md ## 태스크 섹션을 체크리스트로 교체 (## 태스크 이후 전부 재작성)
   local spec="${mdir}/spec.md" tmp="${mdir}/spec.md.tmp"
   awk '/^## 태스크$/{print; exit} {print}' "$spec" > "$tmp"
   printf '%s' "$checklist" >> "$tmp"
   mv "$tmp" "$spec"
+}
+
+# JSON 배열의 top-level 원소를 한 줄에 하나씩 출력 (escape-aware, 1-depth 계약)
+# 문자열 내부의 ,·]·} 는 분리 기준이 되지 않는다 — flow-contract 의 `},{`
+# 리터럴 분할 취약점을 회피하는 문자 단위 워커.
+_mission_json_array_items() {
+  awk '
+  { s = s $0 }
+  END {
+    n = length(s)
+    i = index(s, "[")
+    if (i == 0) exit 1
+    depth = 0; instr = 0; buf = ""
+    for (; i <= n; i++) {
+      c = substr(s, i, 1)
+      if (instr) {
+        buf = buf c
+        if (c == "\\") { i++; buf = buf substr(s, i, 1); continue }
+        if (c == "\"") instr = 0
+        continue
+      }
+      if (c == "\"") { instr = 1; buf = buf c; continue }
+      if (c == "[" || c == "{") { depth++; if (c == "[" && depth == 1) continue }
+      if (c == "]" || c == "}") {
+        depth--
+        if (c == "]" && depth == 0) { if (buf != "") print buf; break }
+      }
+      if (c == "," && depth == 1) { if (buf != "") print buf; buf = ""; continue }
+      if (depth >= 1) buf = buf c
+    }
+  }'
+}
+
+# mission_set_tasks_json <id> <json_or_file>
+# Nex 분해 JSON 계약(P1-2) 브릿지 — 두 형태 수용:
+#   ["태스크1","태스크2"]  또는  [{"task":"태스크1",...},...] (task 외 필드 무시)
+# 파이프(|)·이스케이프 따옴표가 든 태스크도 안전하게 round-trip 된다.
+mission_set_tasks_json() {
+  local id="$1" src="$2"
+  local mdir
+  mdir=$(_mission_resolve "$id")
+  if [ -z "$mdir" ]; then echo "[mission] ERROR: 미션 없음: ${id}" >&2; return 1; fi
+  if [ -z "$src" ]; then echo "[mission] ERROR: JSON 이 비었습니다" >&2; return 1; fi
+
+  local json
+  if [ -f "$src" ]; then json=$(cat "$src"); else json="$src"; fi
+
+  local line task_raw task t_esc
+  local tasks_json="[" first=true idx=0 checklist=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    case "$line" in
+      '{'*) task_raw=$(_json_get_string "$line" task) ;;
+      '"'*) task_raw="${line#\"}"; task_raw="${task_raw%\"}" ;;
+      *) continue ;;
+    esac
+    [ -z "$task_raw" ] && continue
+    # task_raw 는 RAW(이스케이프된) JSON 문자열 — plain 으로 디코드 후 재이스케이프
+    task=$(_json_unescape "$task_raw")
+    t_esc=$(_json_escape "$task")
+    if [ "$first" = true ]; then first=false; else tasks_json="${tasks_json},"; fi
+    tasks_json="${tasks_json}{\"idx\":${idx},\"task\":\"${t_esc}\",\"soul\":\"\",\"status\":\"pending\"}"
+    checklist="${checklist}- [ ] $(printf '%s' "$task" | tr '\n' ' ')
+"
+    idx=$((idx + 1))
+  done <<EOF
+$(printf '%s\n' "$json" | _mission_json_array_items)
+EOF
+
+  if [ "$idx" -eq 0 ]; then
+    echo "[mission] ERROR: JSON 에서 태스크를 찾지 못했습니다 (배열/task 필드 확인)" >&2
+    return 1
+  fi
+  tasks_json="${tasks_json}]"
+
+  _mission_tasks_commit "$mdir" "$tasks_json" "$checklist"
+  echo "[mission] 태스크 ${idx}건 등록 (JSON)"
 }
 
 # mission_task <id> <idx> <status> [soul]

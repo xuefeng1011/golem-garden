@@ -146,6 +146,8 @@ Mission (목표 완수 모드):
                       미션 스펙(spec.md + state.json) 생성, id 반환
   mission set-tasks <id> "<t1>|<t2>|<t3>"
                       파이프 구분 태스크 등록 (체크리스트 + state)
+  mission set-tasks-json <id> '<json>'
+                      Nex 분해 JSON 등록 — ["t1","t2"] 또는 [{"task":"t1"},...]
   mission run <id> [soul] [verifier_soul]
                       결정론 자율 루프 — execute↔verify 반복, 사이클/재시도 상한·
                       예산 센티널·스턱 디텍터 코드 강제, 완료 시 <promise>COMPLETE</promise>
@@ -759,6 +761,13 @@ case "${1:-}" in
           exit 1
         fi
         mission_set_tasks "$3" "$4"
+        ;;
+      set-tasks-json)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge mission set-tasks-json <id> '<json_array_or_file>'"
+          exit 1
+        fi
+        mission_set_tasks_json "$3" "$4"
         ;;
       task)
         if [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then

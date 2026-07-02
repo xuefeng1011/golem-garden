@@ -183,3 +183,131 @@ async def test_missions_404_unknown_project() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/v1/projects/does-not-exist/missions")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /missions/{mission_id} — 단건 조회
+# ---------------------------------------------------------------------------
+
+
+class TestGetMission:
+    @pytest.mark.asyncio
+    async def test_get_single_mission(self, registered_project):
+        project_id, project_path = registered_project
+        _write_mission(project_path, "msn_100_1", goal="single fetch", status="active")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/v1/projects/{project_id}/missions/msn_100_1")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["id"] == "msn_100_1"
+        assert data["goal"] == "single fetch"
+        assert data["status"] == "active"
+
+    @pytest.mark.asyncio
+    async def test_get_unknown_mission_404(self, registered_project):
+        project_id, _ = registered_project
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/v1/projects/{project_id}/missions/msn_999_9")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_invalid_id_400(self, registered_project):
+        project_id, _ = registered_project
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # msn_ 접두사/문자 클래스에 안 맞는 id 는 정규식에서 400 거부
+            resp = await client.get(f"/v1/projects/{project_id}/missions/notmsn_123")
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# POST /missions/{mission_id}/run — 결정론 루프 디스패치
+# ---------------------------------------------------------------------------
+
+
+class _StubRun:
+    run_id = "run-stub-1"
+
+
+class _StubRunner:
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    async def spawn(self, *, command, args, project_id, project_path):
+        self.calls.append(
+            {"command": command, "args": args, "project_id": project_id}
+        )
+        return _StubRun()
+
+
+class TestRunMission:
+    @pytest.mark.asyncio
+    async def test_run_dispatches_forge_mission_run(self, registered_project):
+        project_id, project_path = registered_project
+        _write_mission(project_path, "msn_200_1", status="active")
+        stub = _StubRunner()
+        app.state.forge_runner = stub
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/v1/projects/{project_id}/missions/msn_200_1/run",
+                json={"soul": "ryn", "verifier": "zen"},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"run_id": "run-stub-1"}
+        assert stub.calls == [
+            {
+                "command": "mission",
+                "args": ["run", "msn_200_1", "ryn", "zen"],
+                "project_id": project_id,
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_run_without_soul_omits_optional_args(self, registered_project):
+        project_id, project_path = registered_project
+        _write_mission(project_path, "msn_200_2", status="active")
+        stub = _StubRunner()
+        app.state.forge_runner = stub
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/v1/projects/{project_id}/missions/msn_200_2/run", json={}
+            )
+        assert resp.status_code == 200
+        assert stub.calls[0]["args"] == ["run", "msn_200_2"]
+
+    @pytest.mark.asyncio
+    async def test_run_unknown_mission_404(self, registered_project):
+        project_id, _ = registered_project
+        app.state.forge_runner = _StubRunner()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/v1/projects/{project_id}/missions/msn_404_0/run", json={}
+            )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_run_rejects_forbidden_soul_chars(self, registered_project):
+        """forge_runner 인자 검증(ValueError)이 400 으로 전파된다."""
+        project_id, project_path = registered_project
+        _write_mission(project_path, "msn_200_3", status="active")
+
+        class _RaisingRunner:
+            async def spawn(self, **kwargs):
+                raise ValueError("args contain forbidden characters")
+
+        app.state.forge_runner = _RaisingRunner()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/v1/projects/{project_id}/missions/msn_200_3/run",
+                json={"soul": "ryn;rm"},
+            )
+        assert resp.status_code == 400

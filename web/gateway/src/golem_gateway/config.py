@@ -227,6 +227,7 @@ ALLOWED_FORGE_COMMANDS: frozenset[str] = frozenset({
     "log-add",
     "overview", "ov",
     "flow",
+    "mission",
 })
 
 # ---------------------------------------------------------------------------

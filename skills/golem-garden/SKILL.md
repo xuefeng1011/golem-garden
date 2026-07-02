@@ -178,7 +178,7 @@ forge 팩 설치 풀스택
 | 9 | `pack`, `팩` | → forge pack (bash 직접 실행) |
 | 10 | `mailbox`, `메일박스`, `메시지`, `수신함` | → forge mailbox (bash 직접 실행) |
 | 11 | `session`, `세션`, `resume`, `재개` | → forge session (bash 직접 실행) |
-| 12 | `recover`, `복구`, `에러복구` | → forge recover (bash 직접 실행) |
+| 12 | `recover`, `복구`, `에러복구` | → forge mission run (결정론 재시도 루프) / forge recover-history (이력) |
 | 13 | `cost`, `비용`, `토큰` | → forge dashboard --cost (bash 직접 실행) |
 | 14 | `worktree`, `격리`, `isolation` | → forge worktree (bash 직접 실행) |
 | 15 | `doctor`, `진단`, `헬스체크`, `점검` | → forge doctor (bash 직접 실행) |
@@ -238,8 +238,9 @@ forge 팩 설치 풀스택
 1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session {subcommand} {args}` 실행
 2. 서브커맨드: `create <task> <souls_csv>`, `status`, `list`, `resume`, `end [status]`
 
-### forge recover {soul} {task} {reason}
-1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh recover {soul} {task} {reason}` 실행
+### forge 복구 (recover)
+1. `forge recover` verb 는 제거됨 (무동작 명령이었음) — 재시도는 `forge mission run` 결정론 루프가 수행
+2. 복구 이력 조회: `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh recover-history {soul}` 실행
 
 ### forge dashboard --cost / forge 비용
 1. Bash로 `GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh dashboard --cost` 실행
@@ -323,7 +324,7 @@ forge.sh는 `~/.claude/golem-garden/forge.sh` 에 설치되어 있다.
 | `forge pack install` | `forge-init` — 팀 초기화 / `forge status` — 설치 확인 |
 | `forge mailbox` | `forge build: {작업}` — 작업 진행 / `forge status` — 현황 확인 |
 | `forge session` | `forge build: {작업}` — 작업 재개 / `forge status` — 현황 |
-| `forge recover` | `forge assign {soul}: {작업}` — 재시도 / `forge status` — 현황 |
+| `forge recover-history` | `forge assign {soul}: {작업}` — 재시도 / `forge status` — 현황 |
 | `forge worktree` | `forge build: {작업}` — 빌드 / `forge worktree status` — 현황 |
 | `forge doctor` | `forge status` — 팀 현황 / `forge build: {작업}` — 작업 시작 |
 | `forge verify` | `forge assign {soul}: 검증 실패 수정` — 수정 (FAIL 시) / `forge review {soul}` — 크로스 리뷰 |

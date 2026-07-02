@@ -662,3 +662,76 @@ _source_mission() {
   # idx 1 (second task) 이 여전히 state.json 에 남아 있어야 함
   grep -q '"idx":1' "$state"
 }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# set-tasks-json — Nex 분해 JSON 브릿지 (P1-2)
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "mission: set-tasks-json — 문자열 배열 형태" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal" "" "" "")
+  run mission_set_tasks_json "$id" '["태스크 하나","태스크 둘","태스크 셋"]'
+  [ "$status" -eq 0 ]
+  run mission_next "$id"
+  [[ "$output" == "0	태스크 하나" ]]
+  grep -q '"task":"태스크 둘"' "${MISSION_DIR}/${id}/state.json"
+  grep -qF -- '- [ ] 태스크 셋' "${MISSION_DIR}/${id}/spec.md"
+}
+
+@test "mission: set-tasks-json — 객체 배열({\"task\":...}) 형태 + 여분 필드 무시" {
+  local id
+  id=$(mission_init "json goal2" "" "" "")
+  run mission_set_tasks_json "$id" '[{"task":"API 구현","soul":"ryn","effort":"high"},{"task":"테스트 작성"}]'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"2건"* ]]
+  grep -q '"task":"API 구현"' "${MISSION_DIR}/${id}/state.json"
+  grep -q '"task":"테스트 작성"' "${MISSION_DIR}/${id}/state.json"
+}
+
+@test "mission: set-tasks-json — 파이프·이스케이프 따옴표 포함 태스크 round-trip" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal3" "" "" "")
+  run mission_set_tasks_json "$id" '["a|b 파이프 태스크","그는 \"인용\"했다, 쉼표도"]'
+  [ "$status" -eq 0 ]
+  # 파이프가 분리 기준이 되지 않음 — 정확히 2건
+  local total
+  total=$(grep -o '"idx":[0-9]*' "${MISSION_DIR}/${id}/state.json" | wc -l | tr -d ' ')
+  [ "$total" -eq 2 ]
+  # 이스케이프 따옴표 round-trip
+  run mission_status "$id"
+  [[ "$output" == *'a|b 파이프 태스크'* ]]
+  [[ "$output" == *'"인용"'* ]]
+}
+
+@test "mission: set-tasks-json — 태스크 값에 리터럴 },{ 포함해도 오분할 없음" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal4" "" "" "")
+  run mission_set_tasks_json "$id" '[{"task":"객체 경계 },{ 문자열 태스크"}]'
+  [ "$status" -eq 0 ]
+  local total
+  total=$(grep -o '"idx":[0-9]*' "${MISSION_DIR}/${id}/state.json" | wc -l | tr -d ' ')
+  [ "$total" -eq 1 ]
+}
+
+@test "mission: set-tasks-json — 파일 경로 입력 지원" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal5" "" "" "")
+  printf '%s' '["파일에서 온 태스크"]' > "$TEST_PROJECT/tasks.json"
+  run mission_set_tasks_json "$id" "$TEST_PROJECT/tasks.json"
+  [ "$status" -eq 0 ]
+  grep -q '"task":"파일에서 온 태스크"' "${MISSION_DIR}/${id}/state.json"
+}
+
+@test "mission: set-tasks-json — 빈 배열/비JSON 은 에러" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal6" "" "" "")
+  run mission_set_tasks_json "$id" '[]'
+  [ "$status" -eq 1 ]
+  run mission_set_tasks_json "$id" 'not-json'
+  [ "$status" -eq 1 ]
+}
