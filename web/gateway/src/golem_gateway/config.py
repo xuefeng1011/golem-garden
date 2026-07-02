@@ -206,6 +206,12 @@ if not FORGE_SH_PATH.is_file():
 # Maximum wall-clock seconds before a forge run is forcibly terminated.
 MAX_FORGE_SECONDS: int = 300
 
+# Long-form orchestration commands (flow run / mission run) get a higher
+# ceiling: a DAG of N agent steps legitimately exceeds the single-command cap,
+# and killing mid-flow used to strand steps in "running" (permanent stall).
+# Per-step runaway is still bounded by agent-runner's effort-based timeout.
+MAX_FLOW_SECONDS: int = int(os.environ.get("GOLEM_MAX_FLOW_SECONDS", "1800"))
+
 # Maximum combined stdout+stderr bytes per forge run before termination.
 FORGE_OUTPUT_CAP_BYTES: int = 2 * 1024 * 1024  # 2 MB
 
@@ -213,7 +219,7 @@ FORGE_OUTPUT_CAP_BYTES: int = 2 * 1024 * 1024  # 2 MB
 ALLOWED_FORGE_COMMANDS: frozenset[str] = frozenset({
     "status", "souls", "rank", "dashboard", "insights",
     "build", "quick", "assign", "review", "sync",
-    "mailbox", "session", "recover", "worktree",
+    "mailbox", "session", "recover-history", "worktree",
     "memory", "retro", "chemistry", "achievement", "skill-tree",
     "dna", "budget", "tool-char",
     "skill-export", "skill-import",

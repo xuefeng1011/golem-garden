@@ -19,21 +19,38 @@ FLOW_DIR="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/flows"
 # state.json read-modify-write 잠금 — mv 원자성만으로는 동시 writer의
 # last-writer-wins 유실을 못 막는다 (리뷰 HIGH-4). mkdir은 POSIX 원자적.
 # flock은 Git Bash에 없을 수 있어 미사용. 최대 5초 대기 후 실패.
+#
+# stale 회수: 락 디렉토리에 보유자 pid 를 기록해 두고, 대기 시간을 다 쓴 뒤에도
+# 보유자가 죽어 있으면(또는 pid 기록조차 없으면 — 기록 윈도(<1s)를 훨씬 지난
+# 시점이므로 크래시 잔재로 판정) 강제 해제 후 재시도한다. 락 보유 중 crash 로
+# rmdir 를 못 하면 이후 모든 상태 변경이 영구 실패하던 결함의 복구 경로.
+# 주의: kill -0 은 동일 사용자 전제 (단일 사용자 dev 도구 — EPERM 미고려).
 _flow_lock() {
   local lock_dir="${1}.lock"
-  local i=0
+  local max_iters="${GOLEM_FLOW_LOCK_WAIT_ITERS:-50}"
+  local i=0 reclaimed=0
   until mkdir "$lock_dir" 2>/dev/null; do
     i=$((i + 1))
-    if [ "$i" -gt 50 ]; then
+    if [ "$i" -gt "$max_iters" ]; then
+      local _holder
+      _holder=$(cat "${lock_dir}/pid" 2>/dev/null)
+      if [ "$reclaimed" -eq 0 ] && { [ -z "$_holder" ] || ! kill -0 "$_holder" 2>/dev/null; }; then
+        echo "[WARN] flow: stale 잠금 회수 (holder=${_holder:-none}): $lock_dir" >&2
+        rm -rf "$lock_dir" 2>/dev/null
+        reclaimed=1
+        i=0
+        continue
+      fi
       echo "[ERROR] flow: 잠금 획득 실패(5s): $lock_dir" >&2
       return 1
     fi
     sleep 0.1
   done
+  printf '%s' "$$" > "${lock_dir}/pid" 2>/dev/null || true
 }
 
 _flow_unlock() {
-  rmdir "${1}.lock" 2>/dev/null || true
+  rm -rf "${1}.lock" 2>/dev/null || true
 }
 
 # ── 1. flow_create ─────────────────────────────────────────────────────────

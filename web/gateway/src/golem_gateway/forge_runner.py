@@ -24,6 +24,7 @@ from golem_gateway.config import (
     FORGE_OUTPUT_CAP_BYTES,
     FORGE_SH_BASH_PATH,
     FORGE_SH_PATH,
+    MAX_FLOW_SECONDS,
     MAX_FORGE_SECONDS,
     to_bash_path,
 )
@@ -120,6 +121,18 @@ class ForgeRun:
     subscribed: bool = False
     # Legacy catch-all (kept for compatibility).
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
+
+
+def _run_timeout_seconds(run: ForgeRun) -> int:
+    """Wall-clock budget for a forge run.
+
+    Multi-step orchestrations (`flow run`, `mission run`) drive a whole DAG /
+    task loop through one subprocess, so they get MAX_FLOW_SECONDS; everything
+    else keeps the tight MAX_FORGE_SECONDS cap.
+    """
+    if run.command in ("flow", "mission") and run.args[:1] == ["run"]:
+        return MAX_FLOW_SECONDS
+    return MAX_FORGE_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -449,14 +462,16 @@ class ForgeRunner:
             logger.debug("forge stderr drain error for run %s: %s", run.run_id, exc)
 
     async def _watchdog(self, run: ForgeRun) -> None:
-        """Terminate the forge subprocess if it exceeds MAX_FORGE_SECONDS."""
+        """Terminate the forge subprocess if it exceeds its wall-clock budget."""
+        timeout_s = _run_timeout_seconds(run)
         try:
-            await asyncio.wait_for(run.done.wait(), timeout=MAX_FORGE_SECONDS)
+            await asyncio.wait_for(run.done.wait(), timeout=timeout_s)
         except asyncio.TimeoutError:
             logger.warning(
-                "forge run %s exceeded MAX_FORGE_SECONDS=%d, terminating",
+                "forge run %s exceeded timeout=%ds (command=%s), terminating",
                 run.run_id,
-                MAX_FORGE_SECONDS,
+                timeout_s,
+                run.command,
             )
             if run.proc is not None:
                 try:
@@ -470,7 +485,7 @@ class ForgeRunner:
                     ForgeEvent(
                         event="forge.failed",
                         run_id=run.run_id,
-                        reason=f"timeout after {MAX_FORGE_SECONDS}s",
+                        reason=f"timeout after {timeout_s}s",
                     ),
                 )
             run.done.set()

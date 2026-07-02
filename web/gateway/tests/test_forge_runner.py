@@ -9,21 +9,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from golem_gateway.config import ALLOWED_FORGE_COMMANDS
+from golem_gateway.config import ALLOWED_FORGE_COMMANDS, MAX_FLOW_SECONDS, MAX_FORGE_SECONDS
 from golem_gateway.forge_runner import (
     ForgeRun,
     ForgeRunner,
     _build_forge_env,
+    _run_timeout_seconds,
     _FORBIDDEN_ARG_CHARS,
 )
 
 
-def _make_run(run_id: str, proc=None) -> ForgeRun:
+def _make_run(run_id: str, proc=None, command: str = "flow", args: list[str] | None = None) -> ForgeRun:
     """Minimal ForgeRun for terminate/cancel tests (no real subprocess)."""
     return ForgeRun(
         run_id=run_id,
-        command="flow",
-        args=["run", "x"],
+        command=command,
+        args=["run", "x"] if args is None else args,
         project_id="p",
         project_path=Path("."),
         proc=proc,
@@ -31,6 +32,32 @@ def _make_run(run_id: str, proc=None) -> ForgeRun:
         done=asyncio.Event(),
         started_at=0.0,
     )
+
+
+# ---------------------------------------------------------------------------
+# TestRunTimeoutSelection — flow/mission run은 장기 상한, 그 외 단기 상한
+# ---------------------------------------------------------------------------
+
+
+class TestRunTimeoutSelection:
+    def test_flow_run_gets_long_ceiling(self) -> None:
+        run = _make_run("r1", command="flow", args=["run", "abc"])
+        assert _run_timeout_seconds(run) == MAX_FLOW_SECONDS
+
+    def test_mission_run_gets_long_ceiling(self) -> None:
+        run = _make_run("r2", command="mission", args=["run", "msn_1"])
+        assert _run_timeout_seconds(run) == MAX_FLOW_SECONDS
+
+    def test_flow_status_keeps_short_ceiling(self) -> None:
+        run = _make_run("r3", command="flow", args=["status", "abc"])
+        assert _run_timeout_seconds(run) == MAX_FORGE_SECONDS
+
+    def test_other_commands_keep_short_ceiling(self) -> None:
+        run = _make_run("r4", command="status", args=[])
+        assert _run_timeout_seconds(run) == MAX_FORGE_SECONDS
+
+    def test_long_ceiling_exceeds_short(self) -> None:
+        assert MAX_FLOW_SECONDS > MAX_FORGE_SECONDS
 
 
 class TestTerminateAndCancel:

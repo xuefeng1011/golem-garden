@@ -727,3 +727,92 @@ JSON
   run _flow_subst "$state" "ref {{ghost}}"
   [ "$output" = "ref {{ghost}}" ]
 }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 고아 running self-heal — 죽은 실행의 잔재 running 이 재실행을 막지 않는다
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: 고아 running self-heal — 재실행 시 pending 복구 후 완주" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "orphan heal" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  # 이전 실행이 크래시한 상황 재현 — step 이 running 으로 고착
+  flow_set_step_status "$state" s1 running
+
+  run flow_run "$flow_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"고아 running 복구: s1"* ]]
+  # self-heal 후 실제 재실행되어 done 도달
+  _fc_steps_lines < "$state" | grep -F '"id":"s1"' | grep -q '"status":"done"'
+  [ "$(cat "$TEST_PROJECT/.agent_call_count")" -eq 1 ]
+}
+
+@test "flow: running 없는 정상 플로우 — self-heal 메시지 미출력" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "no orphan" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  run flow_run "$flow_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"고아 running 복구"* ]]
+}
+
+# ───────────────────────────────────────────────────────────────────────────────
+# stale 잠금 회수 — 락 보유자 crash 시 영구 잠금 방지
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: stale 락(죽은 pid) — 회수 후 상태 변경 성공" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "stale lock" "$TEST_PROJECT/steps.json"
+  local state="${FLOW_DIR}/${output}/state.json"
+
+  # 죽은 프로세스 pid 확보
+  sleep 0 &
+  local dead_pid=$!
+  wait "$dead_pid" 2>/dev/null || true
+
+  mkdir "${state}.lock"
+  printf '%s' "$dead_pid" > "${state}.lock/pid"
+
+  GOLEM_FLOW_LOCK_WAIT_ITERS=2 run flow_set_step_status "$state" s1 done
+  [ "$status" -eq 0 ]
+  grep -q '"status":"done"' "$state"
+  [ ! -d "${state}.lock" ]
+}
+
+@test "flow: stale 락(pid 기록 없음) — 크래시 잔재로 판정하고 회수" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "stale lock nopid" "$TEST_PROJECT/steps.json"
+  local state="${FLOW_DIR}/${output}/state.json"
+
+  mkdir "${state}.lock"   # 구버전/기록 전 크래시 — pid 파일 없음
+
+  GOLEM_FLOW_LOCK_WAIT_ITERS=2 run flow_set_step_status "$state" s1 done
+  [ "$status" -eq 0 ]
+  grep -q '"status":"done"' "$state"
+}
+
+@test "flow: 살아있는 보유자 락 — 회수하지 않고 실패" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "live lock" "$TEST_PROJECT/steps.json"
+  local state="${FLOW_DIR}/${output}/state.json"
+
+  mkdir "${state}.lock"
+  printf '%s' "$$" > "${state}.lock/pid"   # 현재(살아있는) 프로세스가 보유자
+
+  GOLEM_FLOW_LOCK_WAIT_ITERS=2 run flow_set_step_status "$state" s1 done
+  [ "$status" -ne 0 ]
+  [ -d "${state}.lock" ]   # 락 보존 — 강탈 금지
+  rm -rf "${state}.lock"
+}

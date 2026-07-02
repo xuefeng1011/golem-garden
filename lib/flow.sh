@@ -188,11 +188,27 @@ flow_reject() {
 }
 
 # ── 4. flow_run ───────────────────────────────────────────────────────────────
-# flow_run <flow_id> [session_id]
+# flow_run <flow_id>
 flow_run() {
-  local flow_id="$1" session_id="${2:-}"
+  local flow_id="$1"
   local state_file="${FLOW_DIR}/${flow_id}/state.json"
   [ -f "$state_file" ] || { echo "[ERROR] flow_run: state.json 없음" >&2; return 1; }
+
+  # 고아 running self-heal — 이전 실행이 타임아웃/중지/크래시로 죽으면 step 이
+  # running 으로 고착되고 flow_next_ready 가 이를 건너뛰어 재실행이 영구 정지한다.
+  # flow_run 은 flow 당 단일 실행 주체 전제 — 진입 시점의 running 은 전부
+  # 죽은 실행의 잔재이므로 pending 으로 되돌려 재실행 대상으로 복구한다.
+  local _orphan_line _orphan_id
+  while IFS= read -r _orphan_line; do
+    [ -z "$_orphan_line" ] && continue
+    _orphan_id=$(_fc_get_field "id" "$_orphan_line")
+    [ -z "$_orphan_id" ] && continue
+    printf '[FLOW] 고아 running 복구: %s → pending\n' "$_orphan_id"
+    flow_set_step_status "$state_file" "$_orphan_id" "pending"
+  done <<EOF
+$(_fc_steps_lines < "$state_file" | grep '"status":"running"')
+EOF
+
   local total_steps ready_lines got_approval got_abort step_id prefix
   local has_unfinished has_failed
   total_steps=$(_fc_steps_lines < "$state_file" | grep -c '"id"')
