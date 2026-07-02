@@ -698,3 +698,41 @@ async def test_default_type_agent_when_missing(registered_project) -> None:
     assert len(flows) == 1
     for step in flows[0]["steps"]:
         assert step["type"] == "agent"
+
+
+# ---------------------------------------------------------------------------
+# GET /flows/{flow_id} — 단건 조회 (실행 중 폴링 O(1) 경로, P4-1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_single_flow(registered_project) -> None:
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_100_1", goal="single", status="running")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/flows/flow_100_1")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["flow_id"] == "flow_100_1"
+    assert data["goal"] == "single"
+    assert len(data["steps"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_single_flow_404(registered_project) -> None:
+    project_id, _ = registered_project
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/flows/flow_999_9")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_single_flow_invalid_id_400(registered_project) -> None:
+    project_id, _ = registered_project
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/flows/notaflow!")
+    assert resp.status_code == 400

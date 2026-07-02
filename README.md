@@ -183,7 +183,7 @@ Sage(심사관)가 프로젝트 학습을 검증 후 글로벌 SOUL에 반영.
 ```
 - forge mailbox: SOUL간 JSONL 기반 메시지 교환
 - forge session: 작업 트랜스크립트 + 재개
-- forge recover: 3단계 실패 복구 (재시도→위임→에스컬레이션)
+- forge mission run: 결정론 자율 루프 (execute↔verify, 재시도·사이클 상한·스턱 디텍터 코드 강제)
 - forge worktree: Git worktree 기반 SOUL 격리 실행
 - forge dashboard --cost: SOUL별 비용 대시보드
 - forge log-add-usage: Agent usage 기반 자동 비용 추적

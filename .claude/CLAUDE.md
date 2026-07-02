@@ -118,20 +118,27 @@ web/            — 3-tier 웹 스택 (Tier B/C 도입)
 
 ## forge 명령 체계
 
+`※` 표시는 **스킬 라우터 명령** — CLI verb 가 아니라 golem-garden 스킬(LLM)이
+해석해 `forge run`/forge-team 등 원시 명령으로 번역한다. `bash forge.sh build: ...`
+처럼 직접 실행하면 실패한다. 나머지는 forge.sh dispatch 의 CLI 원시 verb.
+
 ```
 forge overview (ov)     통합 대시보드 — 팀/성과/비용/활동 한눈에
-forge-init              프로젝트 초기화 (프로젝트 분석 → SOUL 팀 구성)
+forge-init              프로젝트 초기화 (프로젝트 분석 → SOUL 팀 구성) ※스킬
 forge run {soul} "{task}" [uuid]  엔진 네이티브 SOUL 소환 (모든 실행의 기본 단위)
-forge build: {task}     팀 빌드 (Director 분배 → 병렬 실행)
-forge quick: {task}     단독 빌드 (최적 SOUL 1개)
-forge assign {soul}: {task}  지정 SOUL에 태스크 배정
-forge mission ...       단일 목표 완주 모드 (자율 execute↔verify 루프)
+forge build: {task}     팀 빌드 (Director 분배 → 병렬 실행) ※스킬
+forge quick: {task}     단독 빌드 (최적 SOUL 1개) ※스킬
+forge assign {soul}: {task}  지정 SOUL에 태스크 배정 ※스킬
+forge mission run {id} [soul] [verifier]  결정론 자율 루프 — execute↔verify 반복,
+                        사이클/재시도 상한·예산 센티널·스턱 디텍터 코드 강제
+forge mission init/set-tasks/set-tasks-json/next/task/status/list/complete
+                        미션 스펙·상태 관리 (set-tasks-json = Nex 분해 JSON 직결)
 forge verify {target} [soul]  검증 레인 (결정론 테스트 + [VERDICT:] 마커 심판)
 forge eval [--model m]  골든 태스크 스위트 (모델 회귀 측정) / eval list / eval report
 forge doctor            엔진 헬스체크
 forge explore {query}   grep-우선 코드 컨텍스트
 forge review {soul}     크로스 리뷰 실행
-forge sync              지식 승격 심사 (Sage)
+forge sync              지식 승격 심사 (Sage) ※스킬
 forge status            팀 상태 + 대시보드
 forge dashboard --cost  비용 대시보드 (SOUL별 토큰/USD)
 forge mailbox dashboard 메일박스 현황
@@ -139,7 +146,8 @@ forge mailbox send ...  SOUL 간 메시지 전송
 forge session create    세션 생성
 forge session resume    세션 재개
 forge session status    세션 상태
-forge recover {soul}    3단계 에러 복구
+forge recover-history {soul}  복구 이력 조회 (구 forge recover 는 무동작이라 제거 —
+                        재시도 실행은 mission run 루프가 담당)
 forge worktree create   SOUL별 격리 worktree 생성
 forge worktree merge    Worktree 변경사항 머지
 forge worktree status   활성 worktree 현황

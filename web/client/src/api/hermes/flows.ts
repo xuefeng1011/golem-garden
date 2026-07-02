@@ -44,6 +44,13 @@ export async function fetchFlows(projectId: string, limit = 20): Promise<Flow[]>
   )
 }
 
+// 단건 조회 — 실행 중 1.5초 폴링 전용 (목록 전체 파싱 O(n) → O(1))
+export async function fetchFlow(projectId: string, flowId: string): Promise<Flow> {
+  return request<Flow>(
+    `/v1/projects/${encodeURIComponent(projectId)}/flows/${encodeURIComponent(flowId)}`,
+  )
+}
+
 export async function createFlow(
   projectId: string,
   payload: CreateFlowPayload,

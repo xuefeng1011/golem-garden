@@ -67,8 +67,8 @@
 
 | 항목 | 내용 | 대상 약점 |
 |------|------|----------|
-| P1-1 | **턴 캡 집행**: stream-json의 assistant 메시지 수를 라이브 카운트, `SOUL_MAX_TURNS` 초과 시 프로세스 kill + `result=turn_cap` 기록. CLI `--max-turns` 부재를 하네스가 대체 | W4 |
-| P1-2 | **Director 분해 계약**: Nex 출력 = `{"tasks":[{"task":"...","soul":"...","reason":"..."}]}` JSON 강제 → `mission_set_tasks`에 직결. 분해 품질이 모델과 무관하게 *형식상* 보장되고, 누락은 태스크 수 하한 체크로 탐지 | W2 |
+| P1-1 | **턴 캡 집행**: stream-json의 assistant 메시지 수를 라이브 카운트, `SOUL_MAX_TURNS` 초과 시 프로세스 kill + `result=turn_cap` 기록. CLI `--max-turns` 부재를 하네스가 대체. (현재 상태: advisory 프롬프트 주입만 — 하드 런어웨이는 벽시계 타임아웃+비용캡이 담당) | W4 |
+| ✅ P1-2 | **Director 분해 계약 (완료 2026-07-03, 6a2b721)**: `forge mission set-tasks-json` — Nex 출력 JSON 배열(`[{"task":"..."}]` 또는 `["..."]`)을 escape-aware 문자 단위 워커로 파싱해 tasks 에 직결. 파이프·이스케이프 따옴표·리터럴 `},{` 포함 태스크 안전. forge-mission SKILL 이 이 경로를 표준으로 사용 | W2 |
 | P1-3 | **루브릭 검증**: verify Stage 2를 "총평 PASS/FAIL" → "체크리스트 N항목 각각 `[ITEM-k: OK\|NG reason]`" 채점으로 전환. 약한 모델도 항목별 채점은 안정적. 종합 판정은 스크립트가 집계 | W1 |
 | P1-4 | **메모리 주입 예산**: memory+knowledge 블록 합산 상한(예: 1,200자), 초과 시 최신·고태그빈도 우선 절삭. 주입 여부를 growth-log에 `memory_injected: true` 플래그로 기록 | W7 |
 | P1-5 | **재질의 루프 공통화**: `_agent_retry_structured()` 헬퍼 — 구조화 출력 파싱 실패 시 동일 세션 `--resume`으로 "형식만 다시" 1회 요청. 모든 계약 소비처가 공유 | W1, W2, W8 |
@@ -77,7 +77,7 @@
 
 | 항목 | 내용 | 대상 |
 |------|------|------|
-| P2-1 | **역할 기반 모델 라우팅 정책**: 판단직(director/verifier/sage) → 상위 모델, 실행직(executor류) → 중위, 정형 태스크(문서/로그/리네임) → haiku. `effort:` 필드를 실제 소비: `effort=high` → 모델 1단계 승급. SOUL frontmatter 정적 지정은 오버라이드로 유지 | W9 |
+| P2-1 | **역할 기반 모델 라우팅 정책**: 판단직(director/verifier/sage) → 상위 모델, 실행직(executor류) → 중위, 정형 태스크(문서/로그/리네임) → haiku. SOUL frontmatter 정적 지정은 오버라이드로 유지. (정정: 현재 `effort:` 는 **타임아웃 초 결정에만** 소비됨 — low=180/medium=300/high=600. "effort→모델 승급" 라우팅 테이블은 미착수, `AGENT_MODEL_OVERRIDE` 훅만 존재) | W9 |
 | ✅ P2-2 | **캐시 관측·최적화 (완료 2026-06-13, 75dc905·4d62268 + resume 커밋)**: ① cache_read/cache_creation 분리 기록(usage·meta·`/console` cache_hit_rate) ② 프롬프트를 정적(byte-stable 시스템)/휘발(유저 메시지)로 분리 — 태스크 이중 전송 제거 ③ **per-SOUL `--resume` 캐시 레버**: 같은 SOUL 연속 소환을 같은 claude 세션으로 이어 윈도(`GOLEM_RESUME_WINDOW_SEC`=300, 캐시 TTL) 내 cache_read 재사용. recency+턴캡(`GOLEM_RESUME_MAX_TURNS`=8) 게이트, `GOLEM_RESUME_DISABLE=1` 옵트아웃. **실측: resume 런 cache_creation 18,173→367 (98%↓)** — 정적 프롬프트가 재생성 대신 캐시 히트. forge가 넘기던 비-UUID sess_*로 인해 사문화돼 있던 `--resume` 인프라를 살림 | 비용 |
 | P2-3 | **골든 태스크 스위트 (모델 이식성 벤치)**: `tests/golden/` 에 대표 태스크 5~10개(버그수정·함수추가·문서·리뷰판정) + 결정론 채점기(테스트 통과/마커 정확도). `forge bench <model>` 로 모델별 실행 → 동일 하네스에서 모델 교체 시 성능 회귀를 수치로 확인. **"Fable 없이 같은 성능" 의 검증 장치** | 이식성 |
 | P2-4 | **forge build 멀티-SOUL e2e 라이브 검증**: 남은 최대 검증 공백. mission 자율 모드 풀런 포함 | 검증 |
@@ -85,8 +85,8 @@
 
 ### P3 — 부채 정리
 
-- `soul_to_omc_agent` shim 제거 (잔존 콜러 3곳: prompt-builder/error-recovery/forge-review — 전부 표시용이므로 `SOUL_ROLE` 직접 표기로 교체)
-- bash/python 듀얼 growth-log 작성자 골든 테스트 (스키마 결합 암묵 → 명시)
+- ✅ `soul_to_omc_agent` shim 제거 (완료 2026-07-03, b4e8de8 — 콜러 전부 `SOUL_ROLE` 직접 표기 교체, error-recovery 는 no-op `error_recover` 오케스트레이터까지 삭제하고 프롬프트 생성기로 축소)
+- ✅ bash/python 듀얼 growth-log 작성자 골든 테스트 (완료 2026-07-03, ddf9747 — `tests/golden/growth-log.golden.jsonl`. **실드리프트 적발**: gateway json.dumps 기본 구분자로 쓴 엔트리를 bash grep 파이프라인이 조용히 누락 → 컴팩트 구분자 강제. rank 기본값·flow 검증 골든도 동반 신설)
 - `personality:` 필드 처리 결정 (프롬프트 주입 or 스펙에서 제거)
 - 글로벌 설치(`~/.claude/golem-garden/`) ↔ repo 동기화 자동화
 
@@ -131,7 +131,7 @@ Fable 5가 강한 곳에 Fable을 쓰고, 결과물을 하네스에 고정시킨
 | 순위 | 출처 (인기) | 흡수 메커니즘 | 로드맵 반영 |
 |------|------------|--------------|------------|
 | 1 | LLM-as-Judge 수렴 패턴 | 판정 = `--output-format json` + 루브릭 JSON 스키마 + 결정론 사전검증 + **haiku→sonnet 판정 캐스케이드**, `lib/judge-contract.sh`로 공통화 | **P0-1 격상** — 마커 방식 대신 judge-contract 모듈로 구현, P1-3/P1-5와 통합 |
-| 2 | Ralph (20k★) + OpenHands (70k★) | 스토리별 `passes` 불리언 + `<promise>COMPLETE</promise>` 센티널 종료 + append-only progress 인계 + 반복 상한, **스턱 디텍터**(최근 N반복 diff 해시/명령 시그니처 동일 → 에스컬레이션) | **P1-6 신설** — mission 루프 계약. error-recovery 3단계와 연결 |
+| 2 | Ralph (20k★) + OpenHands (70k★) | 스토리별 `passes` 불리언 + `<promise>COMPLETE</promise>` 센티널 종료 + append-only progress 인계 + 반복 상한, **스턱 디텍터**(최근 N반복 diff 해시/명령 시그니처 동일 → 에스컬레이션) | ✅ **P1-6 완료 (2026-07-03, b4e8de8)** — `lib/mission-loop.sh` `forge mission run`: 사이클 상한(3)·태스크 재시도 상한(3)·verify 자동 호출(author≠verifier 코드 가드)·budget 센티널 소비·스턱 디텍터(diff+실패사유 cksum)·COMPLETE 센티널. error_retry 프롬프트 생성기와 연결 |
 | 3 | Terminal-Bench (사실상 표준) + mini-SWE-agent | `tests/eval/{task}/instruction.md + verify.sh` 태스크 규격 + `forge eval` 배치 러너 → growth-log 점수 기록 | **P2-3 구체화** — 골든 스위트의 파일 규격으로 채택 |
 | 4 | Aider (45k★) + RouteLLM | **Architect/Editor 2패스**(설계 opus → 편집 haiku/sonnet) + 정적 라우팅 테이블(태스크 유형×랭크) + 실패 시 모델 승급 재시도 | **P2-1 구체화** — "정적 if문 라우팅이 70%의 이득" (비용 40%+ 절감 보고) |
 | 5 | GitHub spec-kit (111k★) | 미션 스펙 단계에 `/clarify`(커버리지 질문 게이트) + `/analyze`(spec-plan-tasks 교차 일관성 검사) + `constitution.md`(프로젝트 헌법, 캐시 프리픽스 주입) | **P1-7 신설** — forge mission 인터뷰 배치에 clarify, 실행 전 analyze 게이트 |
@@ -151,7 +151,7 @@ Fable 5가 강한 곳에 Fable을 쓰고, 결과물을 하네스에 고정시킨
 | 항목 | 판정 | 이유 |
 |------|------|------|
 | Top5-1 judge-contract, Top5-3 forge eval, Top5-4 라우팅 | **채택** | 지능→구조 이동. 코드는 늘지만 호출당 컨텍스트·모델 의존은 줄어듦 |
-| Top5-2 Ralph 계약+스턱디텍터 | **부분 채택** | passes 불리언·센티널·스턱디텍터만. progress 인계 파일은 growth-log와 중복 — 생략 |
+| Top5-2 Ralph 계약+스턱디텍터 | ✅ **부분 채택 — 구현 완료 (2026-07-03)** | 센티널·상한·스턱디텍터를 `forge mission run` 으로 코드화. progress 인계 파일은 growth-log와 중복 — 생략. 루프 상태는 loop.json 격리 |
 | Top5-5 spec-kit clarify/analyze | **절삭** | mission에 이미 인터뷰 배치+검증 게이트 존재. 게이트 2개 추가는 의식(ceremony) — analyze는 기존 verify 루브릭의 체크 항목 1줄로 흡수 |
 | Letta 2계층 메모리+dream 패스 | **보류** | memory 주입 효과 자체가 미측정(§1.3). eval로 효과 측정 후 결정 |
 | claude-flow 신뢰 점수 | **거부** | rank+success_rate가 이미 같은 신호. 점수 체계 중복 = 비대화 |

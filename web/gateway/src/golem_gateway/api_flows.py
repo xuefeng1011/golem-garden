@@ -467,6 +467,31 @@ async def list_flows(
     return results
 
 
+@router.get("/flows/{flow_id}", response_model=FlowSummary)
+async def get_flow(
+    project_id: str,
+    flow_id: str,
+    registry: ProjectRegistry = Depends(_get_registry),
+) -> FlowSummary:
+    """Fetch a single flow by id.
+
+    실행 중 폴링 전용 — 목록 전체(최대 20개 state.json 파싱)를 1.5초마다
+    읽던 O(플로우 수) 디스크 부하를 O(1) 로 줄인다 (P4-1).
+    """
+    if not _FLOW_DIR_RE.match(flow_id):
+        raise HTTPException(status_code=400, detail="invalid flow id")
+
+    project_path = await _resolve_project_path(project_id, registry)
+    state_path = project_path / ".golem" / "flows" / flow_id / "state.json"
+    if not state_path.is_file():
+        raise HTTPException(status_code=404, detail=f"flow {flow_id!r} not found")
+
+    data = _load_flow(state_path)
+    if data is None:
+        raise HTTPException(status_code=500, detail="flow state.json is corrupt")
+    return FlowSummary(**data)
+
+
 @router.post("/flows", status_code=201)
 async def create_flow(
     project_id: str,

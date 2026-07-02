@@ -96,6 +96,55 @@ class TestTerminateAndCancel:
         proc.kill.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_terminate_proc_tree_windows_taskkill_tree(self):
+        """nt 분기 — taskkill /F /T /PID 로 네이티브 트리 kill (주 플랫폼 경로).
+
+        claude.exe 손자 프로세스 고아화(flow step 영구 running의 원인)를 막는
+        핵심 분기인데 지금까지 posix 강제 테스트만 있었다.
+        """
+        proc = MagicMock()
+        proc.returncode = None
+        proc.pid = 4242
+        proc.terminate = MagicMock()
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock(return_value=0)
+
+        tk_proc = MagicMock()
+        tk_proc.wait = AsyncMock(return_value=0)
+        create_exec = AsyncMock(return_value=tk_proc)
+
+        with patch("golem_gateway.forge_runner.os.name", "nt"), \
+             patch("golem_gateway.forge_runner.asyncio.create_subprocess_exec", create_exec):
+            await ForgeRunner._terminate_proc_tree(proc)
+
+        create_exec.assert_awaited_once()
+        argv = create_exec.await_args.args
+        assert argv[:4] == ("taskkill", "/F", "/T", "/PID")
+        assert argv[4] == "4242"
+        tk_proc.wait.assert_awaited()
+        # taskkill 성공 후에도 graceful fallback 은 안전하게 실행돼야 한다
+        # (이미 죽었으면 ProcessLookupError 무시 경로)
+
+    @pytest.mark.asyncio
+    async def test_terminate_proc_tree_windows_taskkill_missing_falls_back(self):
+        """taskkill 자체가 없거나(OSError) 실패해도 terminate→kill 폴백으로 진행."""
+        proc = MagicMock()
+        proc.returncode = None
+        proc.pid = 4242
+        proc.terminate = MagicMock()
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock(return_value=0)
+
+        create_exec = AsyncMock(side_effect=OSError("taskkill not found"))
+
+        with patch("golem_gateway.forge_runner.os.name", "nt"), \
+             patch("golem_gateway.forge_runner.asyncio.create_subprocess_exec", create_exec):
+            await ForgeRunner._terminate_proc_tree(proc)
+
+        proc.terminate.assert_called_once()
+        proc.wait.assert_awaited()
+
+    @pytest.mark.asyncio
     async def test_delete_forge_run_endpoint(self):
         """DELETE /v1/forge-runs/{id} → 204 + evicted; unknown → 404."""
         from httpx import ASGITransport, AsyncClient

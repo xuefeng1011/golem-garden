@@ -27,7 +27,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { useConsoleStore } from '@/stores/hermes/console'
 import { fetchSouls } from '@/api/hermes/souls'
-import { fetchFlows, createFlow, updateFlow, deleteFlow } from '@/api/hermes/flows'
+import { fetchFlows, fetchFlow, createFlow, updateFlow, deleteFlow } from '@/api/hermes/flows'
 import type { Flow } from '@/api/hermes/flows'
 import { startForge, streamForgeEvents, cancelForgeRun } from '@/api/hermes/forge'
 import type { Soul } from '@/api/hermes/souls'
@@ -583,8 +583,8 @@ async function refreshFlowStatus() {
   if (!pid || !flowId.value) return
 
   try {
-    const list = await fetchFlows(pid)
-    const flow = list.find((f) => f.flow_id === flowId.value)
+    // 단건 폴링 — 목록 전체(최대 20개 state.json 파싱)를 1.5초마다 읽던 부하 제거
+    const flow = await fetchFlow(pid, flowId.value)
     if (!flow) return
 
     // 상태 갱신은 프로그램적 — dirty 켜지지 않게 가드 (G9: dagre 미실행, 위치 보존)

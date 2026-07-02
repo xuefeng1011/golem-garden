@@ -58,7 +58,7 @@
 | **비용 확인** | Claude Code 대화창 | `forge dashboard --cost` |
 | **메시지 확인** | Claude Code 대화창 | `forge mailbox read ryn` |
 | **세션 재개** | Claude Code 대화창 | `forge session resume` |
-| **에러 복구** | Claude Code 대화창 | `forge recover ryn "API 구현" "타입 오류"` |
+| **자율 완주 루프** | Claude Code 대화창 | `forge mission run <id> ryn zen` (실패 시 자동 재시도) |
 | **격리 실행** | Claude Code 대화창 | `forge worktree status` |
 | **학습 기억** | Claude Code 대화창 | `forge memory dashboard` |
 | **회고 확인** | Claude Code 대화창 | `forge retro latest` |
@@ -745,7 +745,7 @@ bash forge.sh review-record ryn zen "AuthController" pass 0 none
 
 | 명령어 | 설명 |
 |--------|------|
-| `forge recover <soul> <task> <reason>` | 3단계 복구 실행 |
+| `forge mission run <id> [soul] [verifier]` | 결정론 자율 루프 (재시도·검증 자동) |
 | `forge recover-history <soul>` | 복구 이력 조회 |
 
 ### Worktree (격리 실행)
@@ -1004,7 +1004,7 @@ bash forge.sh session resume
 bash forge.sh worktree status
 
 # 에러 복구
-bash forge.sh recover ryn "JWT 구현" "타입 오류"
+bash forge.sh mission run <mission_id> ryn zen   # 실패 시 자동 재시도·검증 루프
 
 # SOUL 기억
 bash forge.sh memory record ryn "JWT 인증" "refresh token 재발급 필요" "jwt,auth"

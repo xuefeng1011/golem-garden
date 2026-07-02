@@ -63,8 +63,15 @@
 ### Phase 5/6 동안 함께 들어온 것 (업스트림 체리픽)
 펜스 복구·탭 제목·완료 알림·메시지 복사(`4987a08`), 큐·리사이즈·일괄삭제·export·아웃라인·thinking 표시(`d34f6b9`), per-run 모델 오버라이드(`6a53b27`)
 
-### Phase 7 후보 (미착수)
-파일 업로드 백엔드, 모바일 제스처, 전 화면 A11y 감사, forge mission 칸반 시각화(spec.md+state.json), 세션 트리 UI
+### Phase 7 후보 (정정 2026-07-03 — 상당수는 다른 트랙에서 이미 구현됨)
+- ✅ 세션 트리 UI — OBSERVABILITY Phase C `/hermes/canvas` 세션 트리 뷰로 완료 (`9992d98`)
+- ◐ forge mission 시각화 — Canvas 미션 DAG 뷰 존재(`9992d98`) + `POST /missions/{id}/run` 실행 API(`6a2b721`). 칸반 형태 보드는 미착수
+- 미착수 잔여: 파일 업로드 백엔드, 모바일 제스처, 전 화면 A11y 감사
+
+### 계획 외 완료된 대형 트랙 (이 문서 범위 밖에서 진행)
+- **Flow Engine + 시각 워크플로우 편집기** (`7c44e0f`~`f928058` 다수): DAG 정의·실행·승인 게이트·재시도, 드래그 편집기, 저장/로드/삭제, `{{단계}}` 데이터 참조, 실행 진행 폴링(단건 GET), self-heal
+- **관측 콘솔 A/B/C** — OBSERVABILITY_PLAN.md 참조
+- **forge mission run 결정론 루프** — PERF-HARNESS-PLAN P1-6 참조
 
 ## 5. 원칙 (v1 계승 + 갱신)
 
