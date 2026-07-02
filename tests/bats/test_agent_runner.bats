@@ -417,3 +417,64 @@ EOF
   read -r _u _e t < "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
   [ "$t" -eq 2 ]
 }
+
+# ─────────────────────────────────────────────────────────
+# P2-2 폴백 — --resume 즉사 시 새 세션 1회 재시도
+# (라이브 스모크 실결함: 다른 cwd 에서 만든 세션 포인터 resume → 즉시 fail)
+# ─────────────────────────────────────────────────────────
+
+_setup_fake_claude() {
+  # --resume 이면 즉사(무출력), --session-id 면 성공 — PATH 선두에 주입
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+for a in "$@"; do
+  [ "$a" = "--resume" ] && exit 1
+done
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"FALLBACK-OK"}]}}'
+exit 0
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+_plant_warm_ptr() {
+  # zen 의 따뜻한 세션 포인터 + 마커 → _agent_pick_session 이 resume 을 고르게 함
+  local uuid="11111111-2222-4333-8444-555555555555"
+  mkdir -p "$TEST_PROJECT/.golem/sessions"
+  printf '%s %s 1\n' "$uuid" "$(date +%s)" > "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
+  : > "$TEST_PROJECT/.golem/sessions/${uuid}.claude"
+}
+
+@test "agent-runner: resume 즉사 → 포인터 폐기 + 새 세션 폴백 성공" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  _setup_fake_claude
+  _plant_warm_ptr
+
+  run agent_run zen "폴백 테스트"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--resume 소환 즉사"* ]]
+  [[ "$output" == *"session=fresh"* ]]
+  # 죽은 포인터는 폐기 후 성공 소환이 새 포인터로 재작성 — 새 uuid 여야 함
+  ! grep -q '11111111-2222-4333-8444-555555555555' "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
+}
+
+@test "agent-runner: fresh 소환 실패는 폴백 재시도 없음 (1회만)" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  # 항상 실패하는 fake claude (호출 횟수 기록)
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<FAKE
+#!/usr/bin/env bash
+echo x >> "$TEST_PROJECT/.claude_calls"
+exit 1
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  run agent_run zen "실패 테스트"
+  [ "$status" -eq 1 ]
+  # fresh 모드 실패는 재시도 대상 아님 — 정확히 1회 호출
+  [ "$(wc -l < "$TEST_PROJECT/.claude_calls" | tr -d ' ')" -eq 1 ]
+}

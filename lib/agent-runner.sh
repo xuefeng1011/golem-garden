@@ -497,6 +497,12 @@ ${_ar_body}"
     fi
   fi
 
+  # (d)+(e) 조립·소환 루프 — --resume 즉사 시 새 세션으로 1회 재시도하기 위해
+  # argv 조립부터 파싱까지를 감싼다 (P2-2 폴백, 아래 continue 지점 참조).
+  local _ar_attempt=0
+  while :; do
+  _ar_attempt=$((_ar_attempt + 1))
+
   # (d) claude argv 조립 — 게이트웨이와 동일 + bash 경로 전용 --model/--allowedTools
   local -a argv
   argv=(claude "${_AGENT_CLAUDE_BASE[@]}" "${session_args[@]}"
@@ -608,6 +614,25 @@ ${_ar_body}"
   # 어시스턴트 텍스트 + result usage 파싱
   _AR_RESULT_TEXT=$(_extract_assistant_text "$stream_file")
   _parse_stream < "$stream_file"
+
+  # P2-2 폴백 — --resume 즉사 복구. 포인터 세션이 다른 작업 디렉토리에서
+  # 생성됐거나 만료됐으면 claude 가 "No conversation found" 류로 아무 것도
+  # 출력하지 않고 즉시 실패한다 (tokens 0). 이 경우 포인터를 폐기하고
+  # 새 세션으로 정확히 1회 재소환한다 (라이브 스모크가 잡은 실결함).
+  if [ "$_ar_attempt" -eq 1 ] && [ "$_ar_sess_mode" = "resume" ] && [ "$_ar_timed_out" -eq 0 ] \
+     && { [ "$rc" -ne 0 ] || [ "${_AR_IS_ERROR:-0}" -eq 1 ]; } \
+     && [ "$(( ${_AR_TOKENS_IN:-0} + ${_AR_TOKENS_OUT:-0} ))" -eq 0 ]; then
+    echo "[agent-runner] WARNING: --resume 소환 즉사 (sid=${session_id:0:8}) — 포인터 폐기, 새 세션으로 재시도" >&2
+    rm -f "$(_agent_ptr_file "$soul_name")" 2>/dev/null
+    rm -f "$stream_file" 2>/dev/null
+    session_id=$(_gen_uuid)
+    session_args=(--session-id "$session_id")
+    _ar_sess_mode="fresh"
+    rc=0
+    continue
+  fi
+  break
+  done   # ── (d)+(e) 조립·소환 루프 끝
 
   # stream_file 은 여기서 지우지 않는다 — result/cost 확정 후
   # _agent_persist_run 이 마스킹 보존 + 제거를 담당한다 (Phase A).

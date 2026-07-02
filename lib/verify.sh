@@ -352,17 +352,31 @@ ${_vr_excerpt}"
 
   # ── Step 3: 결합 판정 ────────────────────────────────
   # 전체 PASS 조건: (테스트 pass 또는 skip) AND (SOUL PASS 또는 SOUL skip)
+  # 단, 무증거 통과 금지 — 테스트 러너 부재(skip)인데 SOUL 심판까지
+  # 호출 실패/미로드로 생략됐다면 검증 증거가 0 이므로 FAIL 이다.
+  # (라이브 스모크가 잡은 게이트 구멍: SKIP+SKIP(SOUL호출실패) → PASS 로 열림.
+  #  --tests-only 생략은 호출자의 명시적 선택이라 이 규칙에서 제외한다.)
   local overall="FAIL"
   local test_ok=0
   local soul_ok=0
+  local soul_involuntary_skip=0
 
   { [ "$test_rc" -eq 0 ] || [ "$test_rc" -eq 2 ]; } && test_ok=1
   case "$soul_verdict" in
-    PASS)                soul_ok=1 ;;
-    SKIP*|"--tests-only") soul_ok=1 ;;  # SOUL 생략 = 테스트 결과 신뢰
+    PASS)                 soul_ok=1 ;;
+    "SKIP(--tests-only)") soul_ok=1 ;;                          # 명시적 생략 = 호출자 책임 (soft pass 유지)
+    SKIP*)                soul_ok=1; soul_involuntary_skip=1 ;; # 비자발적 생략 (호출실패/agent-runner 미로드)
   esac
 
   [ "$test_ok" -eq 1 ] && [ "$soul_ok" -eq 1 ] && overall="PASS"
+
+  # 무증거 차단: 테스트 skip(러너 없음, rc=2) + SOUL 심판 비자발적 생략 → FAIL.
+  # 검증 증거가 문자 그대로 0 인데 PASS 로 게이트가 열리던 구멍 봉인.
+  if [ "$test_rc" -eq 2 ] && [ "$soul_involuntary_skip" -eq 1 ]; then
+    overall="FAIL"
+    [ -n "$soul_reason" ] && soul_reason="${soul_reason} | "
+    soul_reason="${soul_reason}무증거 차단: 테스트 러너 없음 + SOUL 심판 생략 — 검증 증거 0"
+  fi
 
   _verify_print_block "$target" "$test_status" "$test_detail" "$soul_verdict" "$soul_reason" "$overall"
 

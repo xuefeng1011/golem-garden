@@ -98,3 +98,24 @@ _source_verify() {
   run verify_tests_only
   [[ "$output" =~ "[verify]" ]]
 }
+
+# ─────────────────────────────────────────────────────────
+# 무증거 차단 — 테스트 러너 없음 + SOUL 심판 비자발적 생략 → FAIL
+# (라이브 스모크 실결함: SKIP+SKIP(SOUL호출실패) 가 PASS 로 열리던 게이트)
+# ─────────────────────────────────────────────────────────
+
+@test "verify: 테스트 SKIP + SOUL 호출실패 — 무증거 차단으로 FAIL" {
+  _source_verify
+  # agent_run mock: 즉시 실패 (SOUL 심판 호출실패 재현)
+  agent_run() { return 1; }
+  run verify_run "무증거 대상" "zen"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"무증거 차단"* ]]
+}
+
+@test "verify: 테스트 SKIP 이어도 SOUL PASS 면 통과 (증거 1개 확보)" {
+  _source_verify
+  agent_run() { printf '[VERDICT: PASS]\n이유: 충분함\n'; return 0; }
+  run verify_run "심판 통과 대상" "zen"
+  [ "$status" -eq 0 ]
+}
