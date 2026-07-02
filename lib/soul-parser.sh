@@ -238,27 +238,8 @@ soul_agent_spec() {
   soul_restore 2>/dev/null
 }
 
-# [DEPRECATED] SOUL role → OMC agent 매핑
-# OMC 의존 제거(독립 엔진 전환)로 더 이상 디스패치에 사용하지 않는다.
-# engine-native 경로는 soul_agent_spec 을 사용하라.
-# 기존 호출자(prompt-builder.sh, error-recovery.sh, forge-board.sh)의 표시용
-# 호환을 위해 thin shim 으로 유지한다. 신규 코드에서 사용 금지.
-soul_to_omc_agent() {
-  local role="$1"
-  case "$role" in
-    director)              echo "architect" ;;
-    backend-developer)     echo "executor" ;;
-    frontend-developer)    echo "designer" ;;
-    qa-tester)             echo "test-engineer" ;;
-    devops-engineer)       echo "executor" ;;
-    data-analyst)          echo "scientist" ;;
-    technical-writer)      echo "writer" ;;
-    security-auditor)      echo "security-reviewer" ;;
-    game-logic-developer)  echo "executor" ;;
-    game-designer)         echo "planner" ;;
-    *)                     echo "executor" ;;
-  esac
-}
+# [REMOVED] soul_to_omc_agent — OMC 디커플 완결로 shim 삭제 (P3).
+# engine-native 디스패치는 soul_agent_spec, 표시용은 SOUL_ROLE 직접 사용.
 
 # 사용 가능한 SOUL 목록 출력
 soul_list() {

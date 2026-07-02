@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# error-recovery.sh — 3단계 실패 복구 시스템
-# Usage: source lib/error-recovery.sh && error_recover ryn "REST API 구현" "타입 오류"
+# error-recovery.sh — 실패 복구 프롬프트 생성기 + 에러 분류/이력
+#
+# 역할: 에러 분류(error_classify), 재시도/위임/에스컬레이션 **프롬프트 생성**
+# (error_retry/error_delegate/error_escalate), 복구 이력(error_log/error_history).
+# 실행(agent_run 소환)은 하지 않는다 — 호출자(mission-loop 등)의 책임.
+#
+# Usage: source lib/error-recovery.sh && error_retry ryn "REST API 구현" "타입 오류" 1
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${GOLEM_ROOT}/lib/soul-parser.sh"
@@ -207,56 +212,15 @@ error_withhold_recover() {
   esac
 }
 
-# 메인 복구 진입점
-# error_recover <soul_name> <task> <failure_reason>
-error_recover() {
-  local soul_name="$1"
-  local task="$2"
-  local failure_reason="$3"
-
-  echo "=== GolemGarden Error Recovery ==="
-  echo "  SOUL: ${soul_name}"
-  echo "  태스크: ${task}"
-  echo "  실패 원인: ${failure_reason}"
-  echo ""
-
-  # Stage 1: 같은 SOUL로 재시도
-  echo "[recovery] Stage 1: 재시도 (${soul_name})"
-  local retry_result
-  retry_result=$(error_retry "$soul_name" "$task" "$failure_reason" 1)
-  local retry_status=$?
-
-  if [ $retry_status -eq 0 ]; then
-    echo "$retry_result"
-    error_log "$soul_name" "$task" "retry" "success"
-    return 0
-  fi
-
-  # Stage 2: 다른 SOUL에 위임
-  echo ""
-  echo "[recovery] Stage 2: 위임 시도"
-  local delegate_result
-  delegate_result=$(error_delegate "$soul_name" "$task" "$failure_reason")
-  local delegate_status=$?
-
-  if [ $delegate_status -eq 0 ]; then
-    echo "$delegate_result"
-    error_log "$soul_name" "$task" "delegate" "success"
-    return 0
-  fi
-
-  # Stage 3: Director에게 에스컬레이션
-  echo ""
-  echo "[recovery] Stage 3: 에스컬레이션"
-  local escalation_result
-  escalation_result=$(error_escalate "$soul_name" "$task" "$failure_reason" "retry=${GOLEM_MAX_RETRY},delegate=failed")
-  echo "$escalation_result"
-  error_log "$soul_name" "$task" "escalate" "pending"
-  return 1
-}
+# [REMOVED] error_recover — 구 OMC 시대의 3단계 오케스트레이터.
+# error_retry가 프롬프트만 생성하고 무조건 성공을 반환해 Stage 1이 항상
+# "즉시 성공"으로 위장되는 no-op이었다 (실제 재시도·위임 없음).
+# 결정론적 복구 루프는 mission-loop(P1-6)가 error_retry 프롬프트를 소비해 수행한다.
 
 # Stage 1: 실패 컨텍스트 주입 후 재시도 프롬프트 생성
 # error_retry <soul_name> <task> <failure_reason> <attempt_num>
+# 출력: 재시도 프롬프트 (stdout). 실행(agent_run)은 호출자 책임.
+# 반환: 0=프롬프트 생성됨, 1=재시도 상한 초과 또는 SOUL 없음
 error_retry() {
   local soul_name="$1"
   local task="$2"
@@ -275,9 +239,9 @@ error_retry() {
   fi
 
   soul_parse "$soul_file"
-  local omc_agent=$(soul_to_omc_agent "$SOUL_ROLE")
 
-  # 실패 컨텍스트가 주입된 재시도 프롬프트 생성
+  # 실패 컨텍스트가 주입된 재시도 프롬프트 생성 — stdout은 프롬프트만
+  # (호출자가 그대로 agent_run에 넘길 수 있도록 상태 메시지는 stderr).
   cat <<RETRY_PROMPT
 [GolemGarden Retry — ${SOUL_NAME} (시도 ${attempt}/${GOLEM_MAX_RETRY})]
 
@@ -291,16 +255,9 @@ error_retry() {
 3. 더 보수적인 접근법 사용
 
 원래 태스크: ${task}
-
-OMC 에이전트: ${omc_agent} (모델: ${SOUL_MODEL})
 RETRY_PROMPT
 
-  echo ""
-  echo "[recovery] 재시도 프롬프트 생성 완료 (시도 ${attempt}/${GOLEM_MAX_RETRY})"
-  echo "[recovery] 실행: OMC ${omc_agent} (model=${SOUL_MODEL})"
-
-  # 실제 실행은 forge-team 스킬이 담당 — 여기서는 프롬프트만 생성
-  # 반환값은 호출자가 OMC 에이전트 실행 후 결과에 따라 결정
+  echo "[recovery] 재시도 프롬프트 생성 완료 — ${SOUL_NAME} (role=${SOUL_ROLE}, model=${SOUL_MODEL}, 시도 ${attempt}/${GOLEM_MAX_RETRY})" >&2
   return 0
 }
 
@@ -341,9 +298,8 @@ error_delegate() {
 
   local alt_file=$(_resolve_soul_file "$alt_soul")
   soul_parse "$alt_file"
-  local omc_agent=$(soul_to_omc_agent "$SOUL_ROLE")
 
-  echo "[recovery] 대체 SOUL 발견: ${alt_soul} (${SOUL_ROLE}, score=${best_score})"
+  echo "[recovery] 대체 SOUL 발견: ${alt_soul} (${SOUL_ROLE}, score=${best_score})" >&2
 
   cat <<DELEGATE_PROMPT
 [GolemGarden Delegate — ${alt_soul} (${original_soul}에서 위임)]
@@ -357,12 +313,9 @@ error_delegate() {
 이전 실패 원인을 참고하되, 독자적 판단으로 접근하라.
 
 태스크: ${task}
-
-OMC 에이전트: ${omc_agent} (모델: ${SOUL_MODEL})
 DELEGATE_PROMPT
 
-  echo ""
-  echo "DELEGATE:${alt_soul}:${omc_agent}:${SOUL_MODEL}"
+  echo "DELEGATE:${alt_soul}:${SOUL_ROLE}:${SOUL_MODEL}" >&2
   return 0
 }
 

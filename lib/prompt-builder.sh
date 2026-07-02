@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# prompt-builder.sh — SOUL 컨텍스트를 OMC 에이전트 프롬프트로 조립
+# prompt-builder.sh — SOUL 컨텍스트를 에이전트 프롬프트로 조립 (engine-native)
 # Usage: source lib/prompt-builder.sh && prompt_build ryn "인증 API 구현"
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,8 +31,6 @@ prompt_build_static() {
   fi
 
   soul_parse "$soul_file"
-
-  local omc_agent=$(soul_to_omc_agent "$SOUL_ROLE")
 
   # 프로젝트 컨텍스트 추출
   local project_context=$(_extract_section "$soul_file" "프로젝트 컨텍스트")
@@ -98,7 +96,7 @@ ${rank_constraint}
 허용 도구: [${tools}]
 최대 턴: ${max_turns}
 격리 모드: ${isolation}
-OMC 에이전트: ${omc_agent} (모델: ${SOUL_MODEL})
+역할: ${SOUL_ROLE} (모델: ${SOUL_MODEL})
 PROMPT
 
   # Skill Tree 전문화 블록 (준정적 — 전문화 이벤트 시에만 변경)
@@ -321,7 +319,6 @@ prompt_build_fork_suffix() {
 
   local task_count=$(growth_log_task_count "$soul_name")
   local success_rate=$(growth_log_success_rate "$soul_name")
-  local omc_agent=$(soul_to_omc_agent "$SOUL_ROLE")
   local expertise=$(_extract_section "$soul_file" "전문 지식")
   local principles=$(_extract_section "$soul_file" "행동 원칙")
 
@@ -352,7 +349,7 @@ ${principles}
 ${rank_constraint}
 
 랭크: ${SOUL_RANK} | 도구: [${tools}] | 턴: ${max_turns} | 격리: ${isolation}
-OMC: ${omc_agent} (${SOUL_MODEL})
+역할: ${SOUL_ROLE} (${SOUL_MODEL})
 
 이력: ${task_count}건, 성공률 ${success_rate}%
 

@@ -141,17 +141,21 @@ Session (세션 지속성):
   session log <soul> <action> <detail>
                       세션 이벤트 기록
 
-Mission (목표 완수 모드 — 디스크 상태 레이어):
+Mission (목표 완수 모드):
   mission init <goal> [criteria] [constraints] [out_of_scope]
                       미션 스펙(spec.md + state.json) 생성, id 반환
   mission set-tasks <id> "<t1>|<t2>|<t3>"
                       파이프 구분 태스크 등록 (체크리스트 + state)
+  mission run <id> [soul] [verifier_soul]
+                      결정론 자율 루프 — execute↔verify 반복, 사이클/재시도 상한·
+                      예산 센티널·스턱 디텍터 코드 강제, 완료 시 <promise>COMPLETE</promise>
+  mission next <id>   첫 pending 태스크 조회 ('idx<TAB>text', 없으면 none)
   mission task <id> <idx> <pending|in_progress|done|failed> [soul]
                       태스크 상태/담당 SOUL 갱신
   mission status [id] 미션 스펙 + 태스크 진행도 (id 생략 시 최근 active)
   mission list        전체 미션 목록 (진행도 n/m)
   mission complete <id>
-                      미션 완료 처리 (검증 후 호출)
+                      미션 완료 처리 (mission run 이 검증 통과 시 자동 호출)
 
 Flow (단계 승인 워크플로):
   flow create "<goal>" <steps.json>
@@ -169,10 +173,9 @@ Flow (단계 승인 워크플로):
                       단계 거부
 
 Recovery (에러 복구):
-  recover <soul> <task> <reason>
-                      3단계 복구 실행
   recover-history <soul>
                       복구 이력 조회
+                      (재시도 실행은 mission run 루프가 담당)
 
 Budget (예산 추적):
   budget status       예산 상태 (토큰/USD/수확체감)
@@ -777,8 +780,24 @@ case "${1:-}" in
         fi
         mission_complete "$3"
         ;;
+      next)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge mission next <id>"
+          exit 1
+        fi
+        mission_next "$3"
+        ;;
+      run)
+        _load mission-loop.sh
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge mission run <id> [soul] [verifier_soul]"
+          exit 1
+        fi
+        mission_run "$3" "${4:-}" "${5:-}"
+        exit $?
+        ;;
       *)
-        echo "Usage: forge mission <init|set-tasks|task|status|list|complete>"
+        echo "Usage: forge mission <init|set-tasks|task|status|list|complete|next|run>"
         exit 1
         ;;
     esac
@@ -798,10 +817,10 @@ case "${1:-}" in
         ;;
       run)
         if [ -z "${3:-}" ]; then
-          echo "Usage: forge flow run <flow_id> [session_id]"
+          echo "Usage: forge flow run <flow_id>"
           exit 1
         fi
-        flow_validate "${GOLEM_DIR}/flows/${3}/state.json" && flow_run "$3" "${4:-}"
+        flow_validate "${GOLEM_DIR}/flows/${3}/state.json" && flow_run "$3"
         exit $?
         ;;
       status)
@@ -840,15 +859,6 @@ case "${1:-}" in
         exit 1
         ;;
     esac
-    ;;
-
-  recover)
-    _load error-recovery.sh
-    if [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
-      echo "Usage: forge recover <soul> <task> <failure_reason>"
-      exit 1
-    fi
-    error_recover "$2" "$3" "$4"
     ;;
 
   recover-history)

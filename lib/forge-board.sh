@@ -145,11 +145,12 @@ board_add_task() {
 }
 
 # 팀 구성 테이블에 새 SOUL 행 추가
-# Usage: board_add_soul <name> <role> <omc_agent> <model> <rank> <status>
+# Usage: board_add_soul <name> <role> <specialty_label> <model> <rank> <status>
+# specialty_label: 테이블 3열 표시용 텍스트 (구 OMC agent 컬럼 — 표시 전용)
 board_add_soul() {
   local name="$1"
   local role="$2"
-  local omc_agent="$3"
+  local specialty_label="$3"
   local model="$4"
   local rank="${5:-novice}"
   local status="${6:-active}"
@@ -162,7 +163,7 @@ board_add_soul() {
     return 0
   fi
 
-  local new_row="| ${name} | ${role} | ${omc_agent} | ${model} | ${rank} | ${status} |"
+  local new_row="| ${name} | ${role} | ${specialty_label} | ${model} | ${rank} | ${status} |"
 
   # 팀 구성 테이블의 마지막 데이터 행 뒤에 추가
   _board_awk_replace "$board" -v row="$new_row" '
