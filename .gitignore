@@ -18,6 +18,9 @@ web/client/node_modules/.vite/
 .golem/mailbox/
 .golem/runs/
 .golem/flows/
+.golem/memory/
+.golem/missions/
+.golem/forge-board.md
 dashboard/.last-refresh
 .server.pid
 dashboard/data.json
