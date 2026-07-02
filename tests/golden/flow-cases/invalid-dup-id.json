@@ -1,0 +1,1 @@
+{"goal":"dup id","steps":[{"id":"s1","soul":"zen","task":"t1","deps":[]},{"id":"s1","soul":"ryn","task":"t2","deps":[]}]}

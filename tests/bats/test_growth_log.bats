@@ -85,3 +85,27 @@ load "test_helper"
   [ -f "$log_file" ]
   cat "$log_file" | grep -q '"result":"fail"'
 }
+
+# ─────────────────────────────────────────────────────────
+# 교차 구현 골든 계약 — bash 작성자 ↔ tests/golden/growth-log.golden.jsonl
+# (python 측은 web/gateway/tests/test_growth_log_contract.py 가 같은 파일 검증)
+# ─────────────────────────────────────────────────────────
+
+@test "growth-log: 골든 계약 — bash 작성자 출력이 골든과 byte-동일" {
+  golem_load_lib growth-log
+
+  growth_log_append goldy '골든 "인용" 태스크 | 파이프' success 2 3 >/dev/null
+  growth_log_append goldy '비용 추적 태스크' success 0 0 "" "" 100 50 20 0.123 sonnet 1500 >/dev/null
+
+  local written="$GROWTH_DIR/goldy.jsonl"
+  [ -f "$written" ]
+  # date 필드만 정규화 후 골든과 diff
+  sed 's/"date":"[0-9-]*"/"date":"DATE"/' "$written" > "$TEST_PROJECT/normalized.jsonl"
+  diff "$TEST_PROJECT/normalized.jsonl" "${GOLEM_ROOT}/tests/golden/growth-log.golden.jsonl"
+}
+
+@test "growth-log: 컴팩트 구분자 계약 — '\": ' 형태 금지" {
+  golem_load_lib growth-log
+  growth_log_append goldy 'compact-check' success >/dev/null
+  ! grep -q '": ' "$GROWTH_DIR/goldy.jsonl"
+}

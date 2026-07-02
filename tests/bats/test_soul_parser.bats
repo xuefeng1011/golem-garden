@@ -137,3 +137,33 @@ load "test_helper"
   [ "$SOUL_IS_COORDINATOR" = "false" ]
   [ "$SOUL_IS_COORDINATOR" != "true" ]
 }
+
+# ─────────────────────────────────────────────────────────
+# rank 기본값 골든 계약 — bash soul_parse ↔ tests/golden/rank-defaults.txt
+# (python souls.py 측은 web/gateway/tests/test_rank_defaults_contract.py)
+# ─────────────────────────────────────────────────────────
+
+@test "soul-parser: rank 기본값 5종이 골든(rank-defaults.txt)과 일치" {
+  golem_load_lib soul-parser
+  local golden="${GOLEM_ROOT}/tests/golden/rank-defaults.txt"
+  [ -f "$golden" ]
+
+  local line rank g_tools g_turns g_iso
+  while IFS='|' read -r rank g_tools g_turns g_iso; do
+    [ -z "$rank" ] && continue
+    # tools/maxTurns/isolation 미지정 SOUL — rank 기반 기본값 경로
+    cat > "$TEST_PROJECT/.golem/souls/gold-${rank}.md" <<SOUL
+---
+name: Gold${rank}
+role: backend-developer
+rank: ${rank}
+specialty: [golden]
+model: sonnet
+---
+SOUL
+    soul_parse "$TEST_PROJECT/.golem/souls/gold-${rank}.md"
+    [ "$SOUL_TOOLS" = "$g_tools" ]     || { echo "tools 불일치(${rank}): [$SOUL_TOOLS] != [$g_tools]"; return 1; }
+    [ "$SOUL_MAX_TURNS" = "$g_turns" ] || { echo "maxTurns 불일치(${rank}): $SOUL_MAX_TURNS != $g_turns"; return 1; }
+    [ "$SOUL_ISOLATION" = "$g_iso" ]   || { echo "isolation 불일치(${rank}): $SOUL_ISOLATION != $g_iso"; return 1; }
+  done < "$golden"
+}

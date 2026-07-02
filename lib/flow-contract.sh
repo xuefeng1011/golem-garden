@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # flow-contract.sh — Nex 분해 JSON 계약 파서 헬퍼
 # Usage: source lib/flow-contract.sh
-# 의존: sed, awk, grep (jq 불사용)
+# 의존: sed, awk, grep (jq 불사용) + lib/json-lite.sh (escape-aware 파서)
 # 컨벤션: lib/soul-parser.sh 준수 (_sed_i, _json_escape 패턴 동일)
+
+_FC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=/dev/null
+source "${_FC_ROOT}/lib/json-lite.sh"
 
 # ── 내부 유틸 ─────────────────────────────────────────────────────────────
 
@@ -17,13 +21,21 @@ _fc_sed_i() {
 
 # JSON 문자열에서 키 값 추출 (단순 1depth, 중첩 객체 미지원)
 # 사용: _fc_get_field "soul" '{"soul":"ryn","task":"..."}'
+# P3 경화: quote-naive grep 이 값 내부의 이스케이프된 `\"` 에서 잘리던
+# 취약점을 json-lite 의 escape-aware 워커로 교체 (mission.sh 와 동일 강건성).
+# 출력은 RAW(이스케이프된) 값 — 기존 반환 의미 유지.
 _fc_get_field() {
   local key="$1"
   local json="$2"
   local val
-  val=$(printf '%s' "$json" \
-    | grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
-    | sed "s/\"${key}\"[[:space:]]*:[[:space:]]*\"//;s/\"$//")
+  val=$(_json_get_string "$json" "$key")
+  # exact `"key":"` 미매칭(공백 포함 비정규화 입력) 시 구 naive 패턴 폴백
+  # (BSD grep 은 BRE \| 알터네이션 미지원 — escape-aware 는 1차 경로 담당)
+  if [ -z "$val" ]; then
+    val=$(printf '%s' "$json" \
+      | grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
+      | head -1 | sed "s/^\"${key}\"[[:space:]]*:[[:space:]]*\"//;s/\"$//")
+  fi
   # 문자열 매칭 실패 시 비따옴표 스칼라(숫자/불리언) 폴백 — "retry":1 등
   if [ -z "$val" ]; then
     val=$(printf '%s' "$json" \
@@ -108,7 +120,11 @@ _fc_steps_lines() {
 
   [ -n "$steps_raw" ] || return 1
 
-  # 객체 경계 },{ 에서 분리 — 1depth 계약상 step 내부에 중괄호 없음
+  # 객체 경계 },{ 에서 분리 — [명시적 1-depth 계약] step 값(task 등)에
+  # 리터럴 `},{` 가 포함되면 오분할된다. 이 경계는 flow_validate_steps 가
+  # 지키는 스키마 전제이며, escape 로도 방어 불가한 문자열 부분매칭 한계.
+  # 데이터 의존 없는 안전 경로가 필요하면 mission.sh 의
+  # _mission_json_array_items(문자 단위 워커)를 사용하라.
   # + 키-값 경계 공백 정규화("key" : val → "key":val) — 따옴표 앵커라 값 내부 콜론은 보존
   printf '%s\n' "$steps_raw" | sed 's/},[[:space:]]*{/}\n{/g' \
     | sed 's/"[[:space:]]*:[[:space:]]*"/":"/g;
@@ -174,6 +190,16 @@ flow_validate_steps() {
   done <<EOF
 $parsed
 EOF
+
+  # id 중복 검사 — gateway Pydantic(FlowWriteRequest)과 판정 정렬 (교차 계약,
+  # tests/golden/flow-cases). 중복 id 는 상태 갱신이 첫 매칭에만 적용돼 조용한
+  # 데이터 손상으로 이어진다.
+  local dup
+  dup=$(printf '%s\n' "$parsed" | cut -d"$(printf '\037')" -f1 | sort | uniq -d | head -1)
+  if [ -n "$dup" ]; then
+    echo "[ERROR] flow_validate_steps: 중복 step id '${dup}'" >&2
+    errors=$((errors + 1))
+  fi
 
   # 각 step 검증
   while IFS=$'\037' read -r id soul task deps; do

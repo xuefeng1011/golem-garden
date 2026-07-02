@@ -183,6 +183,15 @@ class ForgeRunner:
                 raise ValueError(
                     f"arg[{i}] contains forbidden characters: {sorted(bad)!r}"
                 )
+            # Path-traversal defense-in-depth: id-like args (flow/mission ids)
+            # flow into `${GOLEM_DIR}/flows/${id}/state.json` style paths in
+            # forge.sh, bypassing the REST routers' regex guards when called
+            # via the generic POST /forge endpoint. Ban traversal *sequences*
+            # (`../`, `..\`) rather than bare `..` so prose args stay legal.
+            if "../" in arg or "..\\" in arg:
+                raise ValueError(
+                    f"arg[{i}] contains a path traversal sequence"
+                )
 
         # --- check forge.sh exists ---
         if not FORGE_SH_PATH.is_file():

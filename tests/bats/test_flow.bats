@@ -816,3 +816,24 @@ JSON
   [ -d "${state}.lock" ]   # 락 보존 — 강탈 금지
   rm -rf "${state}.lock"
 }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 교차 계약 — bash flow_validate_steps ↔ gateway Pydantic (tests/golden/flow-cases)
+# 같은 케이스 파일을 pytest(test_flow_validate_contract.py)도 검증한다.
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: 골든 케이스 — valid-* 전부 통과, invalid-* 전부 거부" {
+  local f name rc
+  for f in "${GOLEM_ROOT}"/tests/golden/flow-cases/*.json; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    rc=0
+    flow_validate_steps < "$f" >/dev/null 2>&1 || rc=$?
+    case "$name" in
+      valid-*)
+        [ "$rc" -eq 0 ] || { echo "판정 불일치: $name — 기대 valid, rc=$rc"; return 1; } ;;
+      invalid-*)
+        [ "$rc" -ne 0 ] || { echo "판정 불일치: $name — 기대 invalid, rc=0"; return 1; } ;;
+    esac
+  done
+}

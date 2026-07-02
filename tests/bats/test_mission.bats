@@ -680,6 +680,7 @@ _source_mission() {
 }
 
 @test "mission: set-tasks-json — 객체 배열({\"task\":...}) 형태 + 여분 필드 무시" {
+  _source_mission
   local id
   id=$(mission_init "json goal2" "" "" "")
   run mission_set_tasks_json "$id" '[{"task":"API 구현","soul":"ryn","effort":"high"},{"task":"테스트 작성"}]'

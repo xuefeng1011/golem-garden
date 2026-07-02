@@ -1,0 +1,5 @@
+novice|Read, Edit, Grep, Glob|15|none
+junior|Read, Edit, Write, Bash, Grep, Glob|25|none
+senior|Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch|40|worktree
+lead|Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch, SendMessage|60|worktree
+master|Read, Edit, Write, Bash, Grep, Glob, Agent, WebFetch, SendMessage, TaskCreate|80|worktree

@@ -1,7 +1,9 @@
 # FLOW_CONTRACT — Nex 분해 JSON 계약
 
-> 버전: 0.1 | 대상: lib/flow.sh, lib/flow-contract.sh, gateway/flow_runner.py
-> 스키마 원본: spec/flow.schema.json
+> 버전: 0.2 | 대상: lib/flow.sh, lib/flow-contract.sh, web/gateway api_flows.py
+> 검증 소스 오브 트루스: `api_flows.py` Pydantic `FlowWriteRequest`
+> (구 spec/flow.schema.json 은 어느 코드도 참조하지 않는 고아 스펙이라 삭제 —
+>  bash `flow_validate_steps` 와의 판정 정합은 `tests/golden/flow-cases/` 교차 계약이 강제)
 
 ---
 

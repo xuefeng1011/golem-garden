@@ -79,7 +79,11 @@ def append_entry(
             entry["model"] = model
             entry["duration_ms"] = duration_ms
 
-        line = json.dumps(entry, ensure_ascii=False)
+        # 컴팩트 구분자 필수 — bash 파이프라인(rank/achievement/cost)은
+        # `grep -o '"result":"success"'` 류로 파싱하므로 json.dumps 기본
+        # 구분자(", ", ": ")로 쓰면 이 엔트리들이 조용히 누락된다
+        # (실제 발생했던 드리프트 — tests/golden/growth-log.golden.jsonl 계약).
+        line = json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
 
         with log_file.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")

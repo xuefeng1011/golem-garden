@@ -1,0 +1,2 @@
+{"date":"DATE","task":"골든 \"인용\" 태스크 | 파이프","result":"success","files_changed":2,"tests_passed":3}
+{"date":"DATE","task":"비용 추적 태스크","result":"success","files_changed":0,"tests_passed":0,"tokens_in":100,"tokens_out":50,"tokens_cache":20,"cost_usd":0.123,"model":"sonnet","duration_ms":1500}

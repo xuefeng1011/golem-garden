@@ -173,31 +173,48 @@ budget_reset() {
 
 # 모델별 비용 추정 (Agent usage → tokens_in, tokens_out, cost_usd)
 # Agent 결과는 total_tokens만 제공하므로 입출력 비율 추정 (80:20)
-# budget_estimate_cost <model> <total_tokens> <duration_ms>
+# budget_estimate_cost <model> <total_tokens> <duration_ms> [cache_read] [cache_creation]
 # 출력: tokens_in tokens_out cost_usd
+#
+# P3 경화: 캐시 토큰 단가 반영 — cache_read=입력가의 0.1x, cache_creation=1.25x.
+# 기존에는 캐시 토큰이 무가격이라 캐시 위주 런이 $0.000 로 기록돼 비용
+# 대시보드가 실지출을 구조적으로 과소집계했다.
 budget_estimate_cost() {
   local model="$1"
   local total_tokens="${2:-0}"
   local duration_ms="${3:-0}"
+  local cache_read="${4:-0}"
+  local cache_creation="${5:-0}"
 
-  [ "$total_tokens" -eq 0 ] 2>/dev/null && { echo "0 0 0.000"; return; }
+  # 숫자 방어 (비정수 입력 → 0)
+  case "$cache_read" in ''|*[!0-9]*) cache_read=0 ;; esac
+  case "$cache_creation" in ''|*[!0-9]*) cache_creation=0 ;; esac
+
+  if [ "$total_tokens" -eq 0 ] 2>/dev/null \
+     && [ "$(( cache_read + cache_creation ))" -eq 0 ]; then
+    echo "0 0 0.000"; return
+  fi
 
   # 입출력 비율 추정: 80% input, 20% output
   local tokens_in=$(( total_tokens * 80 / 100 ))
   local tokens_out=$(( total_tokens * 20 / 100 ))
 
-  # 모델별 가격 ($/1M tokens) — 2025 기준 근사치
-  # input_price / output_price
+  # 모델별 가격 ($/1M tokens) — 근사치. 풀 모델 ID 패턴도 매핑
+  # (agent-runner AGENT_MODEL_OVERRIDE 가 claude-* 풀 ID 를 통과시킴).
   local in_price out_price
   case "$model" in
-    opus)   in_price=15;  out_price=75 ;;
-    sonnet) in_price=3;   out_price=15 ;;
-    haiku)  in_price="0.25"; out_price="1.25" ;;
-    *)      in_price=3;   out_price=15 ;;  # 기본: sonnet
+    opus|claude-opus*|*opus-4-8*) in_price=15;  out_price=75 ;;
+    sonnet|claude-sonnet*)        in_price=3;   out_price=15 ;;
+    haiku|claude-haiku*)          in_price="0.25"; out_price="1.25" ;;
+    claude-fable*|fable*)         in_price=15;  out_price=75 ;;  # opus-tier 근사
+    *)                            in_price=3;   out_price=15 ;;  # 기본: sonnet
   esac
 
-  # cost = (tokens_in * in_price + tokens_out * out_price) / 1_000_000
-  local cost_usd=$(awk "BEGIN {printf \"%.3f\", ($tokens_in * $in_price + $tokens_out * $out_price) / 1000000}")
+  # cost = in*price + out*price + cache_read*(0.1x in) + cache_creation*(1.25x in)
+  local cost_usd=$(awk "BEGIN {printf \"%.3f\", \
+    ($tokens_in * $in_price + $tokens_out * $out_price \
+     + $cache_read * $in_price * 0.1 \
+     + $cache_creation * $in_price * 1.25) / 1000000}")
 
   echo "${tokens_in} ${tokens_out} ${cost_usd}"
 }

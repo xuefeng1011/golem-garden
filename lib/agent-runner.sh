@@ -670,8 +670,10 @@ ${_ar_body}"
     source "${GOLEM_ROOT}/lib/budget.sh" 2>/dev/null
     # budget_estimate_cost 는 "tokens_in tokens_out cost" 를 출력하지만
     # 우리는 result usage 의 실제 토큰을 쓰므로 cost 만 취한다.
+    # 캐시 read/creation 토큰도 전달 — 캐시 위주 런 $0.000 과소집계 방지 (P3).
     local cost_data
-    cost_data=$(budget_estimate_cost "$model_arg" "$total_tokens" "$_AR_DURATION_MS")
+    cost_data=$(budget_estimate_cost "$model_arg" "$total_tokens" "$_AR_DURATION_MS" \
+      "${_AR_TOKENS_CACHE_READ:-0}" "${_AR_TOKENS_CACHE_CREATE:-0}")
     cost=$(printf '%s' "$cost_data" | awk '{print $3}')
     growth_log_append "$soul_name" "$task_text" "$result" 0 0 "" "" \
       "$_AR_TOKENS_IN" "$_AR_TOKENS_OUT" "$_AR_TOKENS_CACHE" "$cost" "$model_arg" "$_AR_DURATION_MS" >&2

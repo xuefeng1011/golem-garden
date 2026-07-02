@@ -1,0 +1,1 @@
+{"goal":"basic","steps":[{"id":"s1","soul":"zen","task":"t1","deps":[]},{"id":"s2","soul":"","task":"t2","deps":["s1"]}]}

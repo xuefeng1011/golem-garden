@@ -151,6 +151,37 @@ class TestArgValidation:
             )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("traversal", ["../etc", "a/../../b", "..\\windows", "run/../x"])
+    async def test_rejects_path_traversal_args(
+        self, traversal: str, tmp_path: Path
+    ) -> None:
+        """flow/mission id 류 인자의 ../ 시퀀스는 REST 정규식 우회 방지 차원에서 거부."""
+        runner = ForgeRunner()
+        valid_cmd = next(iter(ALLOWED_FORGE_COMMANDS))
+        with pytest.raises(ValueError, match="traversal"):
+            await runner.spawn(
+                command=valid_cmd,
+                args=[traversal],
+                project_id="p1",
+                project_path=tmp_path,
+            )
+
+    @pytest.mark.asyncio
+    async def test_allows_bare_dots_in_prose(self, tmp_path: Path) -> None:
+        """산문 인자의 '..' 자체(시퀀스 아님)는 합법 — 과잉 차단 방지."""
+        runner = ForgeRunner()
+        fake_path = tmp_path / "nonexistent.sh"
+        # forge.sh 부재 RuntimeError 까지 도달하면 인자 검증은 통과한 것
+        with patch("golem_gateway.forge_runner.FORGE_SH_PATH", fake_path):
+            with pytest.raises(RuntimeError, match="forge.sh not found"):
+                await runner.spawn(
+                    command=next(iter(ALLOWED_FORGE_COMMANDS)),
+                    args=["계속.. 진행하라"],
+                    project_id="p1",
+                    project_path=tmp_path,
+                )
+
+    @pytest.mark.asyncio
     async def test_rejects_too_many_args(self, tmp_path: Path) -> None:
         runner = ForgeRunner()
         valid_cmd = next(iter(ALLOWED_FORGE_COMMANDS))
