@@ -6,7 +6,7 @@
  * kind=input : textarea(task=입력값) 만 표시
  * kind=agent : 기존 폼 + 상류 단계 참조 칩
  */
-import { computed } from 'vue'
+import { computed, ref, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NForm,
@@ -146,10 +146,51 @@ function insertRef(stepId: string) {
     label: newTask.length > 40 ? newTask.slice(0, 37) + '…' : newTask,
   })
 }
+
+// ── 패널 폭 (드래그 리사이즈 + localStorage 지속) ──────────────────────────
+const WIDTH_KEY = 'hermes_flow_steppanel_w'
+const MIN_W = 320
+const MAX_W = 640
+const DEFAULT_W = 420
+
+function clampWidth(w: number): number {
+  return Math.max(MIN_W, Math.min(MAX_W, w))
+}
+function loadWidth(): number {
+  try {
+    const raw = Number(localStorage.getItem(WIDTH_KEY))
+    if (Number.isFinite(raw) && raw > 0) return clampWidth(raw)
+  } catch { /* localStorage unavailable — fall through to default */ }
+  return DEFAULT_W
+}
+const panelWidth = ref(loadWidth())
+
+let dragStartX = 0
+let dragStartWidth = 0
+function onResizeStart(e: MouseEvent) {
+  dragStartX = e.clientX
+  dragStartWidth = panelWidth.value
+  window.addEventListener('mousemove', onResizeMove)
+  window.addEventListener('mouseup', onResizeEnd)
+}
+function onResizeMove(e: MouseEvent) {
+  // 패널이 우측에 고정되어 있으므로 핸들을 좌측으로 끌면(dx>0) 폭이 커진다.
+  panelWidth.value = clampWidth(dragStartWidth + (dragStartX - e.clientX))
+}
+function onResizeEnd() {
+  window.removeEventListener('mousemove', onResizeMove)
+  window.removeEventListener('mouseup', onResizeEnd)
+  try { localStorage.setItem(WIDTH_KEY, String(panelWidth.value)) } catch { /* ignore */ }
+}
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onResizeMove)
+  window.removeEventListener('mouseup', onResizeEnd)
+})
 </script>
 
 <template>
-  <aside class="step-form-panel">
+  <aside class="step-form-panel" :style="{ width: panelWidth + 'px' }">
+    <div class="resize-handle-left" :title="t('flowEditor.resizeHint')" @mousedown="onResizeStart" />
     <header class="panel-header">
       <span class="panel-title">{{ t('flowEditor.stepDetail') }}</span>
       <button class="close-btn" :title="t('common.cancel')" @click="emit('close')">
@@ -319,7 +360,6 @@ function insertRef(stepId: string) {
   position: absolute;
   top: 0;
   right: 0;
-  width: 280px;
   height: 100%;
   background: $bg-card;
   border-left: 1px solid $border-color;
@@ -327,6 +367,20 @@ function insertRef(stepId: string) {
   flex-direction: column;
   z-index: 10;
   overflow-y: auto;
+}
+
+.resize-handle-left {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 15;
+
+  &:hover {
+    background: rgba(var(--accent-primary-rgb), 0.15);
+  }
 }
 
 .panel-header {

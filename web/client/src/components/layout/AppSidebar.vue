@@ -18,6 +18,8 @@ const router = useRouter();
 const appStore = useAppStore();
 const { openSessionSearch } = useSessionSearch();
 const selectedKey = computed(() => route.name as string);
+// Flow Studio 편집기(자식 라우트 hermes.flowStudio.editor)도 목록 항목의 active 로 간주
+const isFlowStudioActive = computed(() => (route.name as string ?? '').startsWith('hermes.flowStudio'));
 
 const collapsedGroups = reactive<Record<string, boolean>>({});
 
@@ -215,6 +217,14 @@ function openChangelog() {
               <line x1="8" y1="10.5" x2="16" y2="18.5" />
             </svg>
             <span>{{ t("sidebar.flowEditor") }}</span>
+          </button>
+          <button class="nav-item" :class="{ active: isFlowStudioActive }" @click="handleNav('hermes.flowStudio')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M3 9h18" />
+              <path d="M9 21V9" />
+            </svg>
+            <span>{{ t("sidebar.flowStudio") }}</span>
           </button>
         </div>
       </div>

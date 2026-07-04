@@ -82,6 +82,16 @@ const router = createRouter({
       name: 'hermes.flowEditor',
       component: () => import('@/views/hermes/FlowEditorView.vue'),
     },
+    {
+      path: '/hermes/flow-studio',
+      name: 'hermes.flowStudio',
+      component: () => import('@/views/hermes/FlowStudioView.vue'),
+    },
+    {
+      path: '/hermes/flow-studio/:projectId',
+      name: 'hermes.flowStudio.editor',
+      component: () => import('@/views/hermes/FlowEditorView.vue'),
+    },
   ],
 })
 

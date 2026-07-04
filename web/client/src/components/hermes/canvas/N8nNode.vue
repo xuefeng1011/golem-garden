@@ -5,7 +5,7 @@
  * 좌측 아이콘 칩(SOUL 이니셜 또는 타입 아이콘) + 제목 + 부제 + 상태 점.
  * 좌(target)/우(source) Handle 로 좌→우 흐름. 디테일은 클릭 시 NodeInfoPanel.
  */
-import { computed, inject } from 'vue'
+import { computed, inject, type ComputedRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Handle, Position } from '@vue-flow/core'
 import {
@@ -17,6 +17,8 @@ import {
   LockClosedOutline,
   CloseOutline,
   EnterOutline,
+  CheckmarkCircle,
+  CloseCircle,
 } from '@vicons/ionicons5'
 import type { GraphNodeData } from '@/utils/canvas-graph'
 
@@ -31,8 +33,15 @@ const { t } = useI18n()
 // provide/inject 패턴 — FlowEditorView 에서만 제공, CanvasView 는 null
 const onDelete = inject<((id: string) => void) | null>('flowEditorDeleteNode', null)
 
+// 실행 중 마커 스트림(flow-run-log 파서)이 낸 단계별 실시간 상태 — 폴링 지연 없이
+// "실행 중"을 즉시 반영하기 위해 FlowEditorView 가 제공. CanvasView 등엔 미제공(null).
+const liveStepStatus = inject<ComputedRef<Record<string, 'running' | 'done' | 'failed'>> | null>(
+  'flowEditorLiveStepStatus',
+  null,
+)
+
 // status(있으면) 또는 run 의 result 를 통일된 상태 키로 정규화
-const statusKey = computed(() => {
+const baseStatusKey = computed(() => {
   const s = props.data.status
   if (s) {
     if (s === 'done' || s === 'completed') return 'done'
@@ -47,6 +56,23 @@ const statusKey = computed(() => {
   if (r === 'error') return 'failed'
   if (r === 'timeout') return 'waiting'
   return ''
+})
+
+// 라이브 마커 상태를 우선 반영 — running 은 폴링 전에도 즉시 표시,
+// done/failed 는 폴링이 아직 못 따라온 pending 상태를 대신 채워준다.
+const statusKey = computed(() => {
+  const stepId = props.data.stepId
+  const live = stepId ? liveStepStatus?.value?.[stepId] : undefined
+  if (live === 'running') return 'running'
+  if (live && (baseStatusKey.value === 'pending' || !baseStatusKey.value)) return live
+  return baseStatusKey.value
+})
+
+// 항상 보이는 2줄 task 미리보기 — 클릭 없이도 각 단계가 뭘 하는지 알 수 있게.
+const taskPreview = computed(() => {
+  const task = (props.data as any).task as string | undefined
+  if (!task) return ''
+  return task.length > 70 ? task.slice(0, 67) + '…' : task
 })
 
 // 입력 노드 여부 (EditorNodeData.kind — 스칼라, 미설정 시 agent 취급)
@@ -107,12 +133,21 @@ const subtitle = computed(() => {
     <div class="node-body">
       <div class="node-title">{{ data.label }}</div>
       <div v-if="subtitle" class="node-sub">{{ subtitle }}</div>
+      <div v-if="taskPreview" class="node-preview">{{ taskPreview }}</div>
     </div>
 
     <span v-if="data.approval" class="node-lock" title="approval gate">
       <LockClosedOutline class="lock-svg" />
     </span>
-    <span v-if="statusKey" class="node-dot" :class="`is-${statusKey}`" />
+
+    <!-- 실행 중 배지 — 한눈에 보이는 "실행 중" 텍스트 + 펄스 -->
+    <span v-if="statusKey === 'running'" class="node-running-badge">
+      {{ t('flowEditor.nodeRunningBadge') }}
+    </span>
+    <!-- 완료/실패 아이콘 — 상태 점보다 눈에 잘 띄는 체크/X -->
+    <CheckmarkCircle v-else-if="statusKey === 'done'" class="node-result-icon is-done" />
+    <CloseCircle v-else-if="statusKey === 'failed'" class="node-result-icon is-failed" />
+    <span v-else-if="statusKey" class="node-dot" :class="`is-${statusKey}`" />
 
     <!-- runId 힌트 점: 실행 결과가 있는 노드 표시 (done/failed + runId) -->
     <span
@@ -140,7 +175,7 @@ const subtitle = computed(() => {
 
 .n8n-node {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   width: 210px;
   padding: 10px 12px;
@@ -163,11 +198,16 @@ const subtitle = computed(() => {
     box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.25);
   }
 
-  // 실행 중 노드 강조 — 옅은 글로우 (G8: plain div 유지)
+  // 실행 중 노드 강조 — 눈에 띄는 펄싱 글로우 (G8: plain div 유지)
   &.is-running {
     border-color: $accent-primary;
-    box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.18);
+    animation: node-running-pulse 1.4s ease-in-out infinite;
   }
+}
+
+@keyframes node-running-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.15); }
+  50%      { box-shadow: 0 0 0 5px rgba(var(--accent-primary-rgb), 0.3); }
 }
 
 // ── 아이콘 칩 ──────────────────────────────────────────────
@@ -226,6 +266,18 @@ const subtitle = computed(() => {
   margin-top: 1px;
 }
 
+// 항상 보이는 2줄 task 미리보기 — 클릭 없이 각 단계가 뭘 하는지 알 수 있게.
+.node-preview {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: $text-secondary;
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 // ── 상태 점 / 자물쇠 ─────────────────────────────────────
 .node-dot {
   position: absolute;
@@ -244,6 +296,38 @@ const subtitle = computed(() => {
   }
   &.is-waiting { background: $warning; }
   &.is-skipped { background: $border-color; }
+}
+
+// 실행 중 배지 — "실행 중" 텍스트로 한눈에 상태를 알 수 있게.
+.node-running-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: $accent-primary;
+  background: rgba(var(--accent-primary-rgb), 0.14);
+  border-radius: 8px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  animation: pulse-opacity 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+// 완료/실패 아이콘 — 상태 점보다 뚜렷한 체크/X
+.node-result-icon {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 15px;
+  height: 15px;
+
+  &.is-done   { color: $success; }
+  &.is-failed { color: $error; }
 }
 
 @keyframes dot-pulse {

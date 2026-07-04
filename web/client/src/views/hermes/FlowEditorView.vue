@@ -18,8 +18,8 @@ import {
 import { Background, BackgroundVariant } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { useI18n } from 'vue-i18n'
-import { useDialog, useMessage, NIcon, NSpin } from 'naive-ui'
-import { onBeforeRouteLeave } from 'vue-router'
+import { useDialog, useMessage, NIcon, NSpin, NButton } from 'naive-ui'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { FolderOpenOutline, AlertCircleOutline, GitNetworkOutline } from '@vicons/ionicons5'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -37,6 +37,8 @@ import {
   stepsFromGraph,
   editorGraphFromFlow,
 } from '@/utils/canvas-graph'
+import type { FlowLogState } from '@/utils/flow-run-log'
+import { createFlowLogState, feedFlowLogLine } from '@/utils/flow-run-log'
 
 import N8nNode from '@/components/hermes/canvas/N8nNode.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -46,12 +48,28 @@ import RunPanel from '@/components/hermes/flow-editor/RunPanel.vue'
 import RunInputModal from '@/components/hermes/flow-editor/RunInputModal.vue'
 import type { RunInputField } from '@/components/hermes/flow-editor/RunInputModal.vue'
 import RunDetailDrawer from '@/components/hermes/console/RunDetailDrawer.vue'
+import StudioAgentModal from '@/components/hermes/studio/StudioAgentModal.vue'
 
 const { t } = useI18n()
+const route = useRoute()
 const profilesStore = useProfilesStore()
 const consoleStore = useConsoleStore()
 const dialog = useDialog()
 const message = useMessage()
+
+// ── Studio 컨텍스트 (Option B 파라미터화) ─────────────────────────────────────
+// 라우트 파라미터가 있으면 그 프로젝트로 동작(액티브 프로필 전환/오염 없음 — R6).
+// 없으면 기존 동작(액티브 프로필)으로 폴백 — "프로젝트 플로우" 편집기.
+const effectiveProjectId = computed(() => (route.params.projectId as string) ?? profilesStore.activeProfile?.id)
+const isStudioContext = computed(() => !!route.params.projectId)
+const showStudioAgentModal = ref(false)
+
+async function onStudioAgentCreated() {
+  showStudioAgentModal.value = false
+  const pid = effectiveProjectId.value
+  if (!pid) return
+  souls.value = await fetchSouls(pid).catch(() => souls.value)
+}
 
 // ── Vue Flow instance ─────────────────────────────────────────────────────────
 const { fitView, getSelectedNodes, getSelectedEdges } = useVueFlow()
@@ -103,6 +121,8 @@ const running = ref(false)
 const runLines = ref<string[]>([])
 // 실행 단계 표시: idle | running | waiting(승인 대기) | done | failed
 const runPhase = ref<'idle' | 'running' | 'waiting' | 'done' | 'failed'>('idle')
+// [FLOW] 마커 스트림 파싱 상태 — RunPanel 그룹 뷰 + 캔버스 실시간 하이라이트에 사용
+const flowLogState = ref<FlowLogState>(createFlowLogState())
 let sseAbort: (() => void) | null = null
 // 현재 진행 중인 forge run_id — 중지 시 서버 측 실행을 실제로 종료하기 위함
 let currentRunId: string | null = null
@@ -173,7 +193,7 @@ const totalCount = computed(() => nodes.value.length)
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadData() {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid) return
 
   loading.value = true
@@ -196,7 +216,7 @@ async function loadData() {
 
 // 저장된 플로우 목록 새로고침 (저장/삭제 후)
 async function reloadFlows() {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid) return
   flows.value = await fetchFlows(pid).catch(() => flows.value)
 }
@@ -212,6 +232,7 @@ function _loadFlow(flow: Flow) {
   selectedNodeId.value = null
   runPhase.value = 'idle'
   runLines.value = []
+  flowLogState.value = createFlowLogState()
   // sync flush 라 즉시 해제해도 watch 가 이미 무시함
   applyingStatus = false
   dirty.value = false
@@ -244,6 +265,7 @@ function _resetCanvas() {
   selectedNodeId.value = null
   runPhase.value = 'idle'
   runLines.value = []
+  flowLogState.value = createFlowLogState()
   stepCounter = 0  // 세션 누수 방지 — 새 캔버스마다 카운터 초기화
   applyingStatus = false
   dirty.value = false
@@ -264,7 +286,7 @@ function onNewFlow() {
 }
 
 function onDeleteFlow() {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   const id = flowId.value
   if (!pid || !id) return
   dialog.warning({
@@ -286,7 +308,7 @@ function onDeleteFlow() {
 }
 
 watch(
-  () => profilesStore.activeProfile?.id,
+  effectiveProjectId,
   (id) => { if (id) loadData() },
   { immediate: true },
 )
@@ -429,7 +451,7 @@ function validate(): boolean {
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 async function save(): Promise<boolean> {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid) return false
   if (nodes.value.length === 0) {
     message.warning(t('flowEditor.emptyTitle'))
@@ -475,7 +497,7 @@ async function save(): Promise<boolean> {
 // ── Run ───────────────────────────────────────────────────────────────────────
 // 실행 진입점 — 입력 노드가 있으면 먼저 값 입력 모달을 띄운다.
 async function run() {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid) return
   if (nodes.value.length === 0) {
     message.warning(t('flowEditor.emptyTitle'))
@@ -516,7 +538,7 @@ async function onRunInputConfirm(values: Record<string, string>) {
 
 // 실제 실행 — 저장(필요 시) 후 forge flow run + 폴링/SSE
 async function _doRun() {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid) return
 
   // 미저장(신규)이거나 변경분 있으면 먼저 저장 — 저장 실패 시 중단
@@ -528,6 +550,7 @@ async function _doRun() {
   running.value = true
   runPhase.value = 'running'
   runLines.value = []
+  flowLogState.value = createFlowLogState()
   _startPolling()
 
   try {
@@ -537,7 +560,10 @@ async function _doRun() {
     sseAbort = streamForgeEvents(
       run_id,
       (evt) => {
-        if (evt.line) runLines.value = [...runLines.value, evt.line]
+        if (evt.line) {
+          runLines.value = [...runLines.value, evt.line]
+          flowLogState.value = feedFlowLogLine(flowLogState.value, evt.line)
+        }
       },
       async () => {
         running.value = false
@@ -579,7 +605,7 @@ async function _doRun() {
 }
 
 async function refreshFlowStatus() {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid || !flowId.value) return
 
   try {
@@ -632,7 +658,7 @@ async function stopRun() {
 
 // ── Approve / Reject ──────────────────────────────────────────────────────────
 async function approve(stepId: string) {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid || !flowId.value) return
   try {
     await startForge(pid, 'flow', ['approve', flowId.value, stepId])
@@ -646,7 +672,7 @@ async function approve(stepId: string) {
 }
 
 async function reject(stepId: string) {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid || !flowId.value) return
   try {
     await startForge(pid, 'flow', ['reject', flowId.value, stepId])
@@ -686,11 +712,22 @@ function deleteNodeById(nodeId: string) {
 // provide — N8nNode 가 inject 해서 X 버튼 클릭 시 호출
 provide('flowEditorDeleteNode', deleteNodeById)
 
+// [FLOW] 마커 스트림에서 뽑아낸 단계별 실시간 상태 — 폴링(1.5s) 이 아직 못 따라온
+// 사이에도 캔버스 노드가 "실행 중"을 즉시 보여주도록 N8nNode 에 제공.
+const liveStepStatus = computed<Record<string, 'running' | 'done' | 'failed'>>(() => {
+  const map: Record<string, 'running' | 'done' | 'failed'> = {}
+  for (const s of flowLogState.value.sections) {
+    if (s.kind === 'step' && s.stepId) map[s.stepId] = s.status
+  }
+  return map
+})
+provide('flowEditorLiveStepStatus', liveStepStatus)
+
 // ── RunDetailDrawer 상태 ──────────────────────────────────────────────────────
 const drawerVisible = ref(false)
 
 async function onViewResult(runId: string) {
-  const pid = profilesStore.activeProfile?.id
+  const pid = effectiveProjectId.value
   if (!pid) return
   drawerVisible.value = true
   await consoleStore.selectRunById(runId, pid)
@@ -774,6 +811,31 @@ onBeforeRouteLeave((_to, _from, next) => {
   })
 })
 
+// ── Route update guard (Studio 컨텍스트: :projectId 만 바뀌는 in-place 내비게이션) ──
+// Vue Router 는 같은 라우트 레코드(:projectId 값만 다름)로 이동할 때 컴포넌트 인스턴스를
+// 재사용한다 — onBeforeRouteLeave 는 발동하지 않으므로 여기서 동일한 미저장 확인 후
+// 캔버스를 리셋한다. 리셋은 effectiveProjectId watch 가 이어서 loadData 를 부르므로
+// 여기서 loadData 를 직접 호출하지 않는다(중복 호출 방지).
+onBeforeRouteUpdate((to, from, next) => {
+  if (to.params.projectId === from.params.projectId) { next(); return }
+  if (!dirty.value) {
+    _resetCanvas()
+    next()
+    return
+  }
+  dialog.warning({
+    title: t('flowEditor.leaveTitle'),
+    content: t('flowEditor.leaveContent'),
+    positiveText: t('flowEditor.leaveConfirm'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: () => {
+      _resetCanvas()
+      next()
+    },
+    onNegativeClick: () => next(false),
+  })
+})
+
 // ── Load existing flow (if query param provided) ──────────────────────────────
 // For now the editor starts blank; CanvasView links here without a flow id.
 // Future: support ?flowId=xxx to load an existing flow.
@@ -784,7 +846,7 @@ onBeforeRouteLeave((_to, _from, next) => {
 
     <!-- No project -->
     <EmptyState
-      v-if="!profilesStore.activeProfile"
+      v-if="!effectiveProjectId"
       :title="t('flowEditor.noProject')"
       :description="t('flowEditor.noProjectDesc')"
     >
@@ -828,6 +890,13 @@ onBeforeRouteLeave((_to, _from, next) => {
         @new-flow="onNewFlow"
         @delete-flow="onDeleteFlow"
       />
+
+      <!-- Studio 컨텍스트 전용 바 (R9: 중간에 에이전트 추가) -->
+      <div v-if="isStudioContext" class="studio-context-bar">
+        <NButton size="small" @click="showStudioAgentModal = true">
+          {{ t('flowStudio.agentModal.trigger') }}
+        </NButton>
+      </div>
 
       <!-- Canvas + form panel -->
       <div class="editor-body">
@@ -886,6 +955,8 @@ onBeforeRouteLeave((_to, _from, next) => {
       <!-- Run panel (bottom) -->
       <RunPanel
         :lines="runLines"
+        :sections="flowLogState.sections"
+        :current-step-id="flowLogState.currentStepId"
         :running="running"
         :phase="runPhase"
         :waiting-steps="waitingSteps"
@@ -910,9 +981,17 @@ onBeforeRouteLeave((_to, _from, next) => {
         :trace-loading="consoleStore.traceLoading"
         :trace-error="consoleStore.traceError"
         :trace-appending="consoleStore.traceAppending"
-        :project-id="profilesStore.activeProfile?.id ?? ''"
+        :project-id="effectiveProjectId ?? ''"
         @close="onDrawerClose"
-        @load-more="consoleStore.loadMoreTrace(profilesStore.activeProfile?.id ?? '')"
+        @load-more="consoleStore.loadMoreTrace(effectiveProjectId ?? '')"
+      />
+
+      <!-- Studio 에이전트 생성 모달 (R9) -->
+      <StudioAgentModal
+        v-if="isStudioContext"
+        v-model:show="showStudioAgentModal"
+        :project-id="effectiveProjectId ?? ''"
+        @created="onStudioAgentCreated"
       />
     </template>
   </div>
@@ -926,6 +1005,15 @@ onBeforeRouteLeave((_to, _from, next) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.studio-context-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 14px;
+  border-bottom: 1px solid $border-color;
+  background: $bg-card;
+  flex-shrink: 0;
 }
 
 .editor-body {

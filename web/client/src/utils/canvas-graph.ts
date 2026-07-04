@@ -66,8 +66,9 @@ export interface GraphData {
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 // n8n 식 노드 치수 — N8nNode.vue 와 일치(width 210). 여백은 n8n 처럼 넉넉히.
+// NODE_H는 항상 보이는 2줄 task 미리보기(N8nNode의 node-preview)를 포함한 높이.
 const NODE_W = 210
-const NODE_H = 66
+const NODE_H = 92
 
 export function layoutWithDagre(
   nodes: GraphNode[],
@@ -78,7 +79,7 @@ export function layoutWithDagre(
 
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: direction, nodesep: 44, ranksep: 130, marginx: 24, marginy: 24 })
+  g.setGraph({ rankdir: direction, nodesep: 56, ranksep: 130, marginx: 24, marginy: 24 })
 
   for (const node of nodes) {
     g.setNode(node.id, { width: NODE_W, height: NODE_H })
