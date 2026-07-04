@@ -188,3 +188,111 @@ class TestRegistryCRUD:
     async def test_get_unknown_returns_none(self, temp_registry: Path) -> None:
         r = await self._make_registry(temp_registry)
         assert await r.get("no-such-id") is None
+
+    @pytest.mark.asyncio
+    async def test_create_missing_creates_directory(
+        self, temp_registry: Path, tmp_path: Path
+    ) -> None:
+        """create_missing=True 로 아직 없는 디렉토리가 실제 mkdir 되는지 (side effect)."""
+        r = await self._make_registry(temp_registry)
+        new_dir = tmp_path / "not_yet_created" / "studio_x"
+        assert not new_dir.exists()
+
+        proj = await r.create(
+            name="NewDir", path=str(new_dir), kind="studio", create_missing=True
+        )
+        assert new_dir.is_dir()
+        assert Path(proj.path) == new_dir.resolve()
+
+
+# ---------------------------------------------------------------------------
+# TestKind — Flow Studio (STUDIO_PLAN.md §4): kind="project"|"studio"
+# ---------------------------------------------------------------------------
+
+
+class TestKind:
+    async def _make_registry(self, registry_file: Path) -> ProjectRegistry:
+        r = ProjectRegistry()
+        await r.load()
+        return r
+
+    @pytest.mark.asyncio
+    async def test_create_defaults_to_kind_project(
+        self, temp_registry: Path, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "default_kind"
+        project_dir.mkdir()
+        r = await self._make_registry(temp_registry)
+
+        proj = await r.create(name="Default", path=str(project_dir))
+        assert proj.kind == "project"
+
+    @pytest.mark.asyncio
+    async def test_create_with_kind_studio_roundtrips_through_save_and_load(
+        self, temp_registry: Path, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "studio_kind"
+        project_dir.mkdir()
+        r = await self._make_registry(temp_registry)
+
+        proj = await r.create(name="MyStudio", path=str(project_dir), kind="studio")
+        assert proj.kind == "studio"
+
+        # Reload from disk in a fresh instance — kind must survive persistence.
+        r2 = ProjectRegistry()
+        await r2.load()
+        fetched = await r2.get(proj.id)
+        assert fetched is not None
+        assert fetched.kind == "studio"
+
+    @pytest.mark.asyncio
+    async def test_list_filters_by_kind(
+        self, temp_registry: Path, tmp_path: Path
+    ) -> None:
+        proj_dir = tmp_path / "kind_filter_project"
+        proj_dir.mkdir()
+        studio_dir = tmp_path / "kind_filter_studio"
+        studio_dir.mkdir()
+        r = await self._make_registry(temp_registry)
+
+        await r.create(name="P", path=str(proj_dir), kind="project")
+        await r.create(name="S", path=str(studio_dir), kind="studio")
+
+        projects_only = await r.list(kind="project")
+        assert [p.name for p in projects_only] == ["P"]
+
+        studios_only = await r.list(kind="studio")
+        assert [p.name for p in studios_only] == ["S"]
+
+        everything = await r.list()
+        assert {p.name for p in everything} == {"P", "S"}
+
+    @pytest.mark.asyncio
+    async def test_old_format_entry_without_kind_loads_as_project(
+        self, temp_registry: Path, tmp_path: Path
+    ) -> None:
+        """Backward-compat: pre-existing projects.json entries have no `kind`
+        field at all. They must still load, defaulting to kind="project"."""
+        project_dir = tmp_path / "legacy_entry"
+        project_dir.mkdir()
+
+        legacy_payload = {
+            "version": 1,
+            "projects": [
+                {
+                    "id": "legacy-id",
+                    "name": "Legacy",
+                    "path": str(project_dir),
+                    "created_at": "2026-01-01T00:00:00Z",
+                    # NOTE: no "kind" key — simulates a pre-Flow-Studio entry.
+                }
+            ],
+        }
+        temp_registry.parent.mkdir(parents=True, exist_ok=True)
+        temp_registry.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+        r = ProjectRegistry()
+        await r.load()
+        fetched = await r.get("legacy-id")
+        assert fetched is not None
+        assert fetched.kind == "project"

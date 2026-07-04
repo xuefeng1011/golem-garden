@@ -59,6 +59,18 @@ class TestRunTimeoutSelection:
     def test_long_ceiling_exceeds_short(self) -> None:
         assert MAX_FLOW_SECONDS > MAX_FORGE_SECONDS
 
+    def test_studio_run_gets_long_ceiling(self) -> None:
+        run = _make_run("r5", command="studio", args=["run", "studio-1"])
+        assert _run_timeout_seconds(run) == MAX_FLOW_SECONDS
+
+    def test_studio_design_gets_long_ceiling(self) -> None:
+        run = _make_run("r6", command="studio", args=["design", "build a research team"])
+        assert _run_timeout_seconds(run) == MAX_FLOW_SECONDS
+
+    def test_studio_status_keeps_short_ceiling(self) -> None:
+        run = _make_run("r7", command="studio", args=["status"])
+        assert _run_timeout_seconds(run) == MAX_FORGE_SECONDS
+
 
 class TestTerminateAndCancel:
     @pytest.mark.asyncio
@@ -163,6 +175,17 @@ class TestTerminateAndCancel:
 
             resp = await client.delete("/v1/forge-runs/rid-http")
             assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# TestAllowedCommands
+# ---------------------------------------------------------------------------
+
+
+class TestAllowedCommands:
+    def test_studio_is_whitelisted(self) -> None:
+        """Flow Studio (STUDIO_PLAN.md §4) — `studio` must be dispatchable."""
+        assert "studio" in ALLOWED_FORGE_COMMANDS
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +343,34 @@ class TestEnvAllowlist:
         monkeypatch.setenv("PATH", "/usr/bin:/bin")
         env = _build_forge_env(tmp_path)
         assert "PATH" in env
+
+    def test_build_forge_env_defaults_lang_when_absent(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """LANG/LC_ALL 부재(Windows 서비스) → C.UTF-8 기본값.
+
+        bash C 로케일의 바이트 단위 ${var:0:N} 슬라이싱이 한글 멀티바이트를
+        중간에서 잘라 state.json 을 오염시키던 결함의 게이트웨이측 방어."""
+        monkeypatch.delenv("LANG", raising=False)
+        monkeypatch.delenv("LC_ALL", raising=False)
+        env = _build_forge_env(tmp_path)
+        assert env["LANG"] == "C.UTF-8"
+
+    def test_build_forge_env_keeps_parent_lang(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("LANG", "ko_KR.UTF-8")
+        env = _build_forge_env(tmp_path)
+        assert env["LANG"] == "ko_KR.UTF-8"
+
+    def test_build_forge_env_lc_all_alone_suffices(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.delenv("LANG", raising=False)
+        monkeypatch.setenv("LC_ALL", "en_US.UTF-8")
+        env = _build_forge_env(tmp_path)
+        assert "LANG" not in env
+        assert env["LC_ALL"] == "en_US.UTF-8"
 
 
 # ---------------------------------------------------------------------------

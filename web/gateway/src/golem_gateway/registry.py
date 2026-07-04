@@ -8,6 +8,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -19,13 +20,17 @@ def _registry_path() -> Path:
     return Path.home() / ".golem" / "projects.json"
 
 
-def _validate_project_path(p: str) -> Path:
+def _validate_project_path(p: str, *, allow_missing: bool = False) -> Path:
     """Validate a project path before registering. Returns resolved Path or raises ValueError.
 
     Zen F1: tightened allowlist. The path MUST live under ``Path.home()`` and be
     an existing directory.  The marker (``.golem/`` or ``souls/``) check used
     previously is removed from validation — pre-creating ``.golem/`` inside a
     system path was a trivial bypass.
+
+    ``allow_missing=True`` (studio 생성 경로): 아직 없는 폴더를 허용한다 —
+    위치 정책(home / GOLEM_EXTRA_PROJECT_ROOTS)은 동일하게 적용되고,
+    파일이 이미 있는 경로는 여전히 거부된다. 디렉토리 생성은 호출자 몫.
 
     Escape hatch: ``GOLEM_EXTRA_PROJECT_ROOTS`` is an ``os.pathsep``-separated
     list of additional roots that are explicitly trusted.  This is opt-in and
@@ -35,7 +40,10 @@ def _validate_project_path(p: str) -> Path:
         raise ValueError("path is empty")
     resolved = Path(p).expanduser().resolve()
     if not resolved.is_dir():
-        raise ValueError(f"path does not exist or is not a directory: {resolved}")
+        if not allow_missing:
+            raise ValueError(f"path does not exist or is not a directory: {resolved}")
+        if resolved.exists():
+            raise ValueError(f"path exists but is not a directory: {resolved}")
 
     home = Path.home().resolve()
 
@@ -71,6 +79,7 @@ class Project(BaseModel):
     name: str
     path: str
     created_at: str
+    kind: Literal["project", "studio"] = "project"
 
 
 class ProjectRegistry:
@@ -115,12 +124,14 @@ class ProjectRegistry:
     # Public API
     # ------------------------------------------------------------------
 
-    async def list(self) -> list[Project]:
+    async def list(self, *, kind: Literal["project", "studio"] | None = None) -> list[Project]:
         async with self._lock:
             if not self._loaded:
                 await self._load_unlocked()
             # F5: hand out copies so caller mutation cannot corrupt registry state.
-            return [p.model_copy() for p in self._projects]
+            return [
+                p.model_copy() for p in self._projects if kind is None or p.kind == kind
+            ]
 
     async def get(self, project_id: str) -> Project | None:
         async with self._lock:
@@ -132,8 +143,18 @@ class ProjectRegistry:
                     return proj.model_copy()
         return None
 
-    async def create(self, *, name: str, path: str) -> Project:
+    async def create(
+        self,
+        *,
+        name: str,
+        path: str,
+        kind: Literal["project", "studio"] = "project",
+        create_missing: bool = False,
+    ) -> Project:
         """Create a new project entry.
+
+        ``create_missing=True`` (studio): 허용 루트 정책을 통과한 경로가
+        아직 없으면 디렉토리를 생성한다 — 스튜디오는 "새 폴더 지정" UX.
 
         Raises:
             ValueError: if name is empty/too long, path is invalid (missing,
@@ -147,7 +168,12 @@ class ProjectRegistry:
             raise ValueError("name must be ≤100 characters")
 
         # F3: validate + allowlist path BEFORE storing.
-        resolved = _validate_project_path(path)
+        resolved = _validate_project_path(path, allow_missing=create_missing)
+        if create_missing and not resolved.is_dir():
+            try:
+                resolved.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise ValueError(f"failed to create directory {resolved}: {exc}") from exc
 
         canonical = resolved.as_posix().casefold()
 
@@ -157,6 +183,7 @@ class ProjectRegistry:
             name=name,
             path=str(resolved),
             created_at=now_iso,
+            kind=kind,
         )
 
         async with self._lock:

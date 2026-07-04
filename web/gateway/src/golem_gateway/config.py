@@ -88,6 +88,63 @@ def to_bash_path(p: Path | str) -> str:
         return "/" + drive + s[2:]  # msys (Git Bash): /c/...
     return s
 
+# ---------------------------------------------------------------------------
+# Shared forge.sh subprocess env builder (Zen F5)
+# ---------------------------------------------------------------------------
+#
+# forge_runner, api_studios, and api_flows each spawn `bash forge.sh ...`
+# subprocesses and previously hand-rolled the same allowlist independently —
+# which let a fix (LANG default below) land in only one of the three call
+# sites. Centralizing here keeps all forge.sh subprocess envs identical.
+
+# forge.sh is a bash script that does not need ANTHROPIC_API_KEY, AWS creds,
+# npm tokens, etc. Only carry what bash on Windows / Unix needs to actually run.
+_FORGE_ENV_KEEP: frozenset[str] = frozenset({
+    # Path / shell discovery.
+    "PATH", "HOME", "USERPROFILE", "USER", "USERNAME",
+    "SHELL", "TERM", "COMSPEC",
+    # Locale / encoding.
+    "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+    # Temp dirs.
+    "TEMP", "TMP", "TMPDIR",
+    # Git for Windows / MSYS2 path-conversion guards.
+    "MSYSTEM", "MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL",
+    # GolemGarden-specific overrides forge.sh actually consults.
+    "GOLEM_PROJECT", "GOLEM_FORGE_SH", "GOLEM_FORGE_SH_BASH",
+    "GOLEM_EXTRA_PROJECT_ROOTS",
+})
+
+
+def build_forge_subprocess_env(project_path: Path | None = None) -> dict[str, str]:
+    """Build the allowlisted env dict for a forge.sh subprocess.
+
+    Shared by every gateway module that spawns forge.sh so behavior (env
+    allowlist, locale default, MSYS guards) stays identical everywhere:
+
+    - Allowlist-based: only well-known variables in `_FORGE_ENV_KEEP` flow
+      through from the Gateway's own environment.
+    - When ``project_path`` is given, sets GOLEM_PROJECT to its bash-path form.
+    - LANG defaults to "C.UTF-8" when neither LANG nor LC_ALL are present.
+      Windows services typically have no LANG → bash falls back to the C
+      locale, where ``${var:0:N}`` slicing is BYTE-wise and can split a
+      multibyte UTF-8 character (observed: corrupt state.json step output →
+      gateway json.loads failure). C.UTF-8 is supported by Git Bash/MSYS and
+      keeps string ops character-wise.
+    - On Windows also sets the MSYS path-conversion guards so forge.sh sees a
+      sane environment regardless of what the operator launched the Gateway
+      with.
+    """
+    base = {k: v for k, v in os.environ.items() if k in _FORGE_ENV_KEEP}
+    if project_path is not None:
+        base["GOLEM_PROJECT"] = to_bash_path(project_path)
+    if "LANG" not in base and "LC_ALL" not in base:
+        base["LANG"] = "C.UTF-8"
+    if os.name == "nt":
+        base["MSYS_NO_PATHCONV"] = "1"
+        base["MSYS2_ARG_CONV_EXCL"] = "*"
+    return base
+
+
 # Server
 HOST: str = "127.0.0.1"
 PORT: int = 8642
@@ -228,6 +285,7 @@ ALLOWED_FORGE_COMMANDS: frozenset[str] = frozenset({
     "overview", "ov",
     "flow",
     "mission",
+    "studio",
 })
 
 # ---------------------------------------------------------------------------

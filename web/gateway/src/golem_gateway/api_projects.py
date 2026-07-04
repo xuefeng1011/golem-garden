@@ -46,8 +46,8 @@ class CreateProjectRequest(BaseModel):
 async def list_projects(
     registry: ProjectRegistry = Depends(get_registry),
 ) -> list[Project]:
-    """Return all registered projects."""
-    return await registry.list()
+    """Return all registered projects (kind=project only — studios excluded)."""
+    return await registry.list(kind="project")
 
 
 @router.post("", response_model=Project, status_code=201)

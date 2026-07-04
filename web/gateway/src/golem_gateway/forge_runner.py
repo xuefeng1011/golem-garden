@@ -26,7 +26,7 @@ from golem_gateway.config import (
     FORGE_SH_PATH,
     MAX_FLOW_SECONDS,
     MAX_FORGE_SECONDS,
-    to_bash_path,
+    build_forge_subprocess_env,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,39 +53,18 @@ _TERMINAL_FORGE_EVENTS: frozenset[str] = frozenset({"forge.completed", "forge.fa
 # Zen M4: include carriage return — bash readline can split on \r on Windows.
 _FORBIDDEN_ARG_CHARS: frozenset[str] = frozenset(";|&<>`$\n\r")
 
-# Zen F5: minimal env passthrough for forge subprocesses. forge.sh is a bash
-# script that does not need ANTHROPIC_API_KEY, AWS creds, npm tokens, etc.
-# Only carry what bash on Windows / Unix needs to actually run.
-_FORGE_ENV_KEEP: frozenset[str] = frozenset({
-    # Path / shell discovery.
-    "PATH", "HOME", "USERPROFILE", "USER", "USERNAME",
-    "SHELL", "TERM", "COMSPEC",
-    # Locale / encoding.
-    "LANG", "LC_ALL", "LC_CTYPE", "TZ",
-    # Temp dirs.
-    "TEMP", "TMP", "TMPDIR",
-    # Git for Windows / MSYS2 path-conversion guards.
-    "MSYSTEM", "MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL",
-    # GolemGarden-specific overrides forge.sh actually consults.
-    "GOLEM_PROJECT", "GOLEM_FORGE_SH", "GOLEM_FORGE_SH_BASH",
-    "GOLEM_EXTRA_PROJECT_ROOTS",
-})
-
-
+# Zen F5: minimal env passthrough for forge subprocesses — the allowlist,
+# LANG default, and MSYS guards now live in config.build_forge_subprocess_env
+# so every gateway module that spawns forge.sh shares identical behavior.
 def _build_forge_env(project_path: Path) -> dict[str, str]:
     """Build the env dict for forge subprocesses (Zen F5).
 
-    Allowlist-based: only well-known variables flow through.  Always sets
-    GOLEM_PROJECT; on Windows also sets the MSYS path-conversion guards so
-    forge.sh sees a sane environment regardless of what the operator launched
-    the Gateway with.
+    Thin wrapper over the shared helper — forge_runner always has a concrete
+    project_path, so the helper's GOLEM_PROJECT/LANG/MSYS defaults cover this
+    call site fully.
     """
-    base = {k: v for k, v in os.environ.items() if k in _FORGE_ENV_KEEP}
-    base["GOLEM_PROJECT"] = to_bash_path(project_path)
-    if os.name == "nt":
-        base["MSYS_NO_PATHCONV"] = "1"
-        base["MSYS2_ARG_CONV_EXCL"] = "*"
-    return base
+    return build_forge_subprocess_env(project_path)
+
 
 # Per-arg length cap.
 _ARG_MAX_CHARS: int = 512
@@ -128,9 +107,14 @@ def _run_timeout_seconds(run: ForgeRun) -> int:
 
     Multi-step orchestrations (`flow run`, `mission run`) drive a whole DAG /
     task loop through one subprocess, so they get MAX_FLOW_SECONDS; everything
-    else keeps the tight MAX_FORGE_SECONDS cap.
+    else keeps the tight MAX_FORGE_SECONDS cap. `studio run`/`studio design`
+    also drive a full flow/flowsmith pipeline through one subprocess, so they
+    get the same long ceiling (STUDIO_PLAN.md §4); `studio status` and other
+    studio subcommands keep the short cap.
     """
     if run.command in ("flow", "mission") and run.args[:1] == ["run"]:
+        return MAX_FLOW_SECONDS
+    if run.command == "studio" and run.args[:1] in (["run"], ["design"]):
         return MAX_FLOW_SECONDS
     return MAX_FORGE_SECONDS
 

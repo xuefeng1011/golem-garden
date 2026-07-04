@@ -19,6 +19,7 @@ from golem_gateway.api_sessions import router as sessions_router
 from golem_gateway.api_skills import global_router as global_skills_router
 from golem_gateway.api_skills import router as skills_router
 from golem_gateway.api_souls import router as souls_router
+from golem_gateway.api_studios import router as studios_router
 from golem_gateway.api_traces import router as traces_router
 from golem_gateway.config import CORS_ORIGINS, HOST, PORT
 from golem_gateway.forge_runner import ForgeRunner
@@ -57,6 +58,7 @@ app.add_middleware(
 )
 
 app.include_router(projects_router)
+app.include_router(studios_router)
 app.include_router(souls_router)
 app.include_router(activity_router)
 app.include_router(skills_router)

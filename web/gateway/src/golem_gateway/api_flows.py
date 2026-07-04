@@ -23,7 +23,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, field_validator, model_validator
 
-from golem_gateway.config import BASH_BIN, FORGE_SH_BASH_PATH, FORGE_SH_PATH, to_bash_path
+from golem_gateway.config import (
+    BASH_BIN,
+    FORGE_SH_BASH_PATH,
+    FORGE_SH_PATH,
+    build_forge_subprocess_env,
+)
 from golem_gateway.registry import ProjectRegistry
 
 logger = logging.getLogger(__name__)
@@ -347,17 +352,7 @@ async def _validate_with_forge(state_path: Path, project_path: Path) -> str | No
 
     # flow_id is the directory name (parent of state.json).
     flow_id = state_path.parent.name
-    env = {k: v for k, v in os.environ.items() if k in {
-        "PATH", "HOME", "USERPROFILE", "USER", "USERNAME",
-        "SHELL", "TERM", "COMSPEC", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
-        "TEMP", "TMP", "TMPDIR",
-        "MSYSTEM", "MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL",
-        "GOLEM_PROJECT", "GOLEM_FORGE_SH", "GOLEM_FORGE_SH_BASH",
-        "GOLEM_EXTRA_PROJECT_ROOTS",
-    }}
-    env["GOLEM_PROJECT"] = to_bash_path(project_path)
-    env["MSYS_NO_PATHCONV"] = "1"
-    env["MSYS2_ARG_CONV_EXCL"] = "*"
+    env = build_forge_subprocess_env(project_path)
 
     try:
         proc = await asyncio.create_subprocess_exec(
