@@ -148,6 +148,20 @@ forge 팩 설치 풀스택
 트레이딩 팩 설치해줘
 ```
 
+### forge studio (독립 플로우 스튜디오)
+
+아래 입력은 모두 `forge-studio` 스킬을 실행한다:
+```
+forge studio: 시장조사 자동화
+포지 스튜디오
+스튜디오 만들어줘
+독립 플로우 만들고 싶어
+나만의 플로우 짜고 싶어
+flow studio
+프로젝트 밖에서 돌아가는 에이전트 팀 만들어줘
+소설 쓰는 에이전트 팀 꾸리고 싶어
+```
+
 ## 라우팅 판단 로직
 
 **이 메인 라우터는 사용자 입력을 분석하여 올바른 서브스킬로 디스패치한다.**
@@ -169,6 +183,7 @@ forge 팩 설치 풀스택
 | 1 | `init`, `초기화`, `셋업`, `setup`, `시작`, `팀 구성` | → forge-init 스킬 |
 | 2 | `build`, `빌드`, `구현`, `개발` | → forge-team (ultrapilot) |
 | 2.5 | `mission`, `미션`, `끝까지`, `완주`, `하나의 목적`, `하나의 목표` | → forge-mission (단일 목표 완주) |
+| 2.6 | `studio`, `스튜디오`, `독립 플로우`, `나만의 플로우` | → forge-studio (독립 플로우 스튜디오) |
 | 3 | `quick`, `퀵`, `간단`, `빠르게` | → forge-team (autopilot) |
 | 4 | `assign` 또는 SOUL이름 + 태스크 | → forge-team (수동) |
 | 5 | `review`, `리뷰`, `검토`, `코드리뷰` | → forge-review |
@@ -311,6 +326,7 @@ forge.sh는 `~/.claude/golem-garden/forge.sh` 에 설치되어 있다.
 | `forge-init` | `forge build: {작업}` — 팀 빌드 시작 / `forge status` — 팀 현황 확인 |
 | `forge build` | `forge review {soul}` — 코드 리뷰 / `forge status` — 결과 확인 / `forge dashboard --cost` — 비용 확인 |
 | `forge mission` | `forge status` — 전체 현황 / `forge mission status {id}` — 미션 상세 / `forge review {soul}` — 산출물 리뷰 |
+| `forge studio` | `forge studio status {dir}` — 스튜디오 상태 확인 / `forge studio agent-add ...` — 팀 보강 / `forge studio list` — 전체 스튜디오 |
 | `forge quick` | `forge review` — 코드 리뷰 / `forge build: {작업}` — 팀 빌드로 확장 |
 | `forge assign` | `forge review {soul}` — 코드 리뷰 / `forge mailbox inbox {soul}` — 메일 확인 |
 | `forge review` | `forge assign {soul}: 리뷰 피드백 반영` — 수정 (fail 시) / `forge sync` — 지식 승격 / `forge rank {soul}` — 랭크 확인 |

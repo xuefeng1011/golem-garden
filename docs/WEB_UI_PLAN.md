@@ -72,6 +72,10 @@
 - **Flow Engine + 시각 워크플로우 편집기** (`7c44e0f`~`f928058` 다수): DAG 정의·실행·승인 게이트·재시도, 드래그 편집기, 저장/로드/삭제, `{{단계}}` 데이터 참조, 실행 진행 폴링(단건 GET), self-heal
 - **관측 콘솔 A/B/C** — OBSERVABILITY_PLAN.md 참조
 - **forge mission run 결정론 루프** — PERF-HARNESS-PLAN P1-6 참조
+- **Flow Studio** (진행 중, STUDIO_PLAN.md 참조): 프로젝트와 완전히 분리된 독립 플로우 실행 단위.
+  스튜디오 폴더 = `kind="studio"` 프로젝트(`Project.kind` 필드 추가, 후방호환), `POST/GET /v1/studios`
+  API, flowsmith(워크플로우 아키텍트) 자동 팀 구성, 신규 FlowStudioView + 기존 FlowEditorView는
+  "프로젝트 플로우"로 라벨만 명확화(파괴적 변경 없음, Option B 파라미터화로 두 뷰 공용)
 
 ## 5. 원칙 (v1 계승 + 갱신)
 

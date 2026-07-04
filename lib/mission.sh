@@ -204,36 +204,9 @@ _mission_tasks_commit() {
   mv "$tmp" "$spec"
 }
 
-# JSON 배열의 top-level 원소를 한 줄에 하나씩 출력 (escape-aware, 1-depth 계약)
-# 문자열 내부의 ,·]·} 는 분리 기준이 되지 않는다 — flow-contract 의 `},{`
-# 리터럴 분할 취약점을 회피하는 문자 단위 워커.
-_mission_json_array_items() {
-  awk '
-  { s = s $0 }
-  END {
-    n = length(s)
-    i = index(s, "[")
-    if (i == 0) exit 1
-    depth = 0; instr = 0; buf = ""
-    for (; i <= n; i++) {
-      c = substr(s, i, 1)
-      if (instr) {
-        buf = buf c
-        if (c == "\\") { i++; buf = buf substr(s, i, 1); continue }
-        if (c == "\"") instr = 0
-        continue
-      }
-      if (c == "\"") { instr = 1; buf = buf c; continue }
-      if (c == "[" || c == "{") { depth++; if (c == "[" && depth == 1) continue }
-      if (c == "]" || c == "}") {
-        depth--
-        if (c == "]" && depth == 0) { if (buf != "") print buf; break }
-      }
-      if (c == "," && depth == 1) { if (buf != "") print buf; buf = ""; continue }
-      if (depth >= 1) buf = buf c
-    }
-  }'
-}
+# [승격] _mission_json_array_items 본체는 lib/json-lite.sh 의 _json_array_items 로
+# 이동(P3 공용화 — studio.sh 도 동일 워커를 재사용). 이 별칭은 back-compat 유지용.
+_mission_json_array_items() { _json_array_items "$@"; }
 
 # mission_set_tasks_json <id> <json_or_file>
 # Nex 분해 JSON 계약(P1-2) 브릿지 — 두 형태 수용:

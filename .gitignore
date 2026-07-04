@@ -12,6 +12,7 @@ web/client/.vite/
 web/client/node_modules/.vite/
 
 # Runtime state
+studios.jsonl
 .golem/sessions.db
 .golem/sessions/
 .golem/growth-log/

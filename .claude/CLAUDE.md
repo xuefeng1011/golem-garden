@@ -85,11 +85,14 @@ lib/            — Bash 라이브러리
   project-dna.sh      — 프로젝트 지문
   agent-runner.sh   — 엔진 네이티브 SOUL 소환 (claude CLI 직접, 타임아웃/예산 가드)
   mission.sh        — 단일 목표 완주 모드 (spec.md + state.json)
+  studio.sh         — 독립 플로우 스튜디오 (프로젝트 외부 폴더 = 자기완결 실행 단위)
   verify.sh         — 검증 레인 ([VERDICT:] 마커 계약 + 결정론 테스트)
   eval.sh           — 골든 태스크 스위트 (모델 회귀 측정)
   doctor.sh         — 엔진 진단 / explore.sh — grep-우선 코드 컨텍스트 / insights.sh — 성과 분석
   rank-system.sh, forge-review.sh, forge-board.sh, portability.sh, forge-soul.sh, domain-pack.sh, knowledge-sync.sh
-skills/         — 스킬 정의 (forge-init, forge-team, forge-review 등 — 엔진 네이티브)
+skills/         — 스킬 정의 (forge-init, forge-team, forge-review, forge-studio 등 — 엔진 네이티브)
+templates/      — 빌트인 리소스 템플릿
+  souls/flowsmith.md — 워크플로우 아키텍트 SOUL (`studio init`이 스튜디오 로컬 `.golem/souls/`로 복사)
 growth-log/     — 글로벌 성장 기록
 domain-packs/   — 프리셋 팀 번들 (fullstack, gamedev, trading, physical-ai)
 tests/          — 테스트
@@ -133,6 +136,11 @@ forge mission run {id} [soul] [verifier]  결정론 자율 루프 — execute↔
                         사이클/재시도 상한·예산 센티널·스턱 디텍터 코드 강제
 forge mission init/set-tasks/set-tasks-json/next/task/status/list/complete
                         미션 스펙·상태 관리 (set-tasks-json = Nex 분해 JSON 직결)
+forge studio init [dir] [name] [goal]  독립 플로우 스튜디오 스캐폴드 (자기완결 폴더, 멱등)
+forge studio design [dir] "{goal}"  flowsmith 소환 → 에이전트 팀 + 플로우 자동 생성
+forge studio agent-add [dir] {name} {model} {role} [rules]  스튜디오 로컬 SOUL 생성
+forge studio run [dir] [flow_id]  스튜디오 최신(또는 지정) 플로우 실행
+forge studio status [dir] / forge studio list  스튜디오 요약 / 전체 레지스트리
 forge verify {target} [soul]  검증 레인 (결정론 테스트 + [VERDICT:] 마커 심판)
 forge eval [--model m]  골든 태스크 스위트 (모델 회귀 측정) / eval list / eval report
 forge doctor            엔진 헬스체크

@@ -174,6 +174,18 @@ Flow (단계 승인 워크플로):
   flow reject <flow_id> <step_id>
                       단계 거부
 
+Studio (프로젝트 독립 플로우 스튜디오 — docs/STUDIO_PLAN.md):
+  studio init [dir] [name] [goal]
+                      독립 스튜디오 폴더 초기화 (멱등)
+  studio design [dir] "goal"
+                      AI가 에이전트 팀+플로우 생성 (flowsmith 소환)
+  studio agent-add [dir] name model role [rules]
+                      스튜디오 에이전트 추가
+  studio run [dir] [flow_id]
+                      스튜디오 플로우 실행 (기본: 최신 플로우)
+  studio status [dir] 스튜디오 요약 (souls/flows)
+  studio list          등록된 전체 스튜디오 (GOLEM_ROOT/studios.jsonl)
+
 Recovery (에러 복구):
   recover-history <soul>
                       복구 이력 조회
@@ -865,6 +877,53 @@ case "${1:-}" in
         ;;
       *)
         echo "Usage: forge flow <create|run|status|list|validate|approve|reject>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  studio)
+    _load studio.sh
+    case "${2:-}" in
+      init)
+        studio_init "${3:-}" "${4:-}" "${5:-}"
+        exit $?
+        ;;
+      design)
+        # [dir] 생략 가능 — 게이트웨이는 cwd=스튜디오 + GOLEM_PROJECT 로 goal 만 보낸다
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge studio design [dir] \"<goal>\""
+          exit 1
+        fi
+        if [ -n "${4:-}" ]; then
+          studio_design "$3" "$4"
+        else
+          studio_design "$3"
+        fi
+        exit $?
+        ;;
+      agent-add)
+        if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+          echo "Usage: forge studio agent-add [dir] <name> <model> <role> [rules]"
+          exit 1
+        fi
+        studio_agent_add "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}"
+        exit $?
+        ;;
+      run)
+        studio_run "${3:-}" "${4:-}"
+        exit $?
+        ;;
+      status)
+        studio_status "${3:-}"
+        exit $?
+        ;;
+      list)
+        studio_list
+        exit $?
+        ;;
+      *)
+        echo "Usage: forge studio <init|design|agent-add|run|status|list>"
         exit 1
         ;;
     esac

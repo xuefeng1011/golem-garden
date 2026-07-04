@@ -70,3 +70,40 @@ _json_unescape() {
 _json_scalar() {
   grep -o "\"$2\":\"[^\"]*\"" <<<"$1" | head -1 | sed "s/\"$2\":\"//;s/\"$//"
 }
+
+# JSON 배열의 top-level 원소를 한 줄에 하나씩 출력 (escape-aware, 1-depth 계약)
+# 문자열 내부의 ,·]·} 는 분리 기준이 되지 않는다 — flow-contract 의 `},{`
+# 리터럴 분할 취약점을 회피하는 문자 단위 워커.
+#
+# mission.sh 에서 승격(P3 공용화) — _mission_json_array_items 는 이 함수의
+# 얇은 back-compat 별칭으로 남아있다. 입력 문자열 어디든 첫 `[` 를 기준점으로
+# 잡으므로, `"key":[...]` 형태의 부분 문자열(뒤에 다른 키가 이어져도 무방)을
+# 그대로 넘겨도 해당 배열만 정확히 추출한다.
+# _json_array_items <stdin: JSON 텍스트(전체 또는 "key":[...] 부분 문자열)>
+_json_array_items() {
+  awk '
+  { s = s $0 }
+  END {
+    n = length(s)
+    i = index(s, "[")
+    if (i == 0) exit 1
+    depth = 0; instr = 0; buf = ""
+    for (; i <= n; i++) {
+      c = substr(s, i, 1)
+      if (instr) {
+        buf = buf c
+        if (c == "\\") { i++; buf = buf substr(s, i, 1); continue }
+        if (c == "\"") instr = 0
+        continue
+      }
+      if (c == "\"") { instr = 1; buf = buf c; continue }
+      if (c == "[" || c == "{") { depth++; if (c == "[" && depth == 1) continue }
+      if (c == "]" || c == "}") {
+        depth--
+        if (c == "]" && depth == 0) { if (buf != "") print buf; break }
+      }
+      if (c == "," && depth == 1) { if (buf != "") print buf; buf = ""; continue }
+      if (depth >= 1) buf = buf c
+    }
+  }'
+}
