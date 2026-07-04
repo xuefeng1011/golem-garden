@@ -62,6 +62,41 @@ EOF
   printf '%s' "$text"
 }
 
+# ── 라이프사이클 마커 헬퍼 ────────────────────────────────────────────────────
+# stdout 마커 계약 (웹 클라이언트가 정규식 파싱 — 형식 변경 금지):
+#   ^\[FLOW\]\[(RUN|STEP)\]\[([^\]]+)\](?:\[([^\]]+)\])?\s*(.*)$
+# step id 는 [A-Za-z0-9_-]+ (flow_validate_steps), soul 은 SOUL 파일명 슬러그 —
+# ']' 가 포함될 수 없어 브래킷 파싱이 항상 안전하다.
+
+# 마커용 미리보기 — 개행 제거 + N자 절단(C 로케일 바이트 절단 대비 UTF-8 꼬리 정리)
+_flow_marker_snip() {
+  local text="$1" len="${2:-80}"
+  text=$(printf '%s' "$text" | tr '\n\r' '  ')
+  text="${text:0:$len}"
+  _flow_utf8_sanitize "$text"
+}
+
+# ── 플로우 컨텍스트 주입 ──────────────────────────────────────────────────────
+# agent 단계 task 에 플로우 목표/현재 단계 헤더를 프리펜드 — 에이전트가 전체
+# 맥락 없이 저장 경로를 되묻는 문제 방지. GOLEM_FLOW_OUTPUT_DIR 이 설정된
+# 경우(studio_run)에만 산출물 저장 규칙 줄을 추가한다.
+# {{}} 치환이 끝난 task 에 프리펜드한다 (치환 순서 불변).
+_flow_prepend_context() {
+  local state_file="$1" step_id="$2" task="$3"
+  local json head goal
+  json=$(tr -d '\n\r' < "$state_file")
+  head="${json%%\"steps\"*}"
+  goal=$(_json_unescape "$(_json_get_string "$head" goal)")
+  local ctx="[플로우 컨텍스트]
+- 플로우 목표: ${goal}
+- 현재 단계: ${step_id}"
+  if [ -n "${GOLEM_FLOW_OUTPUT_DIR:-}" ]; then
+    ctx="${ctx}
+- 파일 산출물은 반드시 '${GOLEM_FLOW_OUTPUT_DIR}' 디렉토리 아래에 저장하라. 저장 경로를 사용자에게 묻지 마라."
+  fi
+  printf '%s\n\n---\n\n%s' "$ctx" "$task"
+}
+
 # 재시도 백오프 초 계산 (순수 함수, 테스트용) — base * 2^(attempt-1), 최대 30s.
 # 레이트리밋 시 즉시 재소환으로 토큰 낭비/한도 악화를 막는다.
 # GOLEM_FLOW_RETRY_BASE_SEC=0 이면 0 반환(백오프 비활성 — bats 고속화).
@@ -99,9 +134,11 @@ flow_step_run() {
 
   # 입력 노드 — task 값이 곧 출력(하류로 흐름). agent 소환 없음.
   if [ "$type" = "input" ]; then
+    printf '[FLOW][STEP][%s][INPUT] 시작: %s\n' "$step_id" "$(_flow_marker_snip "$task")"
     printf 'INPUT:%s\n' "$task"
     flow_set_step_output "$state_file" "$step_id" "$task"
     flow_set_step_status "$state_file" "$step_id" "done"
+    printf '[FLOW][STEP][%s] 완료\n' "$step_id"
     return 0
   fi
 
@@ -109,11 +146,18 @@ flow_step_run() {
   task=$(_flow_subst "$state_file" "$task")
 
   if [ -z "$soul" ]; then
+    printf '[FLOW][STEP][%s][HOST] 시작: %s\n' "$step_id" "$(_flow_marker_snip "$task")"
     printf 'HOST:%s\n' "$task"
     flow_set_step_output "$state_file" "$step_id" "$task"
     flow_set_step_status "$state_file" "$step_id" "done"
+    printf '[FLOW][STEP][%s] 완료\n' "$step_id"
     return 0
   fi
+
+  printf '[FLOW][STEP][%s][%s] 시작: %s\n' "$step_id" "$soul" "$(_flow_marker_snip "$task")"
+
+  # 플로우 컨텍스트 헤더 프리펜드 — {{}} 치환 완료 후 (마커 미리보기는 원래 task)
+  task=$(_flow_prepend_context "$state_file" "$step_id" "$task")
 
   local attempt=0 rc=0 _out=""
   while true; do
@@ -141,8 +185,14 @@ flow_step_run() {
 
   if [ "$rc" -eq 0 ]; then
     flow_set_step_status "$state_file" "$step_id" "done"
+    printf '[FLOW][STEP][%s] 완료\n' "$step_id"
     return 0
   fi
+
+  local _reason
+  _reason=$(_flow_marker_snip "$_out" 120)
+  [ -z "${_reason// /}" ] && _reason="agent_run rc=${rc}"
+  printf '[FLOW][STEP][%s] 실패: %s\n' "$step_id" "$_reason"
 
   flow_set_step_status "$state_file" "$step_id" "failed"
   if [ "$on_fail" = "continue" ]; then
@@ -194,6 +244,10 @@ flow_run() {
   local state_file="${FLOW_DIR}/${flow_id}/state.json"
   [ -f "$state_file" ] || { echo "[ERROR] flow_run: state.json 없음" >&2; return 1; }
 
+  local total_steps
+  total_steps=$(_fc_steps_lines < "$state_file" | grep -c '"id"')
+  printf '[FLOW][RUN][%s] 시작 (steps=%s)\n' "$flow_id" "$total_steps"
+
   # 고아 running self-heal — 이전 실행이 타임아웃/중지/크래시로 죽으면 step 이
   # running 으로 고착되고 flow_next_ready 가 이를 건너뛰어 재실행이 영구 정지한다.
   # flow_run 은 flow 당 단일 실행 주체 전제 — 진입 시점의 running 은 전부
@@ -209,9 +263,8 @@ flow_run() {
 $(_fc_steps_lines < "$state_file" | grep '"status":"running"')
 EOF
 
-  local total_steps ready_lines got_approval got_abort step_id prefix
+  local ready_lines got_approval got_abort step_id prefix
   local has_unfinished has_failed
-  total_steps=$(_fc_steps_lines < "$state_file" | grep -c '"id"')
   local max_iter=$(( total_steps * 5 )); [ "$max_iter" -lt 5 ] && max_iter=5
   local iter=0
   while [ "$iter" -lt "$max_iter" ]; do
@@ -257,6 +310,20 @@ EOF
     [ "$got_abort" -eq 1 ] && break
     [ "$got_approval" -eq 1 ] && break
   done
+
+  # 종료 마커 — 최종 플로우 status 기준. 승인 대기 등 미종결 상태는 기존
+  # '[FLOW] 승인 대기' 메시지 그대로 두고 RUN 종료 마커를 내지 않는다.
+  # rc 계약: failed → 1, completed·승인 대기(미종결) → 0. 승인 대기는 정상
+  # 흐름의 일시정지이지 실패가 아니다. studio_run/forge.sh 가 이 rc 를 전파한다.
+  local _final
+  _final=$(tr -d '\n\r' < "$state_file")
+  _final="${_final%%\"steps\"*}"
+  _final=$(printf '%s' "$_final" | grep -o '"status":"[a-z_]*"' | head -1 | sed 's/.*:"//;s/"$//')
+  case "$_final" in
+    completed) printf '[FLOW][RUN][%s] 완료\n' "$flow_id" ;;
+    failed)    printf '[FLOW][RUN][%s] 실패\n' "$flow_id"; return 1 ;;
+  esac
+  return 0
 }
 
 # ── 5. flow_status ────────────────────────────────────────────────────────────

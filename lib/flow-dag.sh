@@ -395,6 +395,25 @@ _flow_json_escape() {
     | awk '{if(NR>1) printf "\\n"; printf "%s",$0}'
 }
 
+# 캡 슬라이스 후 UTF-8 꼬리 정리 — LANG 부재(Windows 서비스/게이트웨이) 시 bash 는
+# C 로케일이라 ${var:0:N} 이 바이트 단위로 잘려 멀티바이트 문자가 중간에서 쪼개지고,
+# state.json 이 비유효 UTF-8 이 된다(게이트웨이 json.loads 실패 → "corrupt" 플로우).
+# iconv -c 로 잘린 시퀀스를 제거해 저장 텍스트가 항상 유효 UTF-8 임을 보장한다.
+# 주의(이 머신에서 확인): iconv 가 -c 로 올바른 정리 출력을 쓰면서도 비-0 종료할 수
+# 있어 rc 가 아니라 "비어있지 않은 출력"을 채택 기준으로 삼는다.
+# 잔여 리스크(수용): 입력 전체가 비유효 UTF-8 이면 iconv 출력이 비어 원본을 그대로
+# 유지한다 — 입력은 유효 텍스트의 꼬리 절단이라 전체 비유효는 실질적으로 없고,
+# 빈 출력을 채택하면 정상 출력 전체를 잃는 쪽이 더 나쁘다.
+_flow_utf8_sanitize() {
+  local text="$1"
+  if command -v iconv >/dev/null 2>&1; then
+    local _clean
+    _clean=$(printf '%s' "$text" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null) || true
+    [ -n "$_clean" ] && text="$_clean"
+  fi
+  printf '%s' "$text"
+}
+
 flow_set_step_output() {
   local state_file="$1"
   [ -f "$state_file" ] || return 1
@@ -408,8 +427,9 @@ flow_set_step_output() {
 
 _flow_set_step_output_locked() {
   local state_file="$1" step_id="$2" text="$3"
-  # 캡(이스케이프 전) 후 이스케이프
+  # 캡(이스케이프 전) → UTF-8 꼬리 정리 → 이스케이프
   text="${text:0:$_FLOW_OUTPUT_CAP}"
+  text=$(_flow_utf8_sanitize "$text")
   local esc
   esc=$(_flow_json_escape "$text")
   local json head steps_lines rebuilt="" line s_id found=0

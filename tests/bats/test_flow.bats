@@ -529,8 +529,8 @@ EOF
   export MOCK_AGENT_RC=0
   flow_step_run "$flow_id" "succ"
 
-  # flow_run 전체 실행 시 최종 상태가 failed
-  flow_run "$flow_id"
+  # flow_run 전체 실행 시 최종 상태가 failed (rc 계약상 비-0 반환 — bats errexit 가드)
+  flow_run "$flow_id" || true
 
   local json
   json=$(tr -d '\n\r' < "$state")
@@ -712,10 +712,136 @@ JSON
   local state="${FLOW_DIR}/${flow_id}/state.json"
   # in1 실행 → 출력 설정
   flow_step_run "$flow_id" in1
-  # mock agent_run: 받은 task를 출력으로
+  # mock agent_run: 받은 task를 출력으로 (task 앞에 플로우 컨텍스트 헤더가 붙는다)
   agent_run() { echo "GOT:$2"; echo "<usage> run=11111111-2222-4333-8444-555555555555"; return 0; }
   run flow_step_run "$flow_id" a1
-  [[ "$output" == *"GOT:요약: 고양이"* ]]
+  [[ "$output" == *"요약: 고양이"* ]]
+}
+
+@test "flow: set step output — LC_ALL=C 멀티바이트 캡 절단에도 UTF-8 유효" {
+  command -v iconv >/dev/null 2>&1 || skip "iconv 없음"
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t","deps":[],"type":"agent"}]
+JSON
+  run flow_create "utf8 safety" "$TEST_PROJECT/steps.json"
+  local state="${FLOW_DIR}/${output}/state.json"
+  # >5000자 한글 — C 로케일에선 4000 캡이 바이트 단위라 문자 중간을 자른다
+  local big
+  big=$(printf '가나다라마바사아자차%.0s' $(seq 1 550))
+  [ "${#big}" -gt 5000 ]
+  ( export LC_ALL=C LANG=C; flow_set_step_output "$state" s1 "$big" )
+  # 저장된 state.json 전체가 유효 UTF-8 (게이트웨이 json.loads 계약)
+  iconv -f UTF-8 -t UTF-8 < "$state" >/dev/null
+  # output 필드 비어있지 않음
+  run flow_step_output "$state" s1
+  [ -n "$output" ]
+  [[ "$output" == 가나다라마바사아자차* ]]
+}
+
+@test "flow: lifecycle 마커 — RUN/STEP 시작·완료 stdout 계약" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "marker flow" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  export MOCK_AGENT_RC=0
+  run flow_run "$flow_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[FLOW][RUN][${flow_id}] 시작 (steps=1)"* ]]
+  [[ "$output" == *"[FLOW][STEP][s1][zen] 시작: "* ]]
+  [[ "$output" == *"[FLOW][STEP][s1] 완료"* ]]
+  [[ "$output" == *"[FLOW][RUN][${flow_id}] 완료"* ]]
+}
+
+@test "flow: lifecycle 마커 — 실패 시 STEP 실패 사유 + RUN 실패" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"retry":0,"on_fail":"abort"}]
+JSON
+  run flow_create "marker fail" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  export MOCK_AGENT_RC=1
+  run flow_run "$flow_id"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[FLOW][STEP][s1][zen] 시작: "* ]]
+  [[ "$output" == *"[FLOW][STEP][s1] 실패: "* ]]
+  [[ "$output" == *"[FLOW][RUN][${flow_id}] 실패"* ]]
+  [[ "$output" != *"[FLOW][STEP][s1] 완료"* ]]
+}
+
+@test "flow: flow_run rc 계약 — failed→1, completed→0, 승인대기→0" {
+  # 1) 실패 플로우(on_fail=abort) → rc 1 + 플로우 status=failed + RUN 실패 마커
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"retry":0,"on_fail":"abort"}]
+JSON
+  run flow_create "rc failed" "$TEST_PROJECT/steps.json"
+  local fid_fail="$output"
+  export MOCK_AGENT_RC=1
+  run flow_run "$fid_fail"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[FLOW][RUN][${fid_fail}] 실패"* ]]
+  local head_status
+  head_status=$(sed 's/"steps".*//' "${FLOW_DIR}/${fid_fail}/state.json" | grep -o '"status":"[a-z]*"')
+  [ "$head_status" = '"status":"failed"' ]
+
+  # 2) 완주 플로우 → rc 0
+  export MOCK_AGENT_RC=0
+  run flow_create "rc completed" "$TEST_PROJECT/steps.json"
+  local fid_ok="$output"
+  run flow_run "$fid_ok"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[FLOW][RUN][${fid_ok}] 완료"* ]]
+
+  # 3) 승인 대기 플로우 → rc 0 (승인 대기는 일시정지이지 실패가 아님)
+  _mk_steps <<'JSON'
+[{"id":"gate","soul":"zen","task":"t","deps":[],"approval":true}]
+JSON
+  run flow_create "rc approval" "$TEST_PROJECT/steps.json"
+  local fid_gate="$output"
+  run flow_run "$fid_gate"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"승인 대기"* ]]
+  grep -q '"id":"gate"[^}]*"status":"waiting_approval"' "${FLOW_DIR}/${fid_gate}/state.json"
+}
+
+@test "flow: lifecycle 마커 — input/HOST 단계도 시작·완료 마커" {
+  _mk_steps <<'JSON'
+[{"id":"in1","soul":"","task":"입력값","deps":[],"type":"input"},
+ {"id":"h1","soul":"","task":"호스트 {{in1}}","deps":["in1"]}]
+JSON
+  run flow_create "marker host" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  run flow_run "$flow_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[FLOW][STEP][in1][INPUT] 시작: 입력값"* ]]
+  [[ "$output" == *"[FLOW][STEP][in1] 완료"* ]]
+  [[ "$output" == *"[FLOW][STEP][h1][HOST] 시작: 호스트 입력값"* ]]
+  [[ "$output" == *"[FLOW][STEP][h1] 완료"* ]]
+}
+
+@test "flow: 컨텍스트 주입 — 목표/현재 단계 + output dir 규칙(env 조건부)" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"본문 작업","deps":[],"type":"agent"}]
+JSON
+  run flow_create "컨텍스트 목표" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  # mock: 받은 task($2)를 파일로 덤프
+  agent_run() { printf '%s' "$2" > "$TEST_PROJECT/.task_dump"; echo ok; return 0; }
+
+  # env 설정 시 — 목표 + 현재 단계 + 산출물 규칙 모두 포함
+  export GOLEM_FLOW_OUTPUT_DIR="$TEST_PROJECT/out"
+  flow_step_run "$flow_id" s1
+  grep -qF '플로우 목표: 컨텍스트 목표' "$TEST_PROJECT/.task_dump"
+  grep -qF '현재 단계: s1' "$TEST_PROJECT/.task_dump"
+  grep -qF "'$TEST_PROJECT/out' 디렉토리 아래에 저장하라" "$TEST_PROJECT/.task_dump"
+  grep -qF '본문 작업' "$TEST_PROJECT/.task_dump"
+  unset GOLEM_FLOW_OUTPUT_DIR
+
+  # env 미설정 시 — 목표 줄은 있고 산출물 규칙 줄은 없음
+  run flow_create "컨텍스트 목표2" "$TEST_PROJECT/steps.json"
+  local flow_id2="$output"
+  flow_step_run "$flow_id2" s1
+  grep -qF '플로우 목표: 컨텍스트 목표2' "$TEST_PROJECT/.task_dump"
+  ! grep -qF '디렉토리 아래에 저장하라' "$TEST_PROJECT/.task_dump"
 }
 
 @test "flow: 미존재 {{id}} 는 그대로 보존" {
