@@ -7,11 +7,12 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon, NSpin } from 'naive-ui'
-import { AlertCircleOutline, FolderOpenOutline, ArrowForwardOutline } from '@vicons/ionicons5'
+import { AlertCircleOutline, FolderOpenOutline, ArrowForwardOutline, DocumentTextOutline } from '@vicons/ionicons5'
 import { fetchStudios } from '@/api/hermes/studios'
 import type { Studio } from '@/api/hermes/studios'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StudioCreateModal from '@/components/hermes/studio/StudioCreateModal.vue'
+import ArtifactsDrawer from '@/components/hermes/studio/ArtifactsDrawer.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -20,6 +21,8 @@ const studios = ref<Studio[]>([])
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 const showCreateModal = ref(false)
+const showArtifactsDrawer = ref(false)
+const artifactsProjectId = ref<string | null>(null)
 
 async function loadStudios() {
   loading.value = true
@@ -35,6 +38,11 @@ async function loadStudios() {
 
 function openStudio(studio: Studio) {
   router.push({ name: 'hermes.flowStudio.editor', params: { projectId: studio.id } })
+}
+
+function openArtifacts(studio: Studio) {
+  artifactsProjectId.value = studio.id
+  showArtifactsDrawer.value = true
 }
 
 function formatDate(iso: string): string {
@@ -84,12 +92,19 @@ onMounted(loadStudios)
       <div v-for="studio in studios" :key="studio.id" class="studio-card">
         <div class="studio-card-name">{{ studio.name }}</div>
         <div class="studio-card-path">{{ studio.path }}</div>
+        <p v-if="studio.goal" class="studio-card-goal" :title="studio.goal">{{ studio.goal }}</p>
         <div class="studio-card-footer">
           <span class="studio-card-date">{{ formatDate(studio.createdAt) }}</span>
-          <NButton size="small" @click="openStudio(studio)">
-            {{ t('flowStudio.open') }}
-            <template #icon><NIcon><ArrowForwardOutline /></NIcon></template>
-          </NButton>
+          <div class="studio-card-actions">
+            <NButton size="small" @click="openArtifacts(studio)">
+              {{ t('flowStudio.artifacts.title') }}
+              <template #icon><NIcon><DocumentTextOutline /></NIcon></template>
+            </NButton>
+            <NButton size="small" @click="openStudio(studio)">
+              {{ t('flowStudio.open') }}
+              <template #icon><NIcon><ArrowForwardOutline /></NIcon></template>
+            </NButton>
+          </div>
         </div>
       </div>
     </div>
@@ -98,6 +113,12 @@ onMounted(loadStudios)
       v-if="showCreateModal"
       @close="showCreateModal = false"
       @created="handleCreated"
+    />
+
+    <ArtifactsDrawer
+      v-if="artifactsProjectId"
+      v-model:show="showArtifactsDrawer"
+      :project-id="artifactsProjectId"
     />
   </div>
 </template>
@@ -168,15 +189,33 @@ onMounted(loadStudios)
   word-break: break-all;
 }
 
+.studio-card-goal {
+  font-size: 12px;
+  color: $text-secondary;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
 .studio-card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: 8px;
+  gap: 8px;
 }
 
 .studio-card-date {
   font-size: 11px;
   color: $text-muted;
+  flex-shrink: 0;
+}
+
+.studio-card-actions {
+  display: flex;
+  gap: 6px;
 }
 </style>

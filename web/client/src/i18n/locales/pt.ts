@@ -644,6 +644,13 @@ export default {
       newline: 'Quebras de linha nao sao permitidas',
       forbiddenChars: 'Ponto e virgula, barras verticais, comerciais, colchetes angulares, crases e sinais de dolar nao sao permitidos',
     },
+    artifacts: {
+      title: 'Artefatos',
+      back: 'Voltar a lista',
+      empty: 'Ainda nao ha artefatos',
+      binary: 'Pre-visualizacao indisponivel (binario) — {size}',
+      truncated: 'Conteudo truncado — pre-visualizacao parcial',
+    },
   },
 
   // Flow Editor — apenas as chaves novas (o resto usa o fallback em ingles)

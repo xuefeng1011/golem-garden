@@ -6,6 +6,7 @@ export interface Studio {
   path: string
   createdAt: string
   kind: 'studio'
+  goal: string
 }
 
 // 게이트웨이 원본 payload (snake_case) — missions.ts adaptMission 패턴과 동일하게
@@ -16,6 +17,7 @@ export interface RawStudio {
   path: string
   created_at: string
   kind?: string
+  goal?: string
 }
 
 export function adaptStudio(raw: RawStudio): Studio {
@@ -25,6 +27,7 @@ export function adaptStudio(raw: RawStudio): Studio {
     path: raw.path,
     createdAt: raw.created_at,
     kind: 'studio',
+    goal: raw.goal ?? '',
   }
 }
 

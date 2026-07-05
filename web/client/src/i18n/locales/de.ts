@@ -644,6 +644,13 @@ export default {
       newline: 'Zeilenumbruche sind nicht erlaubt',
       forbiddenChars: 'Semikolons, Pipes, Kaufmannsund-Zeichen und spitze Klammern sind nicht erlaubt',
     },
+    artifacts: {
+      title: 'Artefakte',
+      back: 'Zurueck zur Liste',
+      empty: 'Noch keine Artefakte',
+      binary: 'Vorschau nicht moeglich (Binaerdatei) — {size}',
+      truncated: 'Inhalt gekuerzt — nur Teilvorschau',
+    },
   },
 
   // Flow Editor — nur neu hinzugefugte Schlussel (Rest faellt auf Englisch zurueck)

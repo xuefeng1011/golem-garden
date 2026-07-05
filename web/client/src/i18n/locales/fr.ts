@@ -644,6 +644,13 @@ export default {
       newline: "Les retours a la ligne ne sont pas autorises",
       forbiddenChars: 'Les points-virgules, barres verticales, esperluettes, chevrons, apostrophes inverses et signes dollar ne sont pas autorises',
     },
+    artifacts: {
+      title: 'Artefacts',
+      back: 'Retour a la liste',
+      empty: 'Aucun artefact pour le moment',
+      binary: 'Apercu indisponible (binaire) — {size}',
+      truncated: 'Contenu tronque — apercu partiel',
+    },
   },
 
   // Flow Editor — uniquement les nouvelles cles (le reste retombe sur l'anglais)

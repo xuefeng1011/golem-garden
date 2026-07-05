@@ -690,6 +690,13 @@ export default {
       newline: '不允许换行',
       forbiddenChars: '不允许使用分号、竖线、和号、尖括号、反引号及美元符号',
     },
+    artifacts: {
+      title: '产物',
+      back: '返回列表',
+      empty: '暂无产物',
+      binary: '无法预览(二进制) — {size}',
+      truncated: '内容已截断 — 仅显示部分预览',
+    },
   },
 
   // Flow Editor — 仅新增的键(其余回退到英文)

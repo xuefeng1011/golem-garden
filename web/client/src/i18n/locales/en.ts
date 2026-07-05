@@ -1142,6 +1142,13 @@ export default {
       newline: 'Line breaks are not allowed',
       forbiddenChars: 'Semicolons, pipes, ampersands, angle brackets, backticks, and dollar signs are not allowed',
     },
+    artifacts: {
+      title: 'Artifacts',
+      back: 'Back to list',
+      empty: 'No artifacts yet',
+      binary: 'Preview unavailable (binary) — {size}',
+      truncated: 'Content truncated — showing a partial preview',
+    },
   },
 
   // Changelog

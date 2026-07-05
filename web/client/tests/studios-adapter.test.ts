@@ -8,6 +8,7 @@ function raw(overrides: Partial<RawStudio> = {}): RawStudio {
     path: 'C:/01_xuefeng/market-research',
     created_at: '2026-07-04T00:00:00',
     kind: 'studio',
+    goal: 'Research the market',
     ...overrides,
   }
 }
@@ -28,5 +29,13 @@ describe('studios adapter — gateway snake_case → UI camelCase (단일 매핑
   it('kind is always studio regardless of raw payload', () => {
     expect(adaptStudio(raw({ kind: undefined })).kind).toBe('studio')
     expect(adaptStudio(raw({ kind: 'project' })).kind).toBe('studio')
+  })
+
+  it('maps goal through unchanged', () => {
+    expect(adaptStudio(raw({ goal: 'Grow the garden' })).goal).toBe('Grow the garden')
+  })
+
+  it('defaults goal to empty string when absent (backward compat)', () => {
+    expect(adaptStudio(raw({ goal: undefined })).goal).toBe('')
   })
 })

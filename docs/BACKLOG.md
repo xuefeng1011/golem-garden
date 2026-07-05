@@ -1,34 +1,26 @@
 # BACKLOG — 다음 세션 개선 백로그
 
-> 갱신: 2026-07-05 (Flow Studio 출시 직후, main `5f382c2`)
-> 직전 완료 트랙: Flow Studio(STUDIO_PLAN.md) + 플로우 신뢰성/관측성 + 3도메인 검수 사이클(실결함 7건 수정)
-> 게이트 기준선: bats 319 / pytest 331 / vitest 301 / vue-tsc 클린
+> 갱신: 2026-07-05 2차 (P0 트랙 완료 반영)
+> 직전 완료 트랙: Flow Studio(STUDIO_PLAN.md) + 플로우 신뢰성/관측성 + 검수 사이클 + **P0 3건 완료**
+> 게이트 기준선: bats 322+ / pytest 362 / vitest 314 / vue-tsc 클린
 
-## P0 — 스튜디오 기능 완결 갭 (다음 세션 최우선)
+## P0 — 스튜디오 기능 완결 갭 → ✅ 전부 완료 (2026-07-05)
 
-### 1. UI 플로우 실행 시 output 규칙 미적용 ★
-- **증상**: 편집기의 실행 버튼은 `forge flow run`을 직접 호출한다. `GOLEM_FLOW_OUTPUT_DIR`는
-  `studio_run`(lib/studio.sh)만 수출하므로, **UI로 실행하면 에이전트에게 산출물 경로 규칙이
-  주입되지 않는다** — CLI(`forge studio run`)로 돌릴 때만 output/ 규칙이 작동.
-- **권장 해법**: 엔진 레벨 — `lib/flow.sh`의 `_flow_prepend_context`가
-  `GOLEM_FLOW_OUTPUT_DIR` 부재 시 `${GOLEM_PROJECT}/studio.json` 존재 여부를 확인하고
-  있으면 `${GOLEM_PROJECT}/output`을 자동 적용. (게이트웨이/클라이언트 무변경으로 해결됨)
-- 테스트: test_flow.bats — studio.json 있는 프로젝트에서 flow_run 직접 호출 시 규칙 주입 확인.
-
-### 2. output/ 산출물 브라우저
-- 플로우가 만든 파일을 UI에서 볼 방법이 없음.
-- 게이트웨이: `GET /v1/projects/{id}/files?dir=output` (읽기 전용, 경로 순회 방어 —
-  `_FLOW_DIR_RE` 패턴 참고) + 파일 내용 조회. 클라이언트: 스튜디오/플로우 완료 화면에 목록+뷰어.
-
-### 3. 스튜디오 목록에 goal 표시
-- gateway `Project` 모델에 goal 없음 → 목록 API가 `studio.json`을 읽어 goal 포함
-  (또는 등록 시 registry에 goal 저장). 클라이언트 카드에 표시.
+1. ~~UI 플로우 실행 시 output 규칙 미적용~~ → `_flow_prepend_context`가 studio.json 감지 시
+   `<project>/output` 자동 적용 (env 명시가 우선). 실스튜디오 라이브 확인 완료.
+2. ~~output/ 산출물 브라우저~~ → `GET /v1/projects/{id}/artifacts`(목록) + `/artifacts/content`
+   (256KiB 캡·바이너리 감지·경로 순회 방어) + ArtifactsDrawer(편집기 툴바·스튜디오 카드 양쪽).
+3. ~~스튜디오 목록 goal 표시~~ → GET /v1/studios가 studio.json goal 포함(StudioOut), 카드 2줄 클램프.
 
 ## P1 — 검수 잔여 (2026-07-05 검수 사이클 LOW, 미수정분)
 
-- **Windows GNU timeout 부재 시 agent_run 벽시계 가드 무제한** (agent-runner.sh 타임아웃 래퍼
-  — `timeout`/`gtimeout` 없으면 비활성). 대체 가드: 백그라운드 워치독 킬 or 코스트 캡 기본화.
-- 게이트웨이 500 detail이 subprocess stderr 원문 노출 — api_flows/api_studios 공통 redaction.
+- ~~**Windows GNU timeout 부재 시 agent_run 벽시계 가드 무제한**~~ → **해결 확인**:
+  9a2a905 이후 소환 경로는 timeout 바이너리와 무관하게 bash 워치독(kill -0 1s 틱 +
+  killflag + `_agent_kill_tree`, rc 124 계약)이 항상 가드한다. 이번 세션에서
+  오해 유발 "DISABLED/unbounded" 표시를 bash-watchdog 로 정정하고
+  test_agent_runner.bats 에 부재 시나리오 회귀 테스트 2건(강제 종료 계약/워치독 정리) 추가.
+- ~~게이트웨이 500 detail이 subprocess stderr 원문 노출~~ → **완료**: `redact_stderr` 공용 헬퍼
+  (마지막 줄·200자·절대경로 제거), 원문은 서버 로그에만. api_flows/api_studios 적용.
 - `v-model:show` 닫기 가드 패턴 통일 — StudioCreateModal은 수정 완료, ProfileCreateModal·
   ProviderFormModal 등 동일 패턴 잔존 (SSE 가드가 없는 모달이라 저위험이지만 통일 권장).
 - studio_run 최신 플로우 선택이 mtime 동초 tie에서 비결정 / soul frontmatter

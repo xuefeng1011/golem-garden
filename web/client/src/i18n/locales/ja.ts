@@ -644,6 +644,13 @@ export default {
       newline: '改行は使用できません',
       forbiddenChars: 'セミコロン・パイプ・アンパサンド・角かっこ・バックティック・ドル記号は使用できません',
     },
+    artifacts: {
+      title: '成果物',
+      back: '一覧に戻る',
+      empty: 'まだ成果物がありません',
+      binary: 'プレビュー不可(バイナリ) — {size}',
+      truncated: '内容が切り詰められています — 一部のみ表示',
+    },
   },
 
   // Flow Editor — 新規追加キーのみ(それ以外は英語にフォールバック)

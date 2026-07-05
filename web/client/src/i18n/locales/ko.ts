@@ -1083,6 +1083,13 @@ export default {
       newline: '줄바꿈은 사용할 수 없어요',
       forbiddenChars: '세미콜론, 파이프, 앰퍼샌드, 꺾쇠괄호, 백틱, 달러 기호는 사용할 수 없어요',
     },
+    artifacts: {
+      title: '산출물',
+      back: '목록으로',
+      empty: '아직 산출물이 없습니다',
+      binary: '미리보기 불가(바이너리) — {size}',
+      truncated: '내용이 잘려 일부만 표시됩니다',
+    },
   },
 
   // 변경 이력

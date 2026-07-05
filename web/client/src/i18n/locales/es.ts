@@ -644,6 +644,13 @@ export default {
       newline: 'No se permiten saltos de linea',
       forbiddenChars: 'No se permiten punto y coma, barras verticales, ampersands, corchetes angulares, comillas invertidas ni signos de dolar',
     },
+    artifacts: {
+      title: 'Artefactos',
+      back: 'Volver a la lista',
+      empty: 'Aun no hay artefactos',
+      binary: 'Vista previa no disponible (binario) — {size}',
+      truncated: 'Contenido truncado — vista previa parcial',
+    },
   },
 
   // Flow Editor — solo las claves nuevas (el resto usa el fallback en ingles)

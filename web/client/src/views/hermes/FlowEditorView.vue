@@ -49,6 +49,7 @@ import RunInputModal from '@/components/hermes/flow-editor/RunInputModal.vue'
 import type { RunInputField } from '@/components/hermes/flow-editor/RunInputModal.vue'
 import RunDetailDrawer from '@/components/hermes/console/RunDetailDrawer.vue'
 import StudioAgentModal from '@/components/hermes/studio/StudioAgentModal.vue'
+import ArtifactsDrawer from '@/components/hermes/studio/ArtifactsDrawer.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -63,6 +64,8 @@ const message = useMessage()
 const effectiveProjectId = computed(() => (route.params.projectId as string) ?? profilesStore.activeProfile?.id)
 const isStudioContext = computed(() => !!route.params.projectId)
 const showStudioAgentModal = ref(false)
+const showArtifactsDrawer = ref(false)
+const artifactsDrawerRef = ref<InstanceType<typeof ArtifactsDrawer> | null>(null)
 
 async function onStudioAgentCreated() {
   showStudioAgentModal.value = false
@@ -583,6 +586,8 @@ async function _doRun() {
           if (failed) message.error(t('flowEditor.runFailed'))
           else message.success(t('flowEditor.runDone'))
         }
+        // 산출물 드로어가 열려 있으면 실행 종료 직후 목록을 다시 불러온다 (P0-2).
+        if (showArtifactsDrawer.value) await artifactsDrawerRef.value?.refresh()
       },
       (err) => {
         running.value = false
@@ -591,6 +596,7 @@ async function _doRun() {
         _stopPolling()
         runPhase.value = 'failed'
         refreshFlowStatus()
+        if (showArtifactsDrawer.value) artifactsDrawerRef.value?.refresh()
         message.error(err.message)
       },
     ).abort
@@ -896,6 +902,9 @@ onBeforeRouteUpdate((to, from, next) => {
         <NButton size="small" @click="showStudioAgentModal = true">
           {{ t('flowStudio.agentModal.trigger') }}
         </NButton>
+        <NButton size="small" @click="showArtifactsDrawer = true">
+          {{ t('flowStudio.artifacts.title') }}
+        </NButton>
       </div>
 
       <!-- Canvas + form panel -->
@@ -992,6 +1001,14 @@ onBeforeRouteUpdate((to, from, next) => {
         v-model:show="showStudioAgentModal"
         :project-id="effectiveProjectId ?? ''"
         @created="onStudioAgentCreated"
+      />
+
+      <!-- 산출물 브라우저 (P0-2) -->
+      <ArtifactsDrawer
+        v-if="isStudioContext"
+        ref="artifactsDrawerRef"
+        v-model:show="showArtifactsDrawer"
+        :project-id="effectiveProjectId ?? ''"
       />
     </template>
   </div>
