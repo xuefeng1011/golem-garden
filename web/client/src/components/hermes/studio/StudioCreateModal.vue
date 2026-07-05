@@ -5,11 +5,12 @@
  * 2) 목표가 있으면 "AI 팀 생성"(forge studio design) 원클릭 옵션 제공 (ProjectInitModal SSE 패턴).
  *    목표를 건너뛰거나 design 완료 후 → 편집기로 이동.
  */
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { NModal, NForm, NFormItem, NInput, NButton, NAlert, NSpin, useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { createStudio } from '@/api/hermes/studios'
+import { createStudio, fetchStudioPresets } from '@/api/hermes/studios'
+import type { StudioPreset } from '@/api/hermes/studios'
 import { startForge, streamForgeEvents } from '@/api/hermes/forge'
 import type { ForgeCompletedEvent, ForgeFailedEvent } from '@/api/hermes/forge'
 import { validateForgeArg } from '@/utils/forge-args'
@@ -32,6 +33,29 @@ const path = ref('')
 const goal = ref('')
 const newStudioId = ref<string | null>(null)
 
+// ── 시작 방식 (① 빈 스튜디오 / ② 프리셋 / ③ AI 팀 설계) ─────────────────────
+const startMode = ref<'blank' | 'preset' | 'ai'>('blank')
+const presets = ref<StudioPreset[]>([])
+const presetsLoading = ref(false)
+const selectedPresetId = ref<string | null>(null)
+// 프리셋 목록이 비어있으면(로딩 실패/무프리셋) ②를 숨기고 ①③만 노출한다.
+const showPresetOption = computed(() => presetsLoading.value || presets.value.length > 0)
+
+watch(showPresetOption, (available) => {
+  if (!available && startMode.value === 'preset') startMode.value = 'blank'
+})
+
+onMounted(async () => {
+  presetsLoading.value = true
+  try {
+    presets.value = await fetchStudioPresets()
+  } catch {
+    presets.value = []
+  } finally {
+    presetsLoading.value = false
+  }
+})
+
 const running = ref(false)
 const output = ref<string[]>([])
 const result = ref<(ForgeCompletedEvent | ForgeFailedEvent) | null>(null)
@@ -43,6 +67,16 @@ const succeeded = computed(
   () => result.value !== null && 'exit_code' in result.value && (result.value as ForgeCompletedEvent).exit_code === 0,
 )
 const failed = computed(() => result.value !== null && !succeeded.value)
+
+const stageRunningText = computed(() =>
+  startMode.value === 'preset' ? t('flowStudio.createModal.presetRunning') : t('flowStudio.createModal.designRunning'),
+)
+const stageSuccessText = computed(() =>
+  startMode.value === 'preset' ? t('flowStudio.createModal.presetSuccess') : t('flowStudio.createModal.designSuccess'),
+)
+const stageFailedText = computed(() =>
+  startMode.value === 'preset' ? t('flowStudio.createModal.presetFailed') : t('flowStudio.createModal.designFailed'),
+)
 
 function mapCreateError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
@@ -66,7 +100,15 @@ async function handleCreate() {
     message.warning(t('flowStudio.errors.pathRequired'))
     return
   }
-  if (trimmedGoal) {
+  if (startMode.value === 'preset' && !selectedPresetId.value) {
+    message.warning(t('flowStudio.errors.presetRequired'))
+    return
+  }
+  if (startMode.value === 'ai') {
+    if (!trimmedGoal) {
+      message.warning(t('flowStudio.errors.goalRequired'))
+      return
+    }
     const err = validateForgeArg(trimmedGoal)
     if (err) {
       message.warning(t(`flowStudio.errors.${err}`))
@@ -76,11 +118,13 @@ async function handleCreate() {
 
   creating.value = true
   try {
-    const studio = await createStudio(trimmedName, trimmedPath, trimmedGoal)
+    const goalForCreate = startMode.value === 'ai' ? trimmedGoal : ''
+    const studio = await createStudio(trimmedName, trimmedPath, goalForCreate)
     newStudioId.value = studio.id
     stage.value = 'design'
     message.success(t('flowStudio.createSuccess', { name: trimmedName }))
     emit('created')
+    if (startMode.value === 'preset') runPresetApply()
   } catch (err) {
     message.error(mapCreateError(err))
   } finally {
@@ -88,15 +132,16 @@ async function handleCreate() {
   }
 }
 
-async function runDesign() {
-  if (!newStudioId.value || !goal.value.trim()) return
+// design/preset apply 공용 SSE 실행 — args 만 다르다.
+async function runStage(args: string[]) {
+  if (!newStudioId.value) return
   running.value = true
   output.value = []
   result.value = null
   designError.value = null
 
   try {
-    const { run_id } = await startForge(newStudioId.value, 'studio', ['design', goal.value.trim()])
+    const { run_id } = await startForge(newStudioId.value, 'studio', args)
     streamHandle = streamForgeEvents(
       run_id,
       (evt) => { if (evt.line !== undefined) output.value.push(evt.line) },
@@ -115,6 +160,16 @@ async function runDesign() {
     designError.value = err instanceof Error ? err.message : String(err)
     running.value = false
   }
+}
+
+function runDesign() {
+  if (!goal.value.trim()) return
+  runStage(['design', goal.value.trim()])
+}
+
+function runPresetApply() {
+  if (!selectedPresetId.value) return
+  runStage(['preset', 'apply', selectedPresetId.value])
 }
 
 function openEditor() {
@@ -165,7 +220,53 @@ onUnmounted(() => {
           @keyup.enter="handleCreate"
         />
       </NFormItem>
-      <NFormItem :label="t('flowStudio.createModal.goalLabel')">
+      <NFormItem :label="t('flowStudio.createModal.startModeLabel')">
+        <div class="mode-group">
+          <div
+            class="mode-card"
+            :class="{ active: startMode === 'blank' }"
+            @click="startMode = 'blank'"
+          >
+            <strong>{{ t('flowStudio.createModal.modeBlank') }}</strong>
+            <p>{{ t('flowStudio.createModal.modeBlankDesc') }}</p>
+          </div>
+          <div
+            v-if="showPresetOption"
+            class="mode-card"
+            :class="{ active: startMode === 'preset' }"
+            @click="startMode = 'preset'"
+          >
+            <strong>{{ t('flowStudio.createModal.modePreset') }}</strong>
+            <p>{{ t('flowStudio.createModal.modePresetDesc') }}</p>
+          </div>
+          <div
+            class="mode-card"
+            :class="{ active: startMode === 'ai' }"
+            @click="startMode = 'ai'"
+          >
+            <strong>{{ t('flowStudio.createModal.modeAi') }}</strong>
+            <p>{{ t('flowStudio.createModal.modeAiDesc') }}</p>
+          </div>
+        </div>
+      </NFormItem>
+
+      <NFormItem v-if="startMode === 'preset'" :label="t('flowStudio.createModal.modePreset')">
+        <NSpin v-if="presetsLoading" size="small" />
+        <div v-else class="preset-grid">
+          <div
+            v-for="p in presets"
+            :key="p.id"
+            class="mode-card"
+            :class="{ active: selectedPresetId === p.id }"
+            @click="selectedPresetId = p.id"
+          >
+            <strong>{{ p.name }}</strong>
+            <p>{{ p.description }}</p>
+          </div>
+        </div>
+      </NFormItem>
+
+      <NFormItem v-else-if="startMode === 'ai'" :label="t('flowStudio.createModal.goalLabel')" required>
         <NInput
           v-model:value="goal"
           type="textarea"
@@ -175,9 +276,9 @@ onUnmounted(() => {
       </NFormItem>
     </NForm>
 
-    <!-- Stage 2: design run -->
+    <!-- Stage 2: design/preset run -->
     <div v-else class="design-stage">
-      <p v-if="!goal.trim()" class="design-hint">{{ t('flowStudio.createModal.skipDesignHint') }}</p>
+      <p v-if="startMode === 'blank'" class="design-hint">{{ t('flowStudio.createModal.skipDesignHint') }}</p>
 
       <template v-else>
         <div v-if="output.length > 0 || running" class="output-panel">
@@ -185,17 +286,17 @@ onUnmounted(() => {
             <div class="output-lines">
               <div v-for="(line, i) in output" :key="i" class="output-line">{{ line }}</div>
               <div v-if="running && output.length === 0" class="output-placeholder">
-                {{ t('flowStudio.createModal.designRunning') }}
+                {{ stageRunningText }}
               </div>
             </div>
           </NSpin>
         </div>
 
         <NAlert v-if="succeeded" type="success" class="result-alert">
-          {{ t('flowStudio.createModal.designSuccess') }}
+          {{ stageSuccessText }}
         </NAlert>
         <NAlert v-else-if="failed" type="error" class="result-alert">
-          {{ t('flowStudio.createModal.designFailed') }}
+          {{ stageFailedText }}
         </NAlert>
         <NAlert v-if="designError" type="error" class="result-alert">{{ designError }}</NAlert>
       </template>
@@ -217,7 +318,7 @@ onUnmounted(() => {
             {{ t('flowStudio.createModal.skipDesign') }}
           </NButton>
           <NButton
-            v-if="goal.trim() && !running && !succeeded"
+            v-if="startMode === 'ai' && !running && !succeeded"
             type="primary"
             @click="runDesign"
           >
@@ -234,6 +335,43 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 @use '@/styles/variables' as *;
+
+.mode-group,
+.preset-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.mode-card {
+  border: 1px solid $border-light;
+  border-radius: $radius-md;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: border-color $transition-fast, background $transition-fast;
+
+  strong {
+    display: block;
+    font-size: 13px;
+    color: $text-primary;
+  }
+
+  p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: $text-muted;
+  }
+
+  &:hover {
+    border-color: $accent-primary;
+  }
+
+  &.active {
+    border-color: $accent-primary;
+    background: rgba(var(--accent-primary-rgb), 0.08);
+  }
+}
 
 .design-hint {
   font-size: 13px;

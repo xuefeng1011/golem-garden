@@ -49,6 +49,7 @@ import RunInputModal from '@/components/hermes/flow-editor/RunInputModal.vue'
 import type { RunInputField } from '@/components/hermes/flow-editor/RunInputModal.vue'
 import RunDetailDrawer from '@/components/hermes/console/RunDetailDrawer.vue'
 import StudioAgentModal from '@/components/hermes/studio/StudioAgentModal.vue'
+import StudioRedesignModal from '@/components/hermes/studio/StudioRedesignModal.vue'
 import ArtifactsDrawer from '@/components/hermes/studio/ArtifactsDrawer.vue'
 
 const { t } = useI18n()
@@ -64,6 +65,7 @@ const message = useMessage()
 const effectiveProjectId = computed(() => (route.params.projectId as string) ?? profilesStore.activeProfile?.id)
 const isStudioContext = computed(() => !!route.params.projectId)
 const showStudioAgentModal = ref(false)
+const showStudioRedesignModal = ref(false)
 const showArtifactsDrawer = ref(false)
 const artifactsDrawerRef = ref<InstanceType<typeof ArtifactsDrawer> | null>(null)
 
@@ -72,6 +74,16 @@ async function onStudioAgentCreated() {
   const pid = effectiveProjectId.value
   if (!pid) return
   souls.value = await fetchSouls(pid).catch(() => souls.value)
+}
+
+// 재설계 완료 — 새 플로우가 생성됐으므로 목록을 재조회하고 최신(=목록 맨 앞, mtime desc)
+// 플로우를 캔버스에 로드한다.
+async function onStudioRedesigned() {
+  showStudioRedesignModal.value = false
+  message.success(t('flowStudio.redesignModal.success'))
+  await reloadFlows()
+  const newest = flows.value[0]
+  if (newest) _loadFlow(newest)
 }
 
 // ── Vue Flow instance ─────────────────────────────────────────────────────────
@@ -902,6 +914,9 @@ onBeforeRouteUpdate((to, from, next) => {
         <NButton size="small" @click="showStudioAgentModal = true">
           {{ t('flowStudio.agentModal.trigger') }}
         </NButton>
+        <NButton size="small" @click="showStudioRedesignModal = true">
+          {{ t('flowStudio.redesignModal.trigger') }}
+        </NButton>
         <NButton size="small" @click="showArtifactsDrawer = true">
           {{ t('flowStudio.artifacts.title') }}
         </NButton>
@@ -1001,6 +1016,14 @@ onBeforeRouteUpdate((to, from, next) => {
         v-model:show="showStudioAgentModal"
         :project-id="effectiveProjectId ?? ''"
         @created="onStudioAgentCreated"
+      />
+
+      <!-- Studio 재설계 모달 -->
+      <StudioRedesignModal
+        v-if="isStudioContext"
+        v-model:show="showStudioRedesignModal"
+        :project-id="effectiveProjectId ?? ''"
+        @redesigned="onStudioRedesigned"
       />
 
       <!-- 산출물 브라우저 (P0-2) -->

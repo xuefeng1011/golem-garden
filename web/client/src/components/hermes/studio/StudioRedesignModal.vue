@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * StudioAgentModal — Flow Studio 컨텍스트에서 에이전트(SOUL)를 자유 생성 (R3/R9).
- * forge studio agent-add <dir> <name> <model> <role> [rules] 를 SSE로 스트리밍 실행하고,
- * 완료 시 부모가 souls 목록을 재조회하도록 'created' 를 emit 한다.
+ * StudioRedesignModal — 기존 스튜디오 팀/플로우를 피드백에 맞춰 재설계 (forge studio redesign).
+ * flowsmith 를 재소환하므로 StudioCreateModal 의 design 스테이지와 동일한 SSE 스트리밍
+ * 출력 패턴(StudioAgentModal output-panel)을 재사용한다. 완료 시 부모가 플로우 목록을
+ * 재조회하고 새로 생성된(최신) 플로우를 선택하도록 'redesigned' 를 emit 한다.
  */
-import { ref, computed } from 'vue'
-import { NModal, NForm, NFormItem, NInput, NSelect, NButton, NAlert, NSpin } from 'naive-ui'
+import { ref, computed, onUnmounted } from 'vue'
+import { NModal, NForm, NFormItem, NInput, NButton, NAlert, NSpin } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { startForge, streamForgeEvents } from '@/api/hermes/forge'
 import { validateForgeArg } from '@/utils/forge-args'
@@ -17,19 +18,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:show': [boolean]
-  created: []
+  redesigned: []
 }>()
 
 const { t } = useI18n()
 
-const NAME_RE = /^[a-z0-9-]+$/
-
-const name = ref('')
-const model = ref<'haiku' | 'sonnet' | 'opus'>('sonnet')
-const role = ref('')
-const rules = ref('')
-const rank = ref<'novice' | 'junior' | 'senior' | 'expert' | 'master'>('novice')
-const effort = ref<'' | 'low' | 'medium' | 'high'>('')
+const feedback = ref('')
 
 const running = ref(false)
 const output = ref<string[]>([])
@@ -38,47 +32,24 @@ const errorMsg = ref<string | null>(null)
 
 let streamHandle: { abort: () => void } | null = null
 
-const modelOptions = [
-  { label: 'haiku', value: 'haiku' },
-  { label: 'sonnet', value: 'sonnet' },
-  { label: 'opus', value: 'opus' },
-]
-
-const rankOptions = [
-  { label: 'novice', value: 'novice' },
-  { label: 'junior', value: 'junior' },
-  { label: 'senior', value: 'senior' },
-  { label: 'expert', value: 'expert' },
-  { label: 'master', value: 'master' },
-]
-
-const effortOptions = [
-  { label: t('flowStudio.agentModal.effortNone'), value: '' },
-  { label: 'low', value: 'low' },
-  { label: 'medium', value: 'medium' },
-  { label: 'high', value: 'high' },
-]
-
 const canSubmit = computed(() => !running.value && !succeeded.value)
 
 function validate(): boolean {
-  const trimmedName = name.value.trim()
-  if (!trimmedName || !NAME_RE.test(trimmedName)) {
-    errorMsg.value = t('flowStudio.errors.nameInvalid')
+  const trimmed = feedback.value.trim()
+  if (!trimmed) {
+    errorMsg.value = t('flowStudio.errors.feedbackRequired')
     return false
   }
-  for (const v of [role.value, rules.value]) {
-    const err = validateForgeArg(v)
-    if (err) {
-      errorMsg.value = t(`flowStudio.errors.${err}`)
-      return false
-    }
+  const err = validateForgeArg(trimmed)
+  if (err) {
+    errorMsg.value = t(`flowStudio.errors.${err}`)
+    return false
   }
   errorMsg.value = null
   return true
 }
 
-async function handleCreate() {
+async function handleRedesign() {
   if (!validate()) return
 
   running.value = true
@@ -86,15 +57,7 @@ async function handleCreate() {
   succeeded.value = false
 
   try {
-    const { run_id } = await startForge(props.projectId, 'studio', [
-      'agent-add',
-      name.value.trim(),
-      model.value,
-      role.value.trim(),
-      rules.value.trim(),
-      rank.value,
-      effort.value,
-    ])
+    const { run_id } = await startForge(props.projectId, 'studio', ['redesign', feedback.value.trim()])
 
     streamHandle = streamForgeEvents(
       run_id,
@@ -106,9 +69,9 @@ async function handleCreate() {
         streamHandle = null
         if ('exit_code' in done && done.exit_code === 0) {
           succeeded.value = true
-          emit('created')
+          emit('redesigned')
         } else {
-          errorMsg.value = t('flowStudio.errors.createFailed')
+          errorMsg.value = t('flowStudio.redesignModal.failed')
         }
       },
       (err) => {
@@ -127,24 +90,24 @@ function handleClose() {
   if (running.value) return
   streamHandle?.abort()
   streamHandle = null
-  name.value = ''
-  model.value = 'sonnet'
-  role.value = ''
-  rules.value = ''
-  rank.value = 'novice'
-  effort.value = ''
+  feedback.value = ''
   output.value = []
   succeeded.value = false
   errorMsg.value = null
   emit('update:show', false)
 }
+
+onUnmounted(() => {
+  streamHandle?.abort()
+  streamHandle = null
+})
 </script>
 
 <template>
   <NModal
     :show="show"
     preset="card"
-    :title="t('flowStudio.agentModal.title')"
+    :title="t('flowStudio.redesignModal.title')"
     :style="{ width: 'min(480px, calc(100vw - 32px))' }"
     :mask-closable="!running"
     :close-on-esc="!running"
@@ -152,28 +115,13 @@ function handleClose() {
     @mask-click="handleClose"
   >
     <NForm label-placement="top" :disabled="!canSubmit">
-      <NFormItem :label="t('flowStudio.agentModal.nameLabel')" required>
-        <NInput v-model:value="name" :placeholder="t('flowStudio.agentModal.namePlaceholder')" />
-      </NFormItem>
-      <NFormItem :label="t('flowStudio.agentModal.modelLabel')" required>
-        <NSelect v-model:value="model" :options="modelOptions" />
-      </NFormItem>
-      <NFormItem :label="t('flowStudio.agentModal.roleLabel')" required>
-        <NInput v-model:value="role" :placeholder="t('flowStudio.agentModal.rolePlaceholder')" />
-      </NFormItem>
-      <NFormItem :label="t('flowStudio.agentModal.rulesLabel')">
+      <NFormItem :label="t('flowStudio.redesignModal.feedbackLabel')" required>
         <NInput
-          v-model:value="rules"
+          v-model:value="feedback"
           type="textarea"
-          :placeholder="t('flowStudio.agentModal.rulesPlaceholder')"
-          :autosize="{ minRows: 2, maxRows: 5 }"
+          :placeholder="t('flowStudio.redesignModal.feedbackPlaceholder')"
+          :autosize="{ minRows: 3, maxRows: 6 }"
         />
-      </NFormItem>
-      <NFormItem :label="t('flowStudio.agentModal.rankLabel')" required>
-        <NSelect v-model:value="rank" :options="rankOptions" />
-      </NFormItem>
-      <NFormItem :label="t('flowStudio.agentModal.effortLabel')">
-        <NSelect v-model:value="effort" :options="effortOptions" />
       </NFormItem>
     </NForm>
 
@@ -186,7 +134,7 @@ function handleClose() {
     </div>
 
     <NAlert v-if="succeeded" type="success" class="result-alert">
-      {{ t('flowStudio.agentModal.success') }}
+      {{ t('flowStudio.redesignModal.success') }}
     </NAlert>
     <NAlert v-if="errorMsg" type="error" class="result-alert">{{ errorMsg }}</NAlert>
 
@@ -200,9 +148,9 @@ function handleClose() {
           type="primary"
           :loading="running"
           :disabled="!canSubmit"
-          @click="handleCreate"
+          @click="handleRedesign"
         >
-          {{ t('flowStudio.agentModal.create') }}
+          {{ t('flowStudio.redesignModal.redesign') }}
         </NButton>
       </div>
     </template>

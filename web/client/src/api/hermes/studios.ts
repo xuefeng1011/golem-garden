@@ -51,3 +51,14 @@ export async function deleteStudio(studioId: string): Promise<void> {
     method: 'DELETE',
   })
 }
+
+// 엔진-글로벌 팀 프리셋 (프로젝트 스코프 없음) — GET /v1/studio-presets 는 배열을 직접 반환한다.
+export interface StudioPreset {
+  id: string
+  name: string
+  description: string
+}
+
+export async function fetchStudioPresets(): Promise<StudioPreset[]> {
+  return request<StudioPreset[]>('/v1/studio-presets')
+}
