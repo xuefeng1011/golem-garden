@@ -35,6 +35,7 @@ esac
 source "${GOLEM_ROOT}/lib/soul-parser.sh"
 source "${GOLEM_ROOT}/lib/prompt-builder.sh"
 source "${GOLEM_ROOT}/lib/growth-log.sh"
+source "${GOLEM_ROOT}/lib/model-routing.sh"
 
 # 게이트웨이 CLAUDE_ARGS_BASE 미러 (config.py)
 _AGENT_CLAUDE_BASE=(--print --output-format=stream-json --verbose)
@@ -424,10 +425,18 @@ agent_run() {
     esac
   fi
 
-  # P1-1 SOUL_MAX_TURNS — 양의 정수면 advisory 주입용 카운터로 파싱.
+  # P1-1 SOUL_MAX_TURNS — 양의 정수면 advisory 주입 + 하드 집행 카운터로 파싱.
   local _ar_max_turns=0
   if printf '%s' "${SOUL_MAX_TURNS:-}" | grep -qE '^[1-9][0-9]*$'; then
     _ar_max_turns="$SOUL_MAX_TURNS"
+  fi
+  # P1-1 턴 캡 하드 집행 — SOUL_MAX_TURNS>0 이면 기본 활성.
+  # 워치독 루프가 stream-json 의 "type":"assistant" 이벤트 라인을 라이브 카운트,
+  # 캡 초과 시 _agent_kill_tree 로 중단한다 (CLI --max-turns 부재를 하네스가 대체).
+  # 킬스위치: GOLEM_TURN_CAP_ENFORCE=0. 캡 미설정(SOUL_MAX_TURNS 비어있음)이면 무캡.
+  local _ar_turn_cap_active=0
+  if [ "${GOLEM_TURN_CAP_ENFORCE:-1}" != "0" ] && [ "${_ar_max_turns:-0}" -gt 0 ] 2>/dev/null; then
+    _ar_turn_cap_active=1
   fi
 
   # (b) 시스템 프롬프트 = identity 헤더 + 정적 SOUL 컨텍스트만 (byte-stable).
@@ -447,9 +456,10 @@ ${_ar_body}"
   _ar_user_msg="$(prompt_build_task_block "$soul_name" "$task_text")"
 
   # P1-1 턴 캡 — claude CLI 가 --max-turns 를 미지원(설치본 --help 확인: --max-budget-usd
-  # 만 존재)하므로 하드 집행 불가. SOUL_MAX_TURNS 가 양의 정수면 advisory 로 유저
-  # 메시지에 주입한다(CLAUDE.md "프롬프트 가이드로 안내" 와 일치). 하드 런어웨이
-  # 가드는 별개로 bash 워치독(벽시계, 소환 지점) + AGENT_MAX_COST_USD(비용) 가 담당.
+  # 만 존재)하므로 CLI 레벨 집행 불가. SOUL_MAX_TURNS 가 양의 정수면:
+  #   ① advisory 로 유저 메시지에 주입 (아래) — 모델이 스스로 수렴하게 유도
+  #   ② 하드 집행 — 워치독이 stream 의 assistant 이벤트를 카운트, 초과 시 kill
+  #      (_ar_turn_cap_active, 소환 지점 참조. result=turn_cap 으로 기록됨)
   if [ "${_ar_max_turns:-0}" -gt 0 ] 2>/dev/null; then
     _ar_user_msg="${_ar_user_msg}
 
@@ -457,10 +467,14 @@ ${_ar_body}"
   fi
 
   # (c) 모델 매핑 + (d 일부) 도구 CSV
-  # AGENT_MODEL_OVERRIDE — SOUL frontmatter 모델을 1회성으로 교체 (P2-3 eval
-  # 모델 비교, 향후 P2-1 라우팅/모델 승급 재시도의 공통 진입점)
-  local model_arg tools_csv
-  model_arg=$(_map_model "${AGENT_MODEL_OVERRIDE:-$SOUL_MODEL}")
+  # P2-1 라우팅 — SOUL_MODEL 이 CLI 인자가 되는 유일한 심(seam).
+  # route_model: frontmatter 명시(비어있지 않고 auto 아님)는 그대로, 빈/auto 는
+  # 역할·랭크 정적 테이블로 결정 + GOLEM_MODEL_ESCALATE 재시도 승급 (lib/model-routing.sh).
+  # AGENT_MODEL_OVERRIDE — 라우팅 결과까지 1회성으로 교체하는 최우선 훅 (P2-3 eval
+  # 모델 비교 등). 우선순위: OVERRIDE > route_model > _map_model 기본값.
+  local model_arg tools_csv _ar_routed_model
+  _ar_routed_model=$(route_model "$SOUL_MODEL" "$SOUL_ROLE" "$SOUL_RANK" "$SOUL_IS_COORDINATOR")
+  model_arg=$(_map_model "${AGENT_MODEL_OVERRIDE:-$_ar_routed_model}")
   tools_csv=$(_tools_csv "$SOUL_TOOLS")
 
   # 런 식별자 + 시작 시각 (Phase A 트래젝토리 meta 용 — 세션 uuid 와 별개)
@@ -521,20 +535,15 @@ ${_ar_body}"
     argv+=(--disallowedTools "$disallowed_csv")
   fi
 
-  # [Fix A] maxTurns 시행 — `--max-turns` 플래그가 현재 설치된 claude CLI 에
-  # 존재하지 않는다 (`claude --help 2>&1 | grep -iE 'max.?turn'` → 빈 출력).
-  # 따라서 SOUL_MAX_TURNS 를 CLI 에 전달할 수 없다.
-  # CLAUDE.md "Novice SOUL은 maxTurns 제한 적용 (기본 15턴)" 는 현재 비시행 상태다.
-  # CLI 가 해당 플래그를 추가하면 아래 블록을 활성화하라:
+  # [Fix A → P1-1 해소] maxTurns 시행 — `--max-turns` 플래그는 여전히 claude CLI 에
+  # 없지만(`claude --help 2>&1 | grep -iE 'max.?turn'` → 빈 출력), 하네스가 대체
+  # 집행한다: 워치독이 stream-json assistant 이벤트를 라이브 카운트해 캡 초과 시
+  # _agent_kill_tree 로 중단 (result=turn_cap). CLI 가 플래그를 추가하면 아래로
+  # 이관 가능:
   #
   #   if printf '%s' "$SOUL_MAX_TURNS" | grep -qE '^[0-9]+$'; then
   #     argv+=(--max-turns "$SOUL_MAX_TURNS")
   #   fi
-  #
-  # DOC-CHANGE REQUIRED (다른 에이전트가 처리):
-  #   - CLAUDE.md (프로젝트): "Novice SOUL은 maxTurns 제한 적용 (기본 15턴)"
-  #     → "maxTurns는 SOUL 메타데이터에 기록되나 CLI 플래그 미지원으로 현재 비시행 (advisory only)"
-  #   - skills/README.md 또는 SKILL.md 에 동일 주장이 있을 경우 동일하게 수정.
 
   # --allowedTools: tools_csv 가 비어 있으면 전달하지 않음 → claude 기본 도구셋 상속.
   # (의도적 동작 — SOUL 에 tools: 가 없으면 제한 없이 실행됨을 허용한다.)
@@ -576,25 +585,43 @@ ${_ar_body}"
   stream_file=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/agent_run_$$_$RANDOM")
   local rc=0
   local _ar_timed_out=0
+  local _ar_turn_capped=0
   # D1 — 벽시계 가드. MSYS/Git Bash 의 `timeout` 은 네이티브 Windows claude.exe 에
   # 시그널을 전달하지 못해 무한 대기(timeout 좀비)했다 → 단계가 'running' 으로 영구
   # 멈춤. 그래서 claude 를 백그라운드로 띄우고 워치독이 데드라인 초과 시 프로세스
   # 트리를 _agent_kill_tree(taskkill//kill)로 강제 종료한다. 모든 플랫폼 공통 경로.
-  if [ "${max_secs:-0}" -gt 0 ] 2>/dev/null; then
+  # P1-1 — 같은 워치독 루프가 턴 캡도 집행한다: stream 파일의 assistant 이벤트
+  # 라인("type":"assistant")을 1초 주기로 카운트, 캡 초과 시 트리 kill.
+  # 워치독은 subshell 이라 부모 변수에 쓸 수 없으므로 벽시계 killflag 와 동일한
+  # 마커 파일 패턴(turnflag)으로 사유를 부모에 전달한다.
+  if [ "${max_secs:-0}" -gt 0 ] 2>/dev/null || [ "$_ar_turn_cap_active" -eq 1 ]; then
     local _ar_killflag="${stream_file}.killed"
-    rm -f "$_ar_killflag"
+    local _ar_turnflag="${stream_file}.turncap"
+    rm -f "$_ar_killflag" "$_ar_turnflag"
     "${_ar_soul_env[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null &
     local _ar_child=$!
     (
       _ar_w=0
-      while [ "$_ar_w" -lt "$max_secs" ]; do
+      while :; do
         kill -0 "$_ar_child" 2>/dev/null || exit 0   # 자식이 먼저 끝남 → 워치독 종료
+        # P1-1 턴 캡 — assistant 이벤트 수가 캡을 초과하면 즉시 중단
+        if [ "$_ar_turn_cap_active" -eq 1 ]; then
+          _ar_tc=$(grep -c '"type":"assistant"' "$stream_file" 2>/dev/null | tr -d ' \r')
+          if [ "${_ar_tc:-0}" -gt "$_ar_max_turns" ] 2>/dev/null; then
+            : > "$_ar_turnflag"                      # 턴 캡 표식
+            _agent_kill_tree "$_ar_child"
+            exit 0
+          fi
+        fi
+        # D1 벽시계 — max_secs>0 일 때만 (턴 캡 단독 활성 시 벽시계 무제한)
+        if [ "${max_secs:-0}" -gt 0 ] 2>/dev/null && [ "$_ar_w" -ge "$max_secs" ]; then
+          : > "$_ar_killflag"                        # 타임아웃 표식
+          _agent_kill_tree "$_ar_child"
+          exit 0
+        fi
         sleep 1
         _ar_w=$((_ar_w + 1))
       done
-      kill -0 "$_ar_child" 2>/dev/null || exit 0
-      : > "$_ar_killflag"                            # 타임아웃 표식
-      _agent_kill_tree "$_ar_child"
     ) &
     local _ar_wd=$!
     # set -e 안전 — wait 가 non-zero 면 || 로 흡수 (rc 는 위에서 0 초기화).
@@ -602,11 +629,14 @@ ${_ar_body}"
     wait "$_ar_child" 2>/dev/null || rc=$?
     kill "$_ar_wd" 2>/dev/null || true               # 자식이 먼저 끝났으면 워치독 취소
     wait "$_ar_wd" 2>/dev/null || true
-    if [ -f "$_ar_killflag" ]; then
+    if [ -f "$_ar_turnflag" ]; then
+      _ar_turn_capped=1
+      rc=125
+    elif [ -f "$_ar_killflag" ]; then
       _ar_timed_out=1
       rc=124
     fi
-    rm -f "$_ar_killflag"
+    rm -f "$_ar_killflag" "$_ar_turnflag"
   else
     echo "[agent-runner] WARNING: max_secs<=0 — claude 소환에 벽시계 가드 없음 (무한정 실행 가능)." >&2
     "${_ar_soul_env[@]}" "${argv[@]}" > "$stream_file" 2>/dev/null || rc=$?
@@ -621,6 +651,7 @@ ${_ar_body}"
   # 출력하지 않고 즉시 실패한다 (tokens 0). 이 경우 포인터를 폐기하고
   # 새 세션으로 정확히 1회 재소환한다 (라이브 스모크가 잡은 실결함).
   if [ "$_ar_attempt" -eq 1 ] && [ "$_ar_sess_mode" = "resume" ] && [ "$_ar_timed_out" -eq 0 ] \
+     && [ "$_ar_turn_capped" -eq 0 ] \
      && { [ "$rc" -ne 0 ] || [ "${_AR_IS_ERROR:-0}" -eq 1 ]; } \
      && [ "$(( ${_AR_TOKENS_IN:-0} + ${_AR_TOKENS_OUT:-0} ))" -eq 0 ]; then
     echo "[agent-runner] WARNING: --resume 소환 즉사 (sid=${session_id:0:8}) — 포인터 폐기, 새 세션으로 재시도" >&2
@@ -645,6 +676,13 @@ ${_ar_body}"
     _AR_IS_ERROR=1
   fi
 
+  # P1-1 — 턴 캡 초과 시: 사유를 명시하고 fail 계열(turn_cap) 처리.
+  # (child 는 워치독이 이미 kill — 타임아웃 경로와 동일 계약.)
+  if [ "$_ar_turn_capped" -eq 1 ]; then
+    _AR_RESULT_TEXT="[agent-runner] TURN CAP: assistant 턴 ${_ar_max_turns} 초과 — 프로세스 강제 종료"
+    _AR_IS_ERROR=1
+  fi
+
   # 결과 텍스트 출력
   printf '%s\n' "$_AR_RESULT_TEXT"
 
@@ -652,6 +690,7 @@ ${_ar_body}"
   local result="success"
   [ "$_AR_IS_ERROR" -eq 1 ] && result="fail"
   [ "$rc" -ne 0 ] && result="fail"
+  [ "$_ar_turn_capped" -eq 1 ] && result="turn_cap"   # P1-1 — 구분 기록
 
   # 세션 마커 기록 — 성공 소환 후 .claude 마커를 써서 후속 호출이 --resume 을 타게 함
   # (_agent_session_has_turns 가 읽는 파일. 지금까지 아무도 쓰지 않아 --resume 갭 존재)
@@ -700,7 +739,7 @@ ${_ar_body}"
   fi
 
   # 런 트래젝토리 영속화 (Phase A) — result/cost 확정 후 1회.
-  # meta result 는 타임아웃을 구분해 기록 (스키마: success|fail|timeout)
+  # meta result 는 중단 사유를 구분해 기록 (스키마: success|fail|timeout|turn_cap)
   local _ar_meta_result="$result"
   [ "$_ar_timed_out" -eq 1 ] && _ar_meta_result="timeout"
   _agent_persist_run "$stream_file" "$run_id" "$session_id" "$soul_name" "$model_arg" \
@@ -713,9 +752,9 @@ ${_ar_body}"
   fi
 
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} turn_cap=${_ar_turn_capped} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
 
-  [ "$result" = "fail" ] && return 1
+  [ "$result" = "success" ] || return 1
   return 0
 }
 

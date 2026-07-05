@@ -67,9 +67,9 @@
 
 | 항목 | 내용 | 대상 약점 |
 |------|------|----------|
-| P1-1 | **턴 캡 집행**: stream-json의 assistant 메시지 수를 라이브 카운트, `SOUL_MAX_TURNS` 초과 시 프로세스 kill + `result=turn_cap` 기록. CLI `--max-turns` 부재를 하네스가 대체. (현재 상태: advisory 프롬프트 주입만 — 하드 런어웨이는 벽시계 타임아웃+비용캡이 담당) | W4 |
+| ✅ P1-1 | **턴 캡 집행 (완료 2026-07-05)**: 벽시계 워치독 루프가 stream-json `"type":"assistant"` 이벤트를 1초 주기 라이브 카운트, `SOUL_MAX_TURNS` 초과 시 `_agent_kill_tree` 로 중단 + `result=turn_cap`(growth-log·meta) + usage `turn_cap=1` + rc≠0. 킬스위치 `GOLEM_TURN_CAP_ENFORCE=0`, 캡 미설정이면 무캡. advisory 프롬프트 주입은 유지(이중 가드). bats 3건 | W4 |
 | ✅ P1-2 | **Director 분해 계약 (완료 2026-07-03, 6a2b721)**: `forge mission set-tasks-json` — Nex 출력 JSON 배열(`[{"task":"..."}]` 또는 `["..."]`)을 escape-aware 문자 단위 워커로 파싱해 tasks 에 직결. 파이프·이스케이프 따옴표·리터럴 `},{` 포함 태스크 안전. forge-mission SKILL 이 이 경로를 표준으로 사용 | W2 |
-| P1-3 | **루브릭 검증**: verify Stage 2를 "총평 PASS/FAIL" → "체크리스트 N항목 각각 `[ITEM-k: OK\|NG reason]`" 채점으로 전환. 약한 모델도 항목별 채점은 안정적. 종합 판정은 스크립트가 집계 | W1 |
+| ✅ P1-3 | **루브릭 검증 (완료 2026-07-05)**: verify Stage 2를 "총평 PASS/FAIL" → "체크리스트 2~6항목 각각 `[ITEM-k: OK\|NG 사유]`" 채점으로 전환. 약한 모델도 항목별 채점은 안정적. 종합 판정은 스크립트(`_verify_aggregate_items`)가 집계 — NG 1건이라도 있으면 FAIL, 사유는 결합해 판정 블록에 노출(mission-loop `last_failure` 배선 유지). 항목 0건이면 레거시 `[VERDICT:]` 마커 + 재질의 폴백(재질의 응답의 항목 채점도 수용). `GOLEM_VERIFY_RUBRIC=0` 킬스위치로 구 총평 프롬프트 복귀 | W1 |
 | P1-4 | **메모리 주입 예산**: memory+knowledge 블록 합산 상한(예: 1,200자), 초과 시 최신·고태그빈도 우선 절삭. 주입 여부를 growth-log에 `memory_injected: true` 플래그로 기록 | W7 |
 | P1-5 | **재질의 루프 공통화**: `_agent_retry_structured()` 헬퍼 — 구조화 출력 파싱 실패 시 동일 세션 `--resume`으로 "형식만 다시" 1회 요청. 모든 계약 소비처가 공유 | W1, W2, W8 |
 
@@ -77,7 +77,7 @@
 
 | 항목 | 내용 | 대상 |
 |------|------|------|
-| P2-1 | **역할 기반 모델 라우팅 정책**: 판단직(director/verifier/sage) → 상위 모델, 실행직(executor류) → 중위, 정형 태스크(문서/로그/리네임) → haiku. SOUL frontmatter 정적 지정은 오버라이드로 유지. (정정: 현재 `effort:` 는 **타임아웃 초 결정에만** 소비됨 — low=180/medium=300/high=600. "effort→모델 승급" 라우팅 테이블은 미착수, `AGENT_MODEL_OVERRIDE` 훅만 존재) | W9 |
+| ✅ P2-1 | **역할 기반 모델 라우팅 정책 (완료 2026-07-05)**: `lib/model-routing.sh` `route_model` — frontmatter 명시(비어있지 않고 auto 아님)는 그대로, 빈/auto 는 정적 테이블(coordinator·판단직 role→opus / expert·master→sonnet / novice·junior 정형직→haiku / 기본 sonnet). 재시도 승급 훅 `GOLEM_MODEL_ESCALATE=1`+`AGENT_RETRY_ATTEMPT>=2` → 1티어 승급(haiku→sonnet→opus). agent_run 의 model_arg 심에 배선, `AGENT_MODEL_OVERRIDE` 최우선 유지. bats 19건 | W9 |
 | ✅ P2-2 | **캐시 관측·최적화 (완료 2026-06-13, 75dc905·4d62268 + resume 커밋)**: ① cache_read/cache_creation 분리 기록(usage·meta·`/console` cache_hit_rate) ② 프롬프트를 정적(byte-stable 시스템)/휘발(유저 메시지)로 분리 — 태스크 이중 전송 제거 ③ **per-SOUL `--resume` 캐시 레버**: 같은 SOUL 연속 소환을 같은 claude 세션으로 이어 윈도(`GOLEM_RESUME_WINDOW_SEC`=300, 캐시 TTL) 내 cache_read 재사용. recency+턴캡(`GOLEM_RESUME_MAX_TURNS`=8) 게이트, `GOLEM_RESUME_DISABLE=1` 옵트아웃. **실측: resume 런 cache_creation 18,173→367 (98%↓)** — 정적 프롬프트가 재생성 대신 캐시 히트. forge가 넘기던 비-UUID sess_*로 인해 사문화돼 있던 `--resume` 인프라를 살림 | 비용 |
 | P2-3 | **골든 태스크 스위트 (모델 이식성 벤치)**: `tests/golden/` 에 대표 태스크 5~10개(버그수정·함수추가·문서·리뷰판정) + 결정론 채점기(테스트 통과/마커 정확도). `forge bench <model>` 로 모델별 실행 → 동일 하네스에서 모델 교체 시 성능 회귀를 수치로 확인. **"Fable 없이 같은 성능" 의 검증 장치** | 이식성 |
 | P2-4 | **forge build 멀티-SOUL e2e 라이브 검증**: 남은 최대 검증 공백. mission 자율 모드 풀런 포함 | 검증 |

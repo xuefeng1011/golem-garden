@@ -497,7 +497,7 @@ FAKE
   # GNU timeout(rc 124) 경로와 동일 계약: agent_run rc=1(fail), TIMEOUT 텍스트, usage timeout=1
   [ "$rc" -eq 1 ]
   grep -q "TIMEOUT after 1s" "$TEST_PROJECT/run.out"
-  grep -q "timeout=1 max_seconds=1" "$TEST_PROJECT/run.out"
+  grep -q "timeout=1 turn_cap=0 max_seconds=1" "$TEST_PROJECT/run.out"
   # 60초 sleep 을 기다리지 않고 반환 — 무제한 아님 증명.
   # (킬 자체는 데드라인 ~1s 에 발생하나, agent_run 의 고정 오버헤드[프롬프트 조립/
   #  growth-log/persist 등 fork 비용]가 Windows 에서 ~12s 라 여유 있는 상한을 쓴다)
@@ -529,9 +529,140 @@ FAKE
   [ "$rc" -eq 0 ]
   grep -q "FAST-OK" "$TEST_PROJECT/run.out"
   grep -q "result=success" "$TEST_PROJECT/run.out"
-  grep -q "timeout=0 max_seconds=30" "$TEST_PROJECT/run.out"
+  grep -q "timeout=0 turn_cap=0 max_seconds=30" "$TEST_PROJECT/run.out"
   # 데드라인이 30초 남았어도 부모가 워치독을 kill+reap — 잔존 잡 없음
   [ -z "$(jobs -rp)" ]
+}
+
+# ─────────────────────────────────────────────────────────
+# P1-1 턴 캡 하드 집행 — stream assistant 이벤트 라이브 카운트 → 캡 초과 시 kill
+# ─────────────────────────────────────────────────────────
+
+# maxTurns: 3 인 테스트 SOUL 을 프로젝트 오버라이드 경로에 생성
+_make_capped_soul() {
+  mkdir -p "$TEST_PROJECT/.golem/souls"
+  cat > "$TEST_PROJECT/.golem/souls/capy.md" <<'SOUL'
+---
+name: Capy
+role: qa-tester
+rank: novice
+specialty: [turn-cap-testing]
+model: haiku
+tools: [Read]
+maxTurns: 3
+isolation: none
+created: 2026-07-05
+---
+
+## 프로젝트 컨텍스트 (프롬프트에 주입됨)
+- 역할: qa-tester
+SOUL
+}
+
+# fake claude: assistant 이벤트를 1초 간격으로 40개 방출 (킬 개입 여유 확보).
+# fd3 닫기: bats 백그라운드 잔존 프로세스 대기 차단 (기존 워치독 테스트와 동일).
+_setup_chatty_claude() {
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<FAKE
+#!/usr/bin/env bash
+exec 3>&-
+echo \$\$ > "$TEST_PROJECT/.claude_pid"
+i=0
+while [ \$i -lt 40 ]; do
+  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"turn"}]}}'
+  sleep 1
+  i=\$((i+1))
+done
+echo '{"type":"result","is_error":false,"duration_ms":100,"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+# fake claude: assistant 이벤트 5개를 즉시 방출 후 정상 종료 (캡 비활성 검증용)
+_setup_fast_chatty_claude() {
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+for i in 1 2 3 4 5; do
+  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"turn"}]}}'
+done
+echo '{"type":"result","is_error":false,"duration_ms":100,"result":"DONE","usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+@test "turn-cap: maxTurns 초과 → 중도 kill + rc≠0 + turn_cap=1 + growth-log result=turn_cap" {
+  _make_capped_soul
+  _source_agent_runner
+  _setup_chatty_claude
+
+  local start elapsed rc=0
+  start=$(date +%s)
+  AGENT_MAX_SECONDS=120 agent_run capy "턴캡 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+  elapsed=$(( $(date +%s) - start ))
+
+  # 실패 계약: agent_run rc=1, TURN CAP 사유 텍스트, usage 마커
+  [ "$rc" -eq 1 ]
+  grep -q "TURN CAP" "$TEST_PROJECT/run.out"
+  grep -q "result=turn_cap" "$TEST_PROJECT/run.out"
+  grep -q "turn_cap=1" "$TEST_PROJECT/run.out"
+  grep -q "max_turns=3" "$TEST_PROJECT/run.out"
+  # 40초 방출을 기다리지 않고 반환 (캡 kill 은 ~4s + agent_run 고정 오버헤드 여유)
+  [ "$elapsed" -le 30 ]
+  # fake claude 프로세스가 실제로 죽었는지 (워치독 → _agent_kill_tree 효과)
+  local cpid
+  cpid=$(cat "$TEST_PROJECT/.claude_pid")
+  ! kill -0 "$cpid" 2>/dev/null
+  # growth-log 에 result=turn_cap 기록
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "turn_cap"
+  # 워치독 잔존 없음
+  [ -z "$(jobs -rp)" ]
+}
+
+@test "turn-cap: GOLEM_TURN_CAP_ENFORCE=0 → 캡 비활성, 초과해도 정상 완주" {
+  _make_capped_soul
+  _source_agent_runner
+  _setup_fast_chatty_claude
+
+  local rc=0
+  GOLEM_TURN_CAP_ENFORCE=0 agent_run capy "캡 해제 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+
+  [ "$rc" -eq 0 ]
+  grep -q "result=success" "$TEST_PROJECT/run.out"
+  grep -q "turn_cap=0" "$TEST_PROJECT/run.out"
+}
+
+@test "turn-cap: SOUL_MAX_TURNS 미설정(rank 기본값도 없음) → 무캡, 정상 완주" {
+  # rank 가 기본 테이블(novice~master)에 없으면 soul-parser 가 SOUL_MAX_TURNS 를
+  # 비워 둠 → _ar_max_turns=0 → 캡 비활성 (기본 캡을 발명하지 않는다)
+  mkdir -p "$TEST_PROJECT/.golem/souls"
+  cat > "$TEST_PROJECT/.golem/souls/unc.md" <<'SOUL'
+---
+name: Unc
+role: qa-tester
+rank: freeform
+specialty: [uncapped-testing]
+model: haiku
+tools: [Read]
+isolation: none
+created: 2026-07-05
+---
+
+## 프로젝트 컨텍스트 (프롬프트에 주입됨)
+- 역할: qa-tester
+SOUL
+  _source_agent_runner
+  _setup_fast_chatty_claude
+
+  local rc=0
+  agent_run unc "무캡 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+
+  [ "$rc" -eq 0 ]
+  grep -q "result=success" "$TEST_PROJECT/run.out"
+  # model haiku → effort low → max_seconds=180 (기존 effort 테이블)
+  grep -q "turn_cap=0 max_seconds=180 max_turns=0" "$TEST_PROJECT/run.out"
 }
 
 @test "agent-runner: fresh 소환 실패는 폴백 재시도 없음 (1회만)" {

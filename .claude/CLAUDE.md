@@ -45,7 +45,10 @@ Agent 호출 전에 이 메시지를 출력해야 한다. 생략 금지.
 - 모든 `forge.sh` 호출 시 반드시 `GOLEM_PROJECT="$(pwd)"` 환경변수를 전달하라
 - `.golem/souls/` 오버라이드가 `souls/` 글로벌보다 우선 적용됨
 - SOUL 소환 시 `tools` frontmatter를 OMC agent `allowed_tools`로 전달
-- Novice SOUL은 `maxTurns`를 프롬프트 가이드로 안내 (claude CLI에 턴 제한 플래그 부재 — 강제 아님, 기본 15턴 권고)
+- SOUL `maxTurns`는 하네스가 코드로 강제한다 — 스트림의 assistant 메시지 수를 라이브 카운트,
+  초과 시 프로세스 트리 kill + growth-log `result=turn_cap` (P1-1, GOLEM_TURN_CAP_ENFORCE=0 로 해제)
+- 모델 라우팅(P2-1): frontmatter `model:` 명시가 항상 우선. 미지정/`auto`면 lib/model-routing.sh
+  정적 테이블(판단직→opus, expert/master→sonnet, 정형 novice→haiku, 기본 sonnet)이 결정
 - Director(Nex)는 코드를 직접 작성하지 않음 — 반드시 SOUL에 위임
 - Novice/Junior SOUL은 병렬 쓰기 금지 — 파일 충돌 위험
 </golem_rules>
