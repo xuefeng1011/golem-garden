@@ -179,8 +179,15 @@ Studio (프로젝트 독립 플로우 스튜디오 — docs/STUDIO_PLAN.md):
                       독립 스튜디오 폴더 초기화 (멱등)
   studio design [dir] "goal"
                       AI가 에이전트 팀+플로우 생성 (flowsmith 소환)
-  studio agent-add [dir] name model role [rules]
+  studio redesign [dir] "피드백"
+                      기존 팀/플로우 컨텍스트로 flowsmith 재설계
+                      (기존 SOUL 유지 + 신규 추가, 항상 새 플로우 생성)
+  studio preset list  빌트인 팀 프리셋 목록 (novel-team, market-research 등)
+  studio preset apply [dir] preset_id
+                      프리셋 팀+플로우 원클릭 적용
+  studio agent-add [dir] name model role [rules] [rank] [effort]
                       스튜디오 에이전트 추가
+                      (rank: novice|junior|senior|expert|master, effort: low|medium|high)
   studio run [dir] [flow_id]
                       스튜디오 플로우 실행 (기본: 최신 플로우)
   studio status [dir] 스튜디오 요약 (souls/flows)
@@ -904,11 +911,48 @@ case "${1:-}" in
         ;;
       agent-add)
         if [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
-          echo "Usage: forge studio agent-add [dir] <name> <model> <role> [rules]"
+          echo "Usage: forge studio agent-add [dir] <name> <model> <role> [rules] [rank] [effort]"
           exit 1
         fi
-        studio_agent_add "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}"
+        studio_agent_add "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}"
         exit $?
+        ;;
+      redesign)
+        # [dir] 생략 가능 — 단일 인자는 피드백 (design 과 동일 규약)
+        if [ -z "${3:-}" ]; then
+          echo "Usage: forge studio redesign [dir] \"<피드백>\""
+          exit 1
+        fi
+        if [ -n "${4:-}" ]; then
+          studio_redesign "$3" "$4"
+        else
+          studio_redesign "$3"
+        fi
+        exit $?
+        ;;
+      preset)
+        case "${3:-}" in
+          list)
+            studio_preset_list
+            exit $?
+            ;;
+          apply)
+            if [ -z "${4:-}" ]; then
+              echo "Usage: forge studio preset apply [dir] <preset_id>"
+              exit 1
+            fi
+            if [ -n "${5:-}" ]; then
+              studio_preset_apply "$4" "$5"
+            else
+              studio_preset_apply "$4"
+            fi
+            exit $?
+            ;;
+          *)
+            echo "Usage: forge studio preset <list|apply>"
+            exit 1
+            ;;
+        esac
         ;;
       run)
         studio_run "${3:-}" "${4:-}"
@@ -923,7 +967,7 @@ case "${1:-}" in
         exit $?
         ;;
       *)
-        echo "Usage: forge studio <init|design|agent-add|run|status|list>"
+        echo "Usage: forge studio <init|design|redesign|preset|agent-add|run|status|list>"
         exit 1
         ;;
     esac

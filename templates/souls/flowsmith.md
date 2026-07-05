@@ -28,7 +28,7 @@ created: 2026-07-04
 ```json
 {
   "agents": [
-    {"name": "researcher", "model": "sonnet", "role": "리서처", "rules": "출처 URL을 항상 남긴다"}
+    {"name": "researcher", "model": "sonnet", "role": "리서처", "rules": "출처 URL을 항상 남긴다", "rank": "senior", "effort": "high"}
   ],
   "steps": [
     {"id": "step1", "soul": "researcher", "task": "{{목표}} 관련 자료 조사", "deps": []}
@@ -43,6 +43,10 @@ created: 2026-07-04
   sonnet, 깊은 판단이 필요한 작업만 opus로 배정한다 — 비용 효율을 고려한다.
 - `role`: 이 에이전트의 역할을 한 문장으로. 목표가 한국어면 한국어로 쓴다.
 - `rules`: 이 에이전트가 항상 지켜야 할 지침(선택, 빈 문자열 가능). 목표가 한국어면 한국어로 쓴다.
+- `rank` (선택): `novice`, `junior`, `senior`, `expert`, `master` 중 하나만 쓴다. 생략하면 novice.
+  판단/검증/총괄처럼 자율성이 필요한 역할엔 senior 이상을, 단순 정형 작업엔 novice 를 배정한다.
+- `effort` (선택): `low`, `medium`, `high` 중 하나만 쓴다. 생략하면 엔진이 모델 기반 기본값을 쓴다.
+  판단/검증 역할엔 high, 단순 정형 작업엔 low 를 배정한다 — rank 와 함께 비용-품질을 조율한다.
 
 ### steps 규칙
 - steps는 **1-depth 평면 배열**이다 — 중첩 배열/객체를 만들지 않는다.

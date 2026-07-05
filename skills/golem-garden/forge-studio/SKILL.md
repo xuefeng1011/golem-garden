@@ -80,6 +80,23 @@ bash ~/.claude/golem-garden/forge.sh studio init "{dir}" "{name}" "{goal}"
 
 ---
 
+### Phase 2.5: 프리셋으로 시작 (선택) — `studio preset`
+
+목표가 빌트인 프리셋(소설 창작, 시장조사 등)과 맞으면 flowsmith 설계 대신
+검증된 팀으로 바로 시작할 수 있다 — **프리셋으로 시작 → design/redesign 으로 다듬기**:
+
+```bash
+bash ~/.claude/golem-garden/forge.sh studio preset list                       # 프리셋 목록
+bash ~/.claude/golem-garden/forge.sh studio preset apply "{dir}" {preset_id}  # 원클릭 적용
+```
+
+- 빌트인: `novel-team`(소설팀 4인, 세계관→플롯→초고→검수∥교정→최종 6단계),
+  `market-research`(시장조사팀 3인, 조사→분석→보고서).
+- 미초기화 폴더면 자동으로 init 된다. 적용 후 팀이 목표와 어긋나면 Phase 3(design 전면 재설계)
+  또는 Phase 3.6(redesign 피드백 반영)으로 다듬는다.
+
+---
+
 ## Phase 3: 팀 설계 — `studio design`
 
 ```bash
@@ -114,13 +131,28 @@ bash ~/.claude/golem-garden/forge.sh studio design "{dir}" "{goal}"
 중간에 에이전트를 추가하고 싶다는 요청이 오면(R9), design을 다시 돌리지 않고 개별 추가한다:
 
 ```bash
-bash ~/.claude/golem-garden/forge.sh studio agent-add "{dir}" "{name}" "{model}" "{role}" "{rules}"
+bash ~/.claude/golem-garden/forge.sh studio agent-add "{dir}" "{name}" "{model}" "{role}" "{rules}" "{rank}" "{effort}"
 ```
 
 - `{rules}`는 선택 — 이 에이전트가 지켜야 할 추가 지침(자유 텍스트).
+- `{rank}`는 선택 — `novice|junior|senior|expert|master` (기본 novice). 판단/검증 역할엔 senior 이상.
+- `{effort}`는 선택 — `low|medium|high` (지정 시에만 frontmatter 에 기록). 판단/검증엔 high, 단순 정형엔 low.
 - 추가 후 다시 요약 보고(위 형식)로 사용자에게 확인시킨다.
 - 이 명령이 스튜디오 로컬 SOUL 파일을 생성하는 유일한 정식 경로다. Edit/Write로 직접
   `.golem/souls/*.md`를 만들지 않는다.
+
+### Phase 3.6: 재설계 (선택) — `studio redesign`
+
+팀 구성/플로우에 대한 사용자 피드백이 오면 design 을 처음부터 다시 돌리지 않고 재설계한다:
+
+```bash
+bash ~/.claude/golem-garden/forge.sh studio redesign "{dir}" "{피드백}"
+```
+
+- flowsmith 가 현재 목표 + 팀 로스터 + 최신 플로우 단계 요약을 컨텍스트로 받아 재설계한다.
+- **기존 에이전트는 보존(유지)되고 새 에이전트만 추가된다.** 플로우는 항상 새로 생성되며
+  기존 플로우 state 는 불변이다 — 이전 플로우로 돌아가려면 `studio run "{dir}" {이전 flow_id}`.
+- 완료 시 유지/신규 에이전트 목록과 새 flow_id 를 사용자에게 보고한다.
 
 ---
 
@@ -154,8 +186,11 @@ bash ~/.claude/golem-garden/forge.sh studio run "{dir}" [flow_id]
 ## 보조 명령
 
 ```bash
-bash ~/.claude/golem-garden/forge.sh studio status "{dir}"   # souls/flows 요약
-bash ~/.claude/golem-garden/forge.sh studio list             # 등록된 전체 스튜디오 (GOLEM_ROOT/studios.jsonl)
+bash ~/.claude/golem-garden/forge.sh studio status "{dir}"              # souls/flows 요약
+bash ~/.claude/golem-garden/forge.sh studio list                        # 등록된 전체 스튜디오 (GOLEM_ROOT/studios.jsonl)
+bash ~/.claude/golem-garden/forge.sh studio preset list                 # 빌트인 팀 프리셋 목록
+bash ~/.claude/golem-garden/forge.sh studio preset apply "{dir}" {id}   # 프리셋 팀+플로우 원클릭 적용
+bash ~/.claude/golem-garden/forge.sh studio redesign "{dir}" "{피드백}"  # 기존 팀 유지 + 재설계 (새 플로우)
 ```
 
 ## 명시적 금지 사항 (재확인)

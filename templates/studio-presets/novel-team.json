@@ -1,0 +1,19 @@
+{
+  "id":"novel-team",
+  "name":"소설팀",
+  "description":"세계관 설계부터 초고, 검수·교정, 최종본까지 완주하는 4인 소설 창작 팀",
+  "agents":[
+    {"name":"concept-architect","model":"opus","role":"세계관·플롯 설계자 — 이야기의 뼈대와 규칙을 세운다","rules":"세계관의 규칙(마법·기술·사회 구조)은 한 번 정하면 바꾸지 않는다. 플롯은 발단-전개-위기-절정-결말 5막 구조로 정리하고, 각 막의 전환 계기를 명시한다.","rank":"senior","effort":"high"},
+    {"name":"writer","model":"sonnet","role":"소설가 — 플롯을 장면과 문장으로 살려내는 집필 담당","rules":"보여주기(묘사·행동·대사)를 말하기(설명)보다 우선한다. 인물의 목소리를 일관되게 유지하고, 플롯 설계서에 없는 설정을 임의로 추가하지 않는다.","rank":"senior","effort":"high"},
+    {"name":"consistency-checker","model":"sonnet","role":"설정 검수자 — 세계관·인물·시간선의 모순을 잡아낸다","rules":"지적은 반드시 근거(설정서·본문 해당 위치)와 함께 목록으로 남긴다. 문체 취향은 지적하지 않는다 — 오직 사실·설정·시간선 모순만 본다.","rank":"senior","effort":"high"},
+    {"name":"editor","model":"haiku","role":"교정가 — 맞춤법·문장 호흡·중복 표현을 다듬는다","rules":"의미를 바꾸는 수정은 하지 않는다. 맞춤법·띄어쓰기·조사 오류, 어색한 번역투, 같은 문단 내 중복 어휘만 고치고 수정 목록을 남긴다.","rank":"novice","effort":"low"}
+  ],
+  "steps":[
+    {"id":"worldbuilding","soul":"concept-architect","task":"스튜디오 목표에 맞는 소설의 세계관 설계서를 작성하라. 배경 시대·공간, 세계의 규칙, 주요 세력, 분위기·톤을 항목별로 정리하고 output 폴더에 저장하라.","deps":[]},
+    {"id":"plot","soul":"concept-architect","task":"{{worldbuilding}} 세계관을 바탕으로 5막 구조의 플롯 설계서를 작성하라. 주인공·조연의 목표와 갈등, 각 막의 핵심 사건과 전환 계기, 결말을 명시하고 output 폴더에 저장하라.","deps":["worldbuilding"]},
+    {"id":"draft","soul":"writer","task":"{{plot}} 플롯 설계서를 따라 소설 초고를 집필하라. 장면 단위로 나누어 쓰고, 인물의 대사와 묘사로 이야기를 전개하며 output 폴더에 저장하라.","deps":["plot"]},
+    {"id":"consistency","soul":"consistency-checker","task":"{{draft}} 초고를 세계관·플롯 설계서와 대조해 설정 모순, 인물 행동의 비일관성, 시간선 오류를 근거와 함께 목록으로 정리하라.","deps":["draft"]},
+    {"id":"proofread","soul":"editor","task":"{{draft}} 초고의 맞춤법·띄어쓰기·문장 호흡·중복 표현을 교정하고, 수정한 항목 목록을 정리하라. 의미를 바꾸는 수정은 금지한다.","deps":["draft"]},
+    {"id":"final","soul":"writer","task":"검수 결과 {{consistency}} 와 교정 결과 {{proofread}} 를 모두 반영해 소설 최종본을 완성하고 output 폴더에 저장하라. 반영한 지적 사항을 요약해 함께 남겨라.","deps":["consistency","proofread"]}
+  ]
+}

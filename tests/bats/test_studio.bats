@@ -13,6 +13,12 @@ load "test_helper"
 
 _DESIGN_JSON='{"agents":[{"name":"researcher","model":"sonnet","role":"리서처","rules":"근거 남기기"},{"name":"writer","model":"haiku","role":"작성자","rules":""}],"steps":[{"id":"s1","soul":"researcher","task":"자료 조사","deps":[]},{"id":"s2","soul":"writer","task":"{{s1}} 기반 정리","deps":["s1"]}]}'
 
+# rank/effort 포함 설계 (P3-4) — writer 는 rank 만 지정(effort 생략 → 라인 미기록)
+_DESIGN_JSON_RANKED='{"agents":[{"name":"researcher","model":"sonnet","role":"리서처","rules":"","rank":"senior","effort":"high"},{"name":"writer","model":"haiku","role":"작성자","rules":"","rank":"novice"}],"steps":[{"id":"s1","soul":"researcher","task":"자료 조사","deps":[]},{"id":"s2","soul":"writer","task":"{{s1}} 기반 정리","deps":["s1"]}]}'
+
+# 재설계 (P3-3) — researcher(기존 유지) + editor(신규)
+_REDESIGN_JSON='{"agents":[{"name":"researcher","model":"sonnet","role":"리서처","rules":""},{"name":"editor","model":"haiku","role":"편집자","rules":"","rank":"junior","effort":"low"}],"steps":[{"id":"r1","soul":"researcher","task":"보강 조사","deps":[]},{"id":"r2","soul":"editor","task":"{{r1}} 편집","deps":["r1"]}]}'
+
 setup() {
   TEST_PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/studio-test.XXXXXX")"
   export GOLEM_ROOT
@@ -416,4 +422,196 @@ teardown() {
   [ "$before" -eq "$after" ]
   [ ! -f "$GOLEM_PROJECT/.golem/souls/researcher.md" ]
   [ -f "$dir/.golem/souls/researcher.md" ]
+}
+
+# ─────────────────────────────────────────────────────────
+# 10. P3-4 — agent-add rank/effort 확장
+# ─────────────────────────────────────────────────────────
+
+@test "studio: agent-add — rank/effort 지정 시 frontmatter 반영 (isolation 은 none 고정)" {
+  local dir="$TEST_PROJECT/studio-agent-rank"
+  run studio_agent_add "$dir" ranked sonnet "검증가" "근거 필수" senior high
+  [ "$status" -eq 0 ]
+
+  local soul="$dir/.golem/souls/ranked.md"
+  grep -q '^rank: senior$' "$soul"
+  grep -q '^effort: high$' "$soul"
+  grep -q '^isolation: none$' "$soul"
+
+  # rank/effort 생략 시 — rank 기본 novice + effort 라인 미기록
+  run studio_agent_add "$dir" plain sonnet "역할"
+  [ "$status" -eq 0 ]
+  grep -q '^rank: novice$' "$dir/.golem/souls/plain.md"
+  run grep -q '^effort:' "$dir/.golem/souls/plain.md"
+  [ "$status" -ne 0 ]
+}
+
+@test "studio: agent-add — 잘못된 rank/effort 거부" {
+  local dir="$TEST_PROJECT/studio-agent-badrank"
+  run studio_agent_add "$dir" bad1 sonnet "역할" "" godlike
+  [ "$status" -ne 0 ]
+  [ ! -f "$dir/.golem/souls/bad1.md" ]
+
+  run studio_agent_add "$dir" bad2 sonnet "역할" "" senior extreme
+  [ "$status" -ne 0 ]
+  [ ! -f "$dir/.golem/souls/bad2.md" ]
+}
+
+@test "studio: design — flowsmith JSON 의 rank/effort 가 SOUL frontmatter 로 적용" {
+  local dir="$TEST_PROJECT/studio-design-rank"
+  agent_run() {
+    printf '```json\n%s\n```\n' "$_DESIGN_JSON_RANKED"
+    return 0
+  }
+
+  run studio_design "$dir" "랭크 설계"
+  [ "$status" -eq 0 ]
+  grep -q '^rank: senior$' "$dir/.golem/souls/researcher.md"
+  grep -q '^effort: high$' "$dir/.golem/souls/researcher.md"
+  grep -q '^rank: novice$' "$dir/.golem/souls/writer.md"
+  run grep -q '^effort:' "$dir/.golem/souls/writer.md"
+  [ "$status" -ne 0 ]
+}
+
+@test "studio: design 검증 — 잘못된 rank/effort 는 계약 위반 (재질의 트리거)" {
+  run _studio_validate_design '{"agents":[{"name":"a","model":"sonnet","rank":"boss"},{"name":"b","model":"haiku"}],"steps":[{"id":"s1","soul":"a","task":"t","deps":[]}]}'
+  [ "$status" -eq 1 ]
+  run _studio_validate_design '{"agents":[{"name":"a","model":"sonnet","effort":"max"},{"name":"b","model":"haiku"}],"steps":[{"id":"s1","soul":"a","task":"t","deps":[]}]}'
+  [ "$status" -eq 1 ]
+}
+
+# ─────────────────────────────────────────────────────────
+# 11. P3-2 — 팀 프리셋 (templates/studio-presets)
+# ─────────────────────────────────────────────────────────
+
+@test "studio: preset list — 빌트인 novel-team/market-research 표시" {
+  run studio_preset_list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"novel-team"* ]]
+  [[ "$output" == *"소설팀"* ]]
+  [[ "$output" == *"market-research"* ]]
+  [[ "$output" == *"시장조사팀"* ]]
+}
+
+@test "studio: preset apply — novel-team 4 souls + 6단계 플로우 생성 (암묵 init)" {
+  local dir="$TEST_PROJECT/studio-preset-novel"
+  run studio_preset_apply "$dir" novel-team
+  [ "$status" -eq 0 ]
+
+  local s
+  for s in concept-architect writer consistency-checker editor; do
+    [ -f "$dir/.golem/souls/${s}.md" ]
+  done
+  grep -q '^rank: senior$' "$dir/.golem/souls/concept-architect.md"
+  grep -q '^effort: high$' "$dir/.golem/souls/concept-architect.md"
+  grep -q '^rank: novice$' "$dir/.golem/souls/editor.md"
+
+  local flow_id
+  flow_id=$(printf '%s\n' "$output" | grep '^  flow_id:' | awk '{print $2}')
+  [ -n "$flow_id" ]
+  local state="$dir/.golem/flows/${flow_id}/state.json"
+  [ -f "$state" ]
+  [ "$(grep -o '"soul":"' "$state" | wc -l | tr -d ' ')" -eq 6 ]
+
+  # 암묵 init — studio.json 에 프리셋 이름/설명 반영
+  grep -q '"name":"소설팀"' "$dir/studio.json"
+}
+
+@test "studio: preset apply — 미존재 id rc=1 + 형식 위반 id 거부 (디렉토리 미생성)" {
+  local dir="$TEST_PROJECT/studio-preset-x"
+  run studio_preset_apply "$dir" no-such-preset
+  [ "$status" -eq 1 ]
+  run studio_preset_apply "$dir" "../evil"
+  [ "$status" -eq 1 ]
+  run studio_preset_apply "$dir" "Novel_Team"
+  [ "$status" -eq 1 ]
+  [ ! -d "$dir/.golem" ]
+}
+
+@test "studio: preset 파일 — 계약 검증 + flow_validate_steps 통과 (골든 가드)" {
+  _studio_deps
+  local f json count=0
+  for f in "$GOLEM_ROOT/templates/studio-presets/"*.json; do
+    [ -f "$f" ] || continue
+    count=$((count + 1))
+    json=$(tr -d '\r' < "$f")
+    run _studio_validate_design "$json"
+    [ "$status" -eq 0 ]
+    run flow_validate_steps <<<"$json"
+    [ "$status" -eq 0 ]
+  done
+  [ "$count" -ge 2 ]
+}
+
+# ─────────────────────────────────────────────────────────
+# 12. P3-3 — studio redesign
+# ─────────────────────────────────────────────────────────
+
+@test "studio: redesign — 프롬프트에 로스터+최신 플로우 요약+피드백 포함 (flowsmith 제외)" {
+  local dir="$TEST_PROJECT/studio-redesign-1"
+  studio_design "$dir" "재설계 준비" >/dev/null
+
+  local prompt_file="$TEST_PROJECT/.redesign_prompt"
+  agent_run() {
+    printf '%s' "$2" > "$prompt_file"
+    printf '```json\n%s\n```\n' "$_DESIGN_JSON"
+    return 0
+  }
+
+  run studio_redesign "$dir" "편집자를 추가해줘"
+  [ "$status" -eq 0 ]
+  grep -q -- '- researcher: 리서처' "$prompt_file"
+  grep -q -- '- writer: 작성자' "$prompt_file"
+  grep -q '편집자를 추가해줘' "$prompt_file"
+  # 최신 플로우 단계 요약 (id/soul/task 60자)
+  grep -q -- '- s1 (researcher): 자료 조사' "$prompt_file"
+  # 로스터에서 flowsmith 는 제외
+  run grep -q -- '- flowsmith' "$prompt_file"
+  [ "$status" -ne 0 ]
+}
+
+@test "studio: redesign — 기존 SOUL 보존 + 신규 생성 + 항상 새 플로우" {
+  local dir="$TEST_PROJECT/studio-redesign-2"
+  run studio_design "$dir" "초기 설계"
+  [ "$status" -eq 0 ]
+  local old_flow
+  old_flow=$(printf '%s\n' "$output" | grep '^  flow_id:' | awk '{print $2}')
+  [ -n "$old_flow" ]
+
+  local res_soul="$dir/.golem/souls/researcher.md"
+  local old_state="$dir/.golem/flows/${old_flow}/state.json"
+  cp "$res_soul" "$TEST_PROJECT/.researcher.bak"
+  cp "$old_state" "$TEST_PROJECT/.old-state.bak"
+
+  agent_run() {
+    printf '```json\n%s\n```\n' "$_REDESIGN_JSON"
+    return 0
+  }
+
+  run studio_redesign "$dir" "편집자 추가"
+  [ "$status" -eq 0 ]
+
+  # 기존 SOUL 파일 내용 불변 (재생성 금지)
+  cmp -s "$res_soul" "$TEST_PROJECT/.researcher.bak"
+  # 신규 에이전트 생성 + rank/effort 반영
+  [ -f "$dir/.golem/souls/editor.md" ]
+  grep -q '^rank: junior$' "$dir/.golem/souls/editor.md"
+  grep -q '^effort: low$' "$dir/.golem/souls/editor.md"
+
+  # 항상 새 플로우 — 기존 state.json 불변 + 새 flow_id
+  local new_flow
+  new_flow=$(printf '%s\n' "$output" | grep '^  flow_id:' | awk '{print $2}')
+  [ -n "$new_flow" ]
+  [ "$new_flow" != "$old_flow" ]
+  [ -f "$dir/.golem/flows/${new_flow}/state.json" ]
+  cmp -s "$old_state" "$TEST_PROJECT/.old-state.bak"
+
+  # 유지/신규 보고
+  [[ "$output" == *"유지: researcher"* ]]
+  [[ "$output" == *"신규: editor"* ]]
+}
+
+@test "studio: redesign — 미초기화 스튜디오 rc=1" {
+  run studio_redesign "$TEST_PROJECT/no-such-studio" "피드백"
+  [ "$status" -eq 1 ]
 }

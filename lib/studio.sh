@@ -124,17 +124,36 @@ studio_init() {
 }
 
 # ── 2. studio_agent_add ─────────────────────────────────────────────────────
-# studio_agent_add [dir] <name> <model> <role> [rules]
+# studio_agent_add [dir] <name> <model> <role> [rules] [rank] [effort]
+# rank: novice|junior|senior|expert|master (기본 novice)
+# effort: low|medium|high (선택 — 지정 시에만 frontmatter 에 기록)
+# isolation 은 항상 none — 스튜디오는 git 저장소가 아니라 worktree 격리가 불가.
 studio_agent_add() {
   local dir
   if _studio_is_dir_arg "${1:-}"; then dir=$(_studio_dir "$1"); shift; else dir=$(_studio_dir ""); fi
-  local name="${1:-}" model="${2:-sonnet}" role="${3:-}" rules="${4:-}"
+  local name="${1:-}" model="${2:-sonnet}" role="${3:-}" rules="${4:-}" rank="${5:-}" effort="${6:-}"
 
   if [ -z "$name" ]; then
-    echo "[studio] ERROR: Usage: studio agent-add [dir] <name> <model> <role> [rules]" >&2
+    echo "[studio] ERROR: Usage: studio agent-add [dir] <name> <model> <role> [rules] [rank] [effort]" >&2
     return 1
   fi
   _validate_soul_name "$name" || return 1
+
+  [ -z "$rank" ] && rank="novice"
+  case "$rank" in
+    novice|junior|senior|expert|master) : ;;
+    *)
+      echo "[studio] ERROR: rank 형식 오류: ${rank} (novice|junior|senior|expert|master)" >&2
+      return 1 ;;
+  esac
+  if [ -n "$effort" ]; then
+    case "$effort" in
+      low|medium|high) : ;;
+      *)
+        echo "[studio] ERROR: effort 형식 오류: ${effort} (low|medium|high)" >&2
+        return 1 ;;
+    esac
+  fi
 
   local lower_name
   lower_name=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
@@ -174,10 +193,13 @@ studio_agent_add() {
     printf -- '---\n'
     printf 'name: %s\n' "$name"
     printf 'role: %s\n' "$role"
-    printf 'rank: novice\n'
+    printf 'rank: %s\n' "$rank"
     printf 'specialty: [%s]\n' "$specialty_val"
     printf 'model: %s\n' "$model"
     printf 'isolation: none\n'
+    if [ -n "$effort" ]; then
+      printf 'effort: %s\n' "$effort"
+    fi
     printf 'created: %s\n' "$date"
     printf -- '---\n\n'
     printf '%s\n' '## 프로젝트 컨텍스트 (프롬프트에 주입됨)'
@@ -212,20 +234,18 @@ studio_agent_add() {
   return 0
 }
 
-# ── 내부: 설계 프롬프트 조립 ──────────────────────────────────────────────────
-_studio_design_prompt() {
-  local goal="$1"
-  # goal 은 자유 텍스트 — printf 인자로만 보간(unquoted heredoc 확장 금지)
-  printf '목표: %s\n\n' "$goal"
+# ── 내부: 설계 JSON 출력 계약 (design/redesign 공용) ─────────────────────────
+_studio_design_contract() {
   cat <<'PROMPTEOF'
-위 목표를 달성할 전문가 에이전트 팀과 실행 플로우를 설계하라.
 아래 계약을 정확히 지키는 코드펜스(```json ... ```) 하나만 출력하라. 다른 텍스트는 절대 포함하지 마라.
 
-{"agents":[{"name":"agent-slug","model":"haiku|sonnet|opus","role":"...","rules":"..."}],"steps":[{"id":"step_id","soul":"agent-slug","task":"...","deps":["이전 step id"]}]}
+{"agents":[{"name":"agent-slug","model":"haiku|sonnet|opus","role":"...","rules":"...","rank":"novice|junior|senior|expert|master","effort":"low|medium|high"}],"steps":[{"id":"step_id","soul":"agent-slug","task":"...","deps":["이전 step id"]}]}
 
 계약:
 - agents: 2~6개, name은 [a-z0-9-]만 허용(소문자/숫자/하이픈)
 - model은 haiku, sonnet, opus 중 하나만 사용
+- rank/effort 는 선택 필드 — rank 는 novice|junior|senior|expert|master, effort 는 low|medium|high 중 하나만.
+  판단/검증/총괄 역할엔 senior 이상 + high, 단순 정형 작업엔 novice + low 를 배정하라. 생략 시 novice/엔진 기본값.
 - steps는 1-depth 평면 배열이며 각 id는 [A-Za-z0-9_-]+ 형식, 배열 내 고유
 - deps는 자신보다 앞서 정의된 id만 참조 (사이클 금지)
 - soul 필드는 agents 에 정의한 name 중 하나를 참조
@@ -233,6 +253,15 @@ _studio_design_prompt() {
 - 상류 단계 출력이 필요하면 task에 {{step_id}} 형식으로 참조 가능
 - 목표가 한국어면 role/rules/task도 한국어로 작성
 PROMPTEOF
+}
+
+# ── 내부: 설계 프롬프트 조립 ──────────────────────────────────────────────────
+_studio_design_prompt() {
+  local goal="$1"
+  # goal 은 자유 텍스트 — printf 인자로만 보간(unquoted heredoc 확장 금지)
+  printf '목표: %s\n\n' "$goal"
+  printf '%s\n' '위 목표를 달성할 전문가 에이전트 팀과 실행 플로우를 설계하라.'
+  _studio_design_contract
 }
 
 # ── 내부: JSON 문자열에서 "<key>":[...] 로 시작하는 부분 문자열 반환 ─────────
@@ -270,12 +299,14 @@ _studio_validate_design() {
   [ -n "$agents_raw" ] || { _STUDIO_LAST_ERROR="agents 배열을 찾을 수 없습니다"; return 1; }
   [ -n "$steps_raw" ] || { _STUDIO_LAST_ERROR="steps 배열을 찾을 수 없습니다"; return 1; }
 
-  local n_agents=0 item a_name a_model
+  local n_agents=0 item a_name a_model a_rank a_effort
   while IFS= read -r item; do
     [ -z "$item" ] && continue
     n_agents=$((n_agents + 1))
     a_name=$(_json_unescape "$(_json_get_string "$item" name)")
     a_model=$(_json_unescape "$(_json_get_string "$item" model)")
+    a_rank=$(_json_unescape "$(_json_get_string "$item" rank)")
+    a_effort=$(_json_unescape "$(_json_get_string "$item" effort)")
     if ! printf '%s' "$a_name" | grep -qE '^[a-z0-9-]+$'; then
       _STUDIO_LAST_ERROR="agent name 형식 위반: '${a_name}' ([a-z0-9-]만 허용)"
       return 1
@@ -283,6 +314,14 @@ _studio_validate_design() {
     case "$a_model" in
       haiku|sonnet|opus) : ;;
       *) _STUDIO_LAST_ERROR="agent model 형식 위반: '${a_model}' (haiku|sonnet|opus 중 하나)"; return 1 ;;
+    esac
+    case "$a_rank" in
+      ""|novice|junior|senior|expert|master) : ;;
+      *) _STUDIO_LAST_ERROR="agent rank 형식 위반: '${a_rank}' (novice|junior|senior|expert|master 중 하나 또는 생략)"; return 1 ;;
+    esac
+    case "$a_effort" in
+      ""|low|medium|high) : ;;
+      *) _STUDIO_LAST_ERROR="agent effort 형식 위반: '${a_effort}' (low|medium|high 중 하나 또는 생략)"; return 1 ;;
     esac
   done <<EOF
 $(printf '%s\n' "$agents_raw" | _json_array_items)
@@ -315,27 +354,11 @@ EOF
   return 0
 }
 
-# ── 3. studio_design ─────────────────────────────────────────────────────────
-# studio_design [dir] "<goal>" — flowsmith 소환 → agents 생성 + flow_create
-studio_design() {
-  local dir
-  # dir 로 소비하는 건 인자가 2개 이상일 때만 — 단일 인자는 항상 goal 이다.
-  # (goal 텍스트에 '/' 가 들어 있어도 dir 로 오인하지 않게 하는 가드 —
-  #  게이트웨이는 cwd=스튜디오 + GOLEM_PROJECT 로 goal 하나만 보낸다)
-  if [ "$#" -ge 2 ] && _studio_is_dir_arg "${1:-}"; then dir=$(_studio_dir "$1"); shift; else dir=$(_studio_dir ""); fi
-  local goal="${1:-}"
-
-  if [ -z "$goal" ]; then
-    echo "[studio] ERROR: Usage: studio design [dir] \"<goal>\"" >&2
-    return 1
-  fi
-
-  [ -f "${dir}/studio.json" ] || studio_init "$dir" "" "$goal" >/dev/null
-
-  _studio_deps
-
-  # flowsmith SOUL 보증 — init 의 템플릿 복사가 실패했을 수 있어 소환 전 재복사.
-  # 그래도 없으면 agent_run 의 모호한 실패 대신 여기서 명확한 에러로 끊는다.
+# ── 내부: flowsmith SOUL 보증 (design/redesign 공용) ─────────────────────────
+# init 의 템플릿 복사가 실패했을 수 있어 소환 전 재복사.
+# 그래도 없으면 agent_run 의 모호한 실패 대신 여기서 명확한 에러로 끊는다.
+_studio_ensure_flowsmith() {
+  local dir="$1"
   local fs_soul="${dir}/.golem/souls/flowsmith.md"
   if [ ! -f "$fs_soul" ]; then
     mkdir -p "${dir}/.golem/souls"
@@ -345,10 +368,17 @@ studio_design() {
       return 1
     fi
   fi
+  return 0
+}
 
-  local base_prompt corrective="" attempt=0 json="" err="" raw
-  base_prompt=$(_studio_design_prompt "$goal")
+# ── 내부: flowsmith 소환 → 추출 → 검증 (재질의 1회, design/redesign 공용) ────
+# 성공: rc=0 + _STUDIO_DESIGN_JSON 에 검증 통과 JSON. 실패: rc=1 + stderr.
+_STUDIO_DESIGN_JSON=""
+_studio_summon_design() {
+  local dir="$1" base_prompt="$2"
+  local corrective="" attempt=0 json="" err="" raw
 
+  _STUDIO_DESIGN_JSON=""
   while :; do
     attempt=$((attempt + 1))
 
@@ -384,8 +414,32 @@ studio_design() {
 정확한 계약을 다시 준수하여 코드펜스(\`\`\`json ... \`\`\`) 하나만 출력하라."
   done
 
+  _STUDIO_DESIGN_JSON="$json"
+  return 0
+}
+
+# ── 내부: 설계 JSON 적용 — agents 생성 + flow_create (design/preset/redesign 공용)
+# _studio_apply_design <dir> <flow_goal> <json>
+# 이미 존재하는 SOUL 은 건너뛴다(파일 불변 — 추가 적용). 항상 새 플로우를 만든다.
+# 성공: rc=0 + 전역 4개 설정:
+#   _STUDIO_APPLY_AGENTS  — 레거시 요약 문자열 (" name1(기존) name2")
+#   _STUDIO_APPLY_KEPT    — 유지(기존) 에이전트 (" name1")
+#   _STUDIO_APPLY_NEW     — 신규 생성 에이전트 (" name2")
+#   _STUDIO_APPLY_FLOW_ID — 새 flow_id
+_STUDIO_APPLY_AGENTS=""
+_STUDIO_APPLY_KEPT=""
+_STUDIO_APPLY_NEW=""
+_STUDIO_APPLY_FLOW_ID=""
+_studio_apply_design() {
+  local dir="$1" flow_goal="$2" json="$3"
+
+  _STUDIO_APPLY_AGENTS=""
+  _STUDIO_APPLY_KEPT=""
+  _STUDIO_APPLY_NEW=""
+  _STUDIO_APPLY_FLOW_ID=""
+
   # ── agents 적용 (studio_agent_add 반복, 이미 존재하면 건너뜀) ──
-  local agents_raw souls_created="" item a_name a_model a_role a_rules
+  local agents_raw item a_name a_model a_role a_rules a_rank a_effort
   agents_raw=$(_studio_key_array_raw "$json" agents)
   while IFS= read -r item; do
     [ -z "$item" ] && continue
@@ -393,18 +447,22 @@ studio_design() {
     a_model=$(_json_unescape "$(_json_get_string "$item" model)")
     a_role=$(_json_unescape "$(_json_get_string "$item" role)")
     a_rules=$(_json_unescape "$(_json_get_string "$item" rules)")
+    a_rank=$(_json_unescape "$(_json_get_string "$item" rank)")
+    a_effort=$(_json_unescape "$(_json_get_string "$item" effort)")
     if [ -f "${dir}/.golem/souls/${a_name}.md" ]; then
-      souls_created="${souls_created} ${a_name}(기존)"
+      _STUDIO_APPLY_AGENTS="${_STUDIO_APPLY_AGENTS} ${a_name}(기존)"
+      _STUDIO_APPLY_KEPT="${_STUDIO_APPLY_KEPT} ${a_name}"
       continue
     fi
-    if studio_agent_add "$dir" "$a_name" "$a_model" "$a_role" "$a_rules" >/dev/null; then
-      souls_created="${souls_created} ${a_name}"
+    if studio_agent_add "$dir" "$a_name" "$a_model" "$a_role" "$a_rules" "$a_rank" "$a_effort" >/dev/null; then
+      _STUDIO_APPLY_AGENTS="${_STUDIO_APPLY_AGENTS} ${a_name}"
+      _STUDIO_APPLY_NEW="${_STUDIO_APPLY_NEW} ${a_name}"
     fi
   done <<EOF
 $(printf '%s\n' "$agents_raw" | _json_array_items)
 EOF
 
-  # ── steps 조립 → flow_create ──
+  # ── steps 조립 → flow_create (항상 새 플로우 — 기존 state.json 불변) ──
   local steps_raw steps_file
   steps_raw=$(_studio_key_array_raw "$json" steps)
   mkdir -p "${dir}/.golem/flows"
@@ -423,17 +481,225 @@ EOF2
   } > "$steps_file"
 
   local flow_id
-  if ! flow_id=$(FLOW_DIR="${dir}/.golem/flows" flow_create "$goal" "$steps_file"); then
+  if ! flow_id=$(FLOW_DIR="${dir}/.golem/flows" flow_create "$flow_goal" "$steps_file"); then
     rm -f "$steps_file"
     echo "[studio] ERROR: flow_create 실패 (steps 검증 또는 사이클 오류)" >&2
     return 1
   fi
   rm -f "$steps_file"
 
-  echo "[studio] 설계 완료"
-  echo "  agents:${souls_created}"
-  echo "  flow_id: ${flow_id}"
+  _STUDIO_APPLY_FLOW_ID="$flow_id"
   return 0
+}
+
+# ── 3. studio_design ─────────────────────────────────────────────────────────
+# studio_design [dir] "<goal>" — flowsmith 소환 → agents 생성 + flow_create
+studio_design() {
+  local dir
+  # dir 로 소비하는 건 인자가 2개 이상일 때만 — 단일 인자는 항상 goal 이다.
+  # (goal 텍스트에 '/' 가 들어 있어도 dir 로 오인하지 않게 하는 가드 —
+  #  게이트웨이는 cwd=스튜디오 + GOLEM_PROJECT 로 goal 하나만 보낸다)
+  if [ "$#" -ge 2 ] && _studio_is_dir_arg "${1:-}"; then dir=$(_studio_dir "$1"); shift; else dir=$(_studio_dir ""); fi
+  local goal="${1:-}"
+
+  if [ -z "$goal" ]; then
+    echo "[studio] ERROR: Usage: studio design [dir] \"<goal>\"" >&2
+    return 1
+  fi
+
+  [ -f "${dir}/studio.json" ] || studio_init "$dir" "" "$goal" >/dev/null
+
+  _studio_deps
+  _studio_ensure_flowsmith "$dir" || return 1
+
+  local base_prompt
+  base_prompt=$(_studio_design_prompt "$goal")
+
+  _studio_summon_design "$dir" "$base_prompt" || return 1
+  _studio_apply_design "$dir" "$goal" "$_STUDIO_DESIGN_JSON" || return 1
+
+  echo "[studio] 설계 완료"
+  echo "  agents:${_STUDIO_APPLY_AGENTS}"
+  echo "  flow_id: ${_STUDIO_APPLY_FLOW_ID}"
+  return 0
+}
+
+# ── 3b. studio_preset — 팀 프리셋 (templates/studio-presets/*.json) ──────────
+# studio_preset_list — 빌트인 프리셋 목록 (id/name/description)
+studio_preset_list() {
+  local pdir="${GOLEM_ROOT}/templates/studio-presets"
+  echo "=== Studio Presets ==="
+  local f raw id name desc found=0
+  for f in "${pdir}"/*.json; do
+    [ -f "$f" ] || continue
+    found=1
+    raw=$(tr -d '\n\r' < "$f")
+    # 최상위 id/name/description 은 파일 선두에 위치한다 (첫 매칭 = 최상위 키)
+    id=$(_json_unescape "$(_json_get_string "$raw" id)")
+    name=$(_json_unescape "$(_json_get_string "$raw" name)")
+    desc=$(_json_unescape "$(_json_get_string "$raw" description)")
+    printf '%-18s %s — %s\n' "$id" "$name" "$desc"
+  done
+  [ "$found" -eq 0 ] && echo "(프리셋 없음)"
+  return 0
+}
+
+# studio_preset_apply [dir] <preset_id> — 프리셋 JSON을 스튜디오에 적용
+# design 과 동일하게 미초기화 스튜디오면 암묵 init 한다.
+studio_preset_apply() {
+  local dir
+  # design 과 동일 규약 — 단일 인자는 preset_id 다.
+  if [ "$#" -ge 2 ] && _studio_is_dir_arg "${1:-}"; then dir=$(_studio_dir "$1"); shift; else dir=$(_studio_dir ""); fi
+  local preset_id="${1:-}"
+
+  if [ -z "$preset_id" ]; then
+    echo "[studio] ERROR: Usage: studio preset apply [dir] <preset_id>" >&2
+    return 1
+  fi
+  case "$preset_id" in
+    *[!a-z0-9-]*)
+      echo "[studio] ERROR: preset id 형식 오류: '${preset_id}' ([a-z0-9-]만 허용)" >&2
+      return 1 ;;
+  esac
+
+  local pfile="${GOLEM_ROOT}/templates/studio-presets/${preset_id}.json"
+  if [ ! -f "$pfile" ]; then
+    echo "[studio] ERROR: 프리셋 없음: '${preset_id}' (studio preset list 로 확인)" >&2
+    return 1
+  fi
+
+  _studio_deps
+
+  local json p_name p_desc
+  json=$(tr -d '\r' < "$pfile")
+  p_name=$(_json_unescape "$(_json_get_string "$(printf '%s' "$json" | tr -d '\n')" name)")
+  p_desc=$(_json_unescape "$(_json_get_string "$(printf '%s' "$json" | tr -d '\n')" description)")
+
+  if ! _studio_validate_design "$json"; then
+    echo "[studio] ERROR: 프리셋 계약 위반(${preset_id}): ${_STUDIO_LAST_ERROR}" >&2
+    return 1
+  fi
+
+  [ -f "${dir}/studio.json" ] || studio_init "$dir" "$p_name" "$p_desc" >/dev/null
+
+  local flow_goal="$p_desc"
+  [ -z "$flow_goal" ] && flow_goal="$p_name"
+  [ -z "$flow_goal" ] && flow_goal="$preset_id"
+
+  _studio_apply_design "$dir" "$flow_goal" "$json" || return 1
+
+  echo "[studio] 프리셋 적용 완료: ${preset_id} (${p_name})"
+  echo "  agents:${_STUDIO_APPLY_AGENTS}"
+  echo "  flow_id: ${_STUDIO_APPLY_FLOW_ID}"
+  return 0
+}
+
+# ── 3c. studio_redesign ──────────────────────────────────────────────────────
+# studio_redesign [dir] "<피드백>" — 기존 팀/플로우 컨텍스트 + 사용자 피드백으로
+# flowsmith 재소환. 기존 SOUL 은 보존(유지)하고 새 에이전트만 추가하며,
+# 항상 새 플로우를 만든다 (기존 state.json 은 절대 변경하지 않는다).
+studio_redesign() {
+  local dir
+  # design 과 동일 규약 — 단일 인자는 피드백이다.
+  if [ "$#" -ge 2 ] && _studio_is_dir_arg "${1:-}"; then dir=$(_studio_dir "$1"); shift; else dir=$(_studio_dir ""); fi
+  local feedback="${1:-}"
+
+  if [ -z "$feedback" ]; then
+    echo "[studio] ERROR: Usage: studio redesign [dir] \"<피드백>\"" >&2
+    return 1
+  fi
+  if [ ! -f "${dir}/studio.json" ]; then
+    echo "[studio] ERROR: 초기화된 스튜디오가 아닙니다 (studio init 먼저): ${dir}" >&2
+    return 1
+  fi
+
+  _studio_deps
+  _studio_ensure_flowsmith "$dir" || return 1
+
+  # 현재 목표 (studio.json)
+  local sj goal
+  sj=$(tr -d '\n\r' < "${dir}/studio.json")
+  goal=$(_json_unescape "$(_json_get_string "$sj" goal)")
+
+  # 현재 팀 로스터 — flowsmith 제외, name + role
+  local roster="" f r_name r_role
+  for f in "${dir}/.golem/souls/"*.md; do
+    [ -f "$f" ] || continue
+    case "$(basename "$f")" in flowsmith.md) continue ;; esac
+    r_name=$(soul_get_field "$f" name)
+    r_role=$(soul_get_field "$f" role)
+    roster="${roster}$(printf -- '- %s: %s' "$r_name" "$r_role")"$'\n'
+  done
+
+  # 최신 플로우 단계 요약 — id/soul/task 앞 60자 (결정론 최신 선택 재사용)
+  local steps_summary="" latest_flow=""
+  if latest_flow=$(_studio_newest_flow "${dir}/.golem/flows"); then
+    local parsed s_id s_soul s_task s_deps snip
+    parsed=$(flow_parse_steps < "${dir}/.golem/flows/${latest_flow}/state.json" 2>/dev/null) || parsed=""
+    while IFS=$'\037' read -r s_id s_soul s_task s_deps; do
+      [ -z "$s_id" ] && continue
+      snip=$(_json_unescape "$s_task")
+      snip=$(printf '%s' "$snip" | tr '\n\r' '  ')
+      snip="${snip:0:60}"
+      # C 로케일 바이트 절단 대비 UTF-8 꼬리 정리 (flow-dag.sh — mock 환경에선 부재 가능)
+      if command -v _flow_utf8_sanitize >/dev/null 2>&1; then
+        snip=$(_flow_utf8_sanitize "$snip")
+      fi
+      steps_summary="${steps_summary}$(printf -- '- %s (%s): %s' "$s_id" "$s_soul" "$snip")"$'\n'
+    done <<EOF
+$parsed
+EOF
+  fi
+
+  # 프롬프트 조립 — 자유 텍스트는 printf 인자로만 보간
+  local base_prompt
+  base_prompt=$(
+    printf '%s\n\n' '기존 스튜디오의 팀/플로우를 사용자 피드백에 맞춰 재설계하라.'
+    printf '스튜디오 목표: %s\n\n' "$goal"
+    printf '현재 팀 구성:\n%s\n' "${roster:-(없음)}"
+    printf '현재 플로우 단계(최신):\n%s\n' "${steps_summary:-(없음)}"
+    printf '사용자 피드백: %s\n\n' "$feedback"
+    printf '%s\n' '유지할 기존 에이전트는 같은 name 을 그대로 포함하라 — 엔진이 기존 SOUL 파일을 보존한다(재생성하지 않음). 새 역할이 필요하면 새 name 으로 추가하라. 플로우는 항상 새로 생성된다.'
+    _studio_design_contract
+  )
+
+  _studio_summon_design "$dir" "$base_prompt" || return 1
+
+  local flow_goal="$goal"
+  [ -z "$flow_goal" ] && flow_goal="$feedback"
+  _studio_apply_design "$dir" "$flow_goal" "$_STUDIO_DESIGN_JSON" || return 1
+
+  echo "[studio] 재설계 완료"
+  echo "  유지:${_STUDIO_APPLY_KEPT:- (없음)}"
+  echo "  신규:${_STUDIO_APPLY_NEW:- (없음)}"
+  echo "  flow_id: ${_STUDIO_APPLY_FLOW_ID}"
+  return 0
+}
+
+# ── 내부: 결정론 최신 플로우 선택 (studio_run/studio_redesign 공용) ──────────
+# mtime 내림차순 최신 선택 — 동률(같은 초)일 때 `ls -1t` 순서는 미정의라
+# bash 빌트인 `-nt`(외부 stat/ls 의존 없이 GNU/BSD 겸용)로 직접 비교하고,
+# 동률 시 flow_id(dirname) 사전순 최댓값을 결정적으로 고른다
+# (flow_id 는 epoch+pid 를 포함하므로 사전순 비교가 안정적인 2차 키가 된다).
+# _studio_newest_flow <flows_dir> → flow_id (stdout) / 없으면 rc=1
+_studio_newest_flow() {
+  local flows_dir="$1"
+  local newest="" f d1 d2 lexmax
+  for f in "${flows_dir}"/*/state.json; do
+    [ -f "$f" ] || continue
+    if [ -z "$newest" ]; then
+      newest="$f"
+    elif [ "$f" -nt "$newest" ]; then
+      newest="$f"
+    elif [ ! "$newest" -nt "$f" ]; then
+      d1=$(basename "$(dirname "$f")")
+      d2=$(basename "$(dirname "$newest")")
+      lexmax=$(printf '%s\n%s\n' "$d1" "$d2" | LC_ALL=C sort | tail -1)
+      [ "$lexmax" = "$d1" ] && newest="$f"
+    fi
+  done
+  [ -n "$newest" ] || return 1
+  basename "$(dirname "$newest")"
 }
 
 # ── 4. studio_run ────────────────────────────────────────────────────────────
@@ -447,29 +713,10 @@ studio_run() {
 
   local flows_dir="${dir}/.golem/flows"
   if [ -z "$flow_id" ]; then
-    # mtime 내림차순 최신 선택 — 동률(같은 초)일 때 `ls -1t` 순서는 미정의라
-    # bash 빌트인 `-nt`(외부 stat/ls 의존 없이 GNU/BSD 겸용)로 직접 비교하고,
-    # 동률 시 flow_id(dirname) 사전순 최댓값을 결정적으로 고른다
-    # (flow_id 는 epoch+pid 를 포함하므로 사전순 비교가 안정적인 2차 키가 된다).
-    local newest="" f d1 d2 lexmax
-    for f in "${flows_dir}"/*/state.json; do
-      [ -f "$f" ] || continue
-      if [ -z "$newest" ]; then
-        newest="$f"
-      elif [ "$f" -nt "$newest" ]; then
-        newest="$f"
-      elif [ ! "$newest" -nt "$f" ]; then
-        d1=$(basename "$(dirname "$f")")
-        d2=$(basename "$(dirname "$newest")")
-        lexmax=$(printf '%s\n%s\n' "$d1" "$d2" | LC_ALL=C sort | tail -1)
-        [ "$lexmax" = "$d1" ] && newest="$f"
-      fi
-    done
-    if [ -z "$newest" ]; then
+    if ! flow_id=$(_studio_newest_flow "$flows_dir"); then
       echo "[studio] ERROR: 플로우가 없습니다: ${dir}" >&2
       return 1
     fi
-    flow_id=$(basename "$(dirname "$newest")")
   fi
 
   local state="${flows_dir}/${flow_id}/state.json"

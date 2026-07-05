@@ -39,11 +39,17 @@
 - ~~doctor 드리프트 감지~~ → install.sh가 `.golem-source` 마커 기록, doctor가 cksum 비교 WARN.
 - runs/sessions retention 정책 — **계속 보류** (실이슈 발생 전).
 
-## P3 — 스튜디오 확장 아이디어
+## P3 — 스튜디오 확장 아이디어 (엔진 트랙 완료 2026-07-05, 클라이언트 잔여)
 
-- 팀 프리셋/템플릿: 소설팀·시장조사팀 등을 domain-pack 방식으로 원클릭 설치
-- design 반복: 사용자 피드백을 받아 flowsmith가 기존 팀/플로우를 재설계 (`studio redesign`)
-- flowsmith 출력 계약에 rank/effort 지정 허용 (현재 novice 고정)
+- ~~팀 프리셋/템플릿~~ → **엔진 완료**: `templates/studio-presets/*.json`(novel-team 4인 6단계,
+  market-research 3인 3단계) + `studio preset list/apply` (id 검증, 암묵 init,
+  `_studio_apply_design` 공용 적용 경로). **프리셋 선택 UI는 클라이언트 잔여.**
+- ~~design 반복 (`studio redesign`)~~ → **엔진 완료**: 현재 목표+로스터+최신 플로우 요약을
+  프롬프트로 flowsmith 재소환(재질의 1회), 기존 SOUL 보존 + 신규만 추가, 항상 새 플로우 생성.
+  **redesign 버튼은 클라이언트 잔여.**
+- ~~flowsmith 출력 계약에 rank/effort 지정 허용~~ → **완료**: agent-add `[rank] [effort]` 인자
+  (rank novice|junior|senior|expert|master, effort low|medium|high), flowsmith 계약/검증에
+  선택 필드로 반영 (판단·검증→senior+high, 정형→novice+low 가이드).
 - 스튜디오 삭제 UI (DELETE /v1/studios/{id} API는 완성, 버튼만 부재)
 
 ## 참고 (환경/컨텍스트)

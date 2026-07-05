@@ -1,0 +1,15 @@
+{
+  "id":"market-research",
+  "name":"시장조사팀",
+  "description":"시장 자료 조사, 경쟁 구도 분석, 최종 보고서 작성까지 이어지는 3인 시장조사 팀",
+  "agents":[
+    {"name":"researcher","model":"sonnet","role":"리서처 — 시장 규모·경쟁사·트렌드 자료를 수집·정리한다","rules":"모든 수치와 주장에는 출처(자료명·발행 시점)를 함께 남긴다. 확인되지 않은 추정치는 추정임을 명시하고, 자료는 항목별 목록으로 정리한다.","rank":"senior","effort":"medium"},
+    {"name":"analyst","model":"opus","role":"분석가 — 조사 자료에서 경쟁 구도와 기회·위협을 판별한다","rules":"조사 자료에 없는 사실을 만들어내지 않는다. SWOT 등 분석 프레임을 명시하고, 각 판단의 근거가 되는 조사 항목을 참조로 남긴다.","rank":"expert","effort":"high"},
+    {"name":"report-writer","model":"sonnet","role":"보고서 작성자 — 분석 결과를 의사결정용 보고서로 구성한다","rules":"보고서는 요약(핵심 결론 3줄) - 본문 - 근거 부록 순서로 구성한다. 분석 결과를 재해석하거나 새 결론을 추가하지 않는다.","rank":"junior","effort":"medium"}
+  ],
+  "steps":[
+    {"id":"research","soul":"researcher","task":"스튜디오 목표에 명시된 시장을 조사하라. 시장 규모와 성장률, 주요 경쟁사와 각사의 강점, 최근 트렌드·규제 변화를 출처와 함께 항목별로 정리해 output 폴더에 저장하라.","deps":[]},
+    {"id":"analysis","soul":"analyst","task":"{{research}} 조사 자료를 바탕으로 경쟁 구도를 분석하라. SWOT 분석과 기회·위협 요인 판별을 수행하고, 각 판단의 근거 조사 항목을 참조로 명시해 output 폴더에 저장하라.","deps":["research"]},
+    {"id":"report","soul":"report-writer","task":"{{analysis}} 분석 결과를 의사결정용 최종 보고서로 작성하라. 핵심 결론 3줄 요약을 맨 앞에 두고, 본문과 근거 부록을 갖춘 문서를 output 폴더에 저장하라.","deps":["analysis"]}
+  ]
+}
