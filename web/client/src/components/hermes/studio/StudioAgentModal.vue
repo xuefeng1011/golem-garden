@@ -23,9 +23,11 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const NAME_RE = /^[a-z0-9-]+$/
+// studio.sh agent-add 의 model 가드와 동일 패턴 (직접 입력 값 사전 검증)
+const MODEL_RE = /^[a-zA-Z0-9._-]+$/
 
 const name = ref('')
-const model = ref<'haiku' | 'sonnet' | 'opus'>('sonnet')
+const model = ref<string>('sonnet')
 const role = ref('')
 const rules = ref('')
 const rank = ref<'novice' | 'junior' | 'senior' | 'expert' | 'master'>('novice')
@@ -38,10 +40,18 @@ const errorMsg = ref<string | null>(null)
 
 let streamHandle: { abort: () => void } | null = null
 
+// 별칭(haiku/sonnet/opus)은 claude CLI 가 항상 최신 모델로 해석한다.
+// 전체 ID 는 특정 모델 고정용 — 목록에 없는 모델은 직접 입력(tag) 가능.
 const modelOptions = [
-  { label: 'haiku', value: 'haiku' },
-  { label: 'sonnet', value: 'sonnet' },
-  { label: 'opus', value: 'opus' },
+  { label: `haiku (${t('flowStudio.agentModal.aliasLatest')})`, value: 'haiku' },
+  { label: `sonnet (${t('flowStudio.agentModal.aliasLatest')})`, value: 'sonnet' },
+  { label: `opus (${t('flowStudio.agentModal.aliasLatest')})`, value: 'opus' },
+  { label: 'claude-fable-5', value: 'claude-fable-5' },
+  { label: 'claude-opus-4-8', value: 'claude-opus-4-8' },
+  { label: 'claude-opus-4-7', value: 'claude-opus-4-7' },
+  { label: 'claude-sonnet-5', value: 'claude-sonnet-5' },
+  { label: 'claude-sonnet-4-6', value: 'claude-sonnet-4-6' },
+  { label: 'claude-haiku-4-5', value: 'claude-haiku-4-5' },
 ]
 
 const rankOptions = [
@@ -67,6 +77,10 @@ function validate(): boolean {
     errorMsg.value = t('flowStudio.errors.nameInvalid')
     return false
   }
+  if (!MODEL_RE.test(model.value.trim())) {
+    errorMsg.value = t('flowStudio.errors.modelInvalid')
+    return false
+  }
   for (const v of [role.value, rules.value]) {
     const err = validateForgeArg(v)
     if (err) {
@@ -89,7 +103,7 @@ async function handleCreate() {
     const { run_id } = await startForge(props.projectId, 'studio', [
       'agent-add',
       name.value.trim(),
-      model.value,
+      model.value.trim(),
       role.value.trim(),
       rules.value.trim(),
       rank.value,
@@ -155,7 +169,8 @@ function handleClose() {
         <NInput v-model:value="name" :placeholder="t('flowStudio.agentModal.namePlaceholder')" />
       </NFormItem>
       <NFormItem :label="t('flowStudio.agentModal.modelLabel')" required>
-        <NSelect v-model:value="model" :options="modelOptions" />
+        <!-- filterable+tag — 목록에 없는 새 모델 ID 도 직접 입력해 사용 가능 -->
+        <NSelect v-model:value="model" :options="modelOptions" filterable tag />
       </NFormItem>
       <NFormItem :label="t('flowStudio.agentModal.roleLabel')" required>
         <NInput v-model:value="role" :placeholder="t('flowStudio.agentModal.rolePlaceholder')" />

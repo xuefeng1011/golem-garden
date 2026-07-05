@@ -189,8 +189,11 @@ export function streamRunEvents(
 export async function fetchModels(): Promise<{ data: Array<{ id: string }> }> {
   return {
     data: [
+      { id: 'claude-fable-5' },
+      { id: 'claude-opus-4-8' },
       { id: 'claude-opus-4-7' },
-      { id: 'claude-sonnet-4-5' },
+      { id: 'claude-sonnet-5' },
+      { id: 'claude-sonnet-4-6' },
       { id: 'claude-haiku-4-5' },
     ],
   }

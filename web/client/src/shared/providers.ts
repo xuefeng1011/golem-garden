@@ -16,8 +16,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     value: 'anthropic',
     base_url: 'https://api.anthropic.com',
     models: [
+      'claude-fable-5',
+      'claude-opus-4-8',
       'claude-opus-4-7',
       'claude-opus-4-6',
+      'claude-sonnet-5',
       'claude-sonnet-4-6',
       'claude-opus-4-5-20251101',
       'claude-sonnet-4-5-20250929',

@@ -16,7 +16,11 @@ function bodyButtons(): HTMLButtonElement[] {
 }
 
 function bodyInputs(): HTMLInputElement[] {
-  return Array.from(document.body.querySelectorAll('input'))
+  // filterable NSelect(모델 선택)가 .n-base-selection 안에 내부 input 을 렌더하므로
+  // 제외해야 name/role NInput 의 인덱스가 유지된다.
+  return Array.from(document.body.querySelectorAll('input')).filter(
+    (el) => !el.closest('.n-base-selection'),
+  )
 }
 
 function bodyTextareas(): HTMLTextAreaElement[] {

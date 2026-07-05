@@ -65,13 +65,16 @@ export async function triggerUpdate(): Promise<{ success: boolean; message: stri
 
 export async function fetchConfigModels(): Promise<ConfigModelsResponse> {
   return {
-    default: 'claude-opus-4-7',
+    default: 'claude-opus-4-8',
     groups: [
       {
         provider: 'anthropic',
         models: [
+          { id: 'claude-fable-5', label: 'Claude Fable 5' },
+          { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
           { id: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
-          { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+          { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+          { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
           { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
         ],
       },
@@ -81,7 +84,7 @@ export async function fetchConfigModels(): Promise<ConfigModelsResponse> {
 
 export async function fetchAvailableModels(): Promise<AvailableModelsResponse> {
   return {
-    default: 'claude-opus-4-7',
+    default: 'claude-opus-4-8',
     default_provider: 'anthropic',
     groups: [],
     allProviders: [],
