@@ -39,18 +39,22 @@
 - ~~doctor 드리프트 감지~~ → install.sh가 `.golem-source` 마커 기록, doctor가 cksum 비교 WARN.
 - runs/sessions retention 정책 — **계속 보류** (실이슈 발생 전).
 
-## P3 — 스튜디오 확장 아이디어 (엔진 트랙 완료 2026-07-05, 클라이언트 잔여)
+## P3 — 스튜디오 확장 → ✅ 전부 완료 (2026-07-05, 엔진+클라이언트)
 
-- ~~팀 프리셋/템플릿~~ → **엔진 완료**: `templates/studio-presets/*.json`(novel-team 4인 6단계,
-  market-research 3인 3단계) + `studio preset list/apply` (id 검증, 암묵 init,
-  `_studio_apply_design` 공용 적용 경로). **프리셋 선택 UI는 클라이언트 잔여.**
-- ~~design 반복 (`studio redesign`)~~ → **엔진 완료**: 현재 목표+로스터+최신 플로우 요약을
-  프롬프트로 flowsmith 재소환(재질의 1회), 기존 SOUL 보존 + 신규만 추가, 항상 새 플로우 생성.
-  **redesign 버튼은 클라이언트 잔여.**
-- ~~flowsmith 출력 계약에 rank/effort 지정 허용~~ → **완료**: agent-add `[rank] [effort]` 인자
-  (rank novice|junior|senior|expert|master, effort low|medium|high), flowsmith 계약/검증에
-  선택 필드로 반영 (판단·검증→senior+high, 정형→novice+low 가이드).
-- 스튜디오 삭제 UI (DELETE /v1/studios/{id} API는 완성, 버튼만 부재)
+- ~~팀 프리셋/템플릿~~ → `templates/studio-presets/*.json`(novel-team 4인 6단계,
+  market-research 3인 3단계) + `studio preset list/apply` + `GET /v1/studio-presets`
+  + 생성 위저드 "시작 방식"(빈/프리셋/AI설계) 선택 UI.
+- ~~design 반복 (`studio redesign`)~~ → 목표+로스터+최신 플로우 요약으로 flowsmith 재소환,
+  기존 SOUL 보존 + 신규만 추가, 항상 새 플로우. 에디터 재설계 버튼(SSE 모달) + dirty 가드.
+- ~~flowsmith rank/effort~~ → agent-add `[rank] [effort]` 인자 + flowsmith 계약 선택 필드
+  + 에이전트 생성 모달 선택 UI (판단·검증→senior+high, 정형→novice+low 가이드).
+- ~~스튜디오 삭제 UI~~ → 카드 삭제 버튼 + 확인 다이얼로그(폴더 보존 안내).
+
+### 검수 사이클 2차 (2026-07-05, ccfff8f..a343358 대상) — 완료
+HIGH 3(204 응답 파싱 실패로 삭제가 실패 표시·deleteFlow 동일 잠복 버그, 모달 ESC 회귀 13곳,
+redesign dirty 덮어쓰기) + MED/LOW 7(턴 캡 grep 앵커·고속 버스트 사후 정산·rubric 에코 방어·
+프리셋 중복 id 등) 전부 수정. 잔여 인지 사항: 턴 캡은 폴링(1s)+사후 정산 계약(문서화됨),
+kill된 런은 비용 과소집계(대시보드 주석 감), P1-1 라이브 확인 체크박스(PERF-PLAN §10).
 
 ## 참고 (환경/컨텍스트)
 
