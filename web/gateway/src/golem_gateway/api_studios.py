@@ -33,6 +33,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/studios", tags=["studios"])
 
+# Separate router for /v1/studio-presets: an engine-global resource (no
+# project scoping), so it cannot share the /v1/studios-prefixed router above.
+preset_router = APIRouter(tags=["studios"])
+
 
 # ---------------------------------------------------------------------------
 # Dependencies
@@ -63,6 +67,14 @@ class StudioOut(Project):
     goal: str = ""
 
 
+class PresetSummary(BaseModel):
+    """Lean preset listing — id/name/description only (no agents/steps)."""
+
+    id: str
+    name: str
+    description: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -83,6 +95,44 @@ def _read_studio_goal(path: str) -> str:
         if isinstance(goal, str):
             return goal
     return ""
+
+
+def _studio_presets_dir() -> Path:
+    """Engine-global presets directory: <engine_root>/templates/studio-presets.
+
+    Broken out as its own function (rather than inlining FORGE_SH_PATH.parent
+    / ... at the call site) so tests can monkeypatch just this to point at a
+    tmp dir without disturbing FORGE_SH_PATH itself.
+    """
+    return FORGE_SH_PATH.parent / "templates" / "studio-presets"
+
+
+def _scan_studio_presets() -> list[PresetSummary]:
+    """Scan the presets dir for *.json files and return id/name/description.
+
+    Missing directory -> []. Each file is parsed independently; a corrupt
+    file or one missing a required field is skipped silently (this is a
+    display listing, not a validating one) rather than failing the whole
+    request. Sorted by id for a stable listing order.
+    """
+    presets_dir = _studio_presets_dir()
+    if not presets_dir.is_dir():
+        return []
+
+    presets: list[PresetSummary] = []
+    for f in sorted(presets_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            presets.append(
+                PresetSummary(
+                    id=data["id"], name=data["name"], description=data["description"]
+                )
+            )
+        except Exception:
+            logger.warning("skipping unreadable/invalid studio preset file: %s", f)
+            continue
+
+    return sorted(presets, key=lambda p: p.id)
 
 
 async def _run_studio_init(project_path: Path, name: str, goal: str) -> str | None:
@@ -232,3 +282,13 @@ async def delete_studio(
     if project is None or project.kind != "studio":
         raise HTTPException(status_code=404, detail=f"studio {studio_id!r} not found")
     await registry.delete(studio_id)
+
+
+@preset_router.get("/v1/studio-presets", response_model=list[PresetSummary])
+def list_studio_presets() -> list[PresetSummary]:
+    """Return engine-global studio presets (no project scoping).
+
+    Scans <engine_root>/templates/studio-presets/*.json — corrupt or
+    field-missing files are skipped; a missing directory returns [].
+    """
+    return _scan_studio_presets()

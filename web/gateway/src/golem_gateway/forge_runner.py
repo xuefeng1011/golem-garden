@@ -109,12 +109,14 @@ def _run_timeout_seconds(run: ForgeRun) -> int:
     task loop through one subprocess, so they get MAX_FLOW_SECONDS; everything
     else keeps the tight MAX_FORGE_SECONDS cap. `studio run`/`studio design`
     also drive a full flow/flowsmith pipeline through one subprocess, so they
-    get the same long ceiling (STUDIO_PLAN.md §4); `studio status` and other
-    studio subcommands keep the short cap.
+    get the same long ceiling (STUDIO_PLAN.md §4); `studio redesign` likewise
+    summons flowsmith to regenerate the flow, so it gets the same ceiling.
+    `studio preset` (and `studio status` and other studio subcommands) is
+    fast/agent-free and keeps the short cap.
     """
     if run.command in ("flow", "mission") and run.args[:1] == ["run"]:
         return MAX_FLOW_SECONDS
-    if run.command == "studio" and run.args[:1] in (["run"], ["design"]):
+    if run.command == "studio" and run.args[:1] in (["run"], ["design"], ["redesign"]):
         return MAX_FLOW_SECONDS
     return MAX_FORGE_SECONDS
 

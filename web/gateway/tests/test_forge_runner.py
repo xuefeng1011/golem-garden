@@ -71,6 +71,14 @@ class TestRunTimeoutSelection:
         run = _make_run("r7", command="studio", args=["status"])
         assert _run_timeout_seconds(run) == MAX_FORGE_SECONDS
 
+    def test_studio_redesign_gets_long_ceiling(self) -> None:
+        run = _make_run("r8", command="studio", args=["redesign", "studio-1", "new goal"])
+        assert _run_timeout_seconds(run) == MAX_FLOW_SECONDS
+
+    def test_studio_preset_apply_keeps_short_ceiling(self) -> None:
+        run = _make_run("r9", command="studio", args=["preset", "apply", "studio-1", "market-research"])
+        assert _run_timeout_seconds(run) == MAX_FORGE_SECONDS
+
 
 class TestTerminateAndCancel:
     @pytest.mark.asyncio

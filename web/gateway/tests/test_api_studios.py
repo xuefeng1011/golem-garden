@@ -468,6 +468,79 @@ async def test_run_studio_init_redacts_absolute_paths_and_logs_full_text(
     assert "secretuser" in full_logged
 
 
+# ---------------------------------------------------------------------------
+# GET /v1/studio-presets
+# ---------------------------------------------------------------------------
+
+
+async def _get_studio_presets():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        return await client.get("/v1/studio-presets")
+
+
+def _write_preset(dir_path: Path, filename: str, data: dict | None) -> None:
+    dir_path.mkdir(parents=True, exist_ok=True)
+    if data is None:
+        (dir_path / filename).write_text("{not valid json", encoding="utf-8")
+    else:
+        (dir_path / filename).write_text(json.dumps(data), encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_list_studio_presets_happy_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    presets_dir = tmp_path / "studio-presets"
+    _write_preset(
+        presets_dir,
+        "novel-team.json",
+        {"id": "novel-team", "name": "소설팀", "description": "소설 창작 팀", "agents": [], "steps": []},
+    )
+    _write_preset(
+        presets_dir,
+        "market-research.json",
+        {"id": "market-research", "name": "시장조사팀", "description": "시장조사 팀", "agents": [], "steps": []},
+    )
+    monkeypatch.setattr(_studios_mod, "_studio_presets_dir", lambda: presets_dir)
+
+    resp = await _get_studio_presets()
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert [p["id"] for p in data] == ["market-research", "novel-team"]
+    for p in data:
+        assert set(p.keys()) == {"id", "name", "description"}
+
+
+@pytest.mark.asyncio
+async def test_list_studio_presets_skips_corrupt_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    presets_dir = tmp_path / "studio-presets"
+    _write_preset(
+        presets_dir,
+        "good.json",
+        {"id": "good", "name": "Good", "description": "A valid preset", "agents": [], "steps": []},
+    )
+    _write_preset(presets_dir, "corrupt.json", None)
+    _write_preset(presets_dir, "missing-field.json", {"id": "missing-field", "name": "No Description"})
+    monkeypatch.setattr(_studios_mod, "_studio_presets_dir", lambda: presets_dir)
+
+    resp = await _get_studio_presets()
+    assert resp.status_code == 200, resp.text
+    assert [p["id"] for p in resp.json()] == ["good"]
+
+
+@pytest.mark.asyncio
+async def test_list_studio_presets_missing_dir_returns_empty_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(_studios_mod, "_studio_presets_dir", lambda: tmp_path / "does-not-exist")
+
+    resp = await _get_studio_presets()
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []
+
+
 @pytest.mark.asyncio
 async def test_create_studio_500_detail_has_no_raw_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
