@@ -13,6 +13,8 @@ case — this keeps the tests independent of forge.sh/bash actually existing.
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -331,3 +333,170 @@ async def test_run_studio_init_env_defaults_lang_when_absent(
     err = await _studios_mod._run_studio_init(project_dir, "EnvCheck", "goal")
     assert err is None
     assert captured_env.get("LANG") == "C.UTF-8"
+
+
+# ---------------------------------------------------------------------------
+# goal field (BACKLOG.md P0-3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_studio_echoes_goal(_init_ok, tmp_path: Path) -> None:
+    studio_dir = tmp_path / "studio_goal_echo"
+    studio_dir.mkdir()
+
+    resp = await _post_studio(
+        {"name": "Goal Echo", "path": str(studio_dir), "goal": "write a novel"}
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["goal"] == "write a novel"
+
+
+@pytest.mark.asyncio
+async def test_create_studio_goal_defaults_empty_string(_init_ok, tmp_path: Path) -> None:
+    studio_dir = tmp_path / "studio_goal_default"
+    studio_dir.mkdir()
+
+    resp = await _post_studio({"name": "No Goal", "path": str(studio_dir), "goal": ""})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["goal"] == ""
+
+
+@pytest.mark.asyncio
+async def test_list_studios_reads_goal_from_studio_json(_init_ok, tmp_path: Path) -> None:
+    """goal in the list response is read from studio.json on disk, not the
+    registry — write it manually after create (forge studio init is stubbed
+    as a no-op by _init_ok and never actually writes the file)."""
+    studio_dir = tmp_path / "studio_goal_from_disk"
+    studio_dir.mkdir()
+
+    created = await _post_studio({"name": "From Disk", "path": str(studio_dir), "goal": ""})
+    assert created.status_code == 201, created.text
+
+    (studio_dir / "studio.json").write_text(
+        json.dumps({"goal": "on-disk goal"}), encoding="utf-8"
+    )
+
+    studios_resp = await _get_studios()
+    assert studios_resp.status_code == 200
+    entry = next(s for s in studios_resp.json() if s["name"] == "From Disk")
+    assert entry["goal"] == "on-disk goal"
+
+
+@pytest.mark.asyncio
+async def test_list_studios_goal_empty_when_studio_json_missing(
+    _init_ok, tmp_path: Path
+) -> None:
+    studio_dir = tmp_path / "studio_no_json"
+    studio_dir.mkdir()
+
+    created = await _post_studio({"name": "No Json", "path": str(studio_dir), "goal": ""})
+    assert created.status_code == 201, created.text
+    assert not (studio_dir / "studio.json").exists()
+
+    studios_resp = await _get_studios()
+    entry = next(s for s in studios_resp.json() if s["name"] == "No Json")
+    assert entry["goal"] == ""
+
+
+@pytest.mark.asyncio
+async def test_list_studios_goal_empty_when_studio_json_corrupt(
+    _init_ok, tmp_path: Path
+) -> None:
+    studio_dir = tmp_path / "studio_corrupt_json"
+    studio_dir.mkdir()
+
+    created = await _post_studio({"name": "Corrupt Json", "path": str(studio_dir), "goal": ""})
+    assert created.status_code == 201, created.text
+
+    (studio_dir / "studio.json").write_text("{not valid json", encoding="utf-8")
+
+    studios_resp = await _get_studios()
+    entry = next(s for s in studios_resp.json() if s["name"] == "Corrupt Json")
+    assert entry["goal"] == ""
+
+
+# ---------------------------------------------------------------------------
+# stderr redaction (BACKLOG.md P1)
+# ---------------------------------------------------------------------------
+
+
+class _FakeFailingProc:
+    def __init__(self, stderr: bytes, returncode: int = 1) -> None:
+        self.returncode = returncode
+        self._stderr = stderr
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        return b"", self._stderr
+
+
+@pytest.mark.asyncio
+async def test_run_studio_init_redacts_absolute_paths_and_logs_full_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The returned error string must not carry the raw absolute path that
+    appeared in forge.sh's stderr, but the full text must still be logged."""
+    fake_forge_sh = tmp_path / "forge.sh"
+    fake_forge_sh.write_text("#!/bin/bash\n", encoding="utf-8")
+    monkeypatch.setattr(_studios_mod, "FORGE_SH_PATH", fake_forge_sh)
+
+    raw_stderr = (
+        b"some noise on stdout\n"
+        rb"C:\Users\secretuser\AppData\Local\golem\forge.sh: line 42: soul-create: command not found"
+    )
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # noqa: ARG001
+        return _FakeFailingProc(raw_stderr)
+
+    monkeypatch.setattr(
+        _studios_mod.asyncio, "create_subprocess_exec", _fake_create_subprocess_exec
+    )
+
+    project_dir = tmp_path / "redact_check_studio"
+    project_dir.mkdir()
+
+    with caplog.at_level(logging.ERROR, logger="golem_gateway.api_studios"):
+        err = await _studios_mod._run_studio_init(project_dir, "RedactCheck", "goal")
+
+    assert err is not None
+    assert "secretuser" not in err
+    assert "C:\\Users" not in err
+    assert len(err) <= 200
+
+    # Full raw text (including the secret path) must still be in server logs.
+    full_logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "secretuser" in full_logged
+
+
+@pytest.mark.asyncio
+async def test_create_studio_500_detail_has_no_raw_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """End-to-end: a real forge.sh subprocess failure must not leak an
+    absolute path through the POST /v1/studios 500 detail."""
+    fake_forge_sh = tmp_path / "forge.sh"
+    fake_forge_sh.write_text("#!/bin/bash\n", encoding="utf-8")
+    monkeypatch.setattr(_studios_mod, "FORGE_SH_PATH", fake_forge_sh)
+
+    raw_stderr = rb"C:\Users\secretuser\AppData\Local\golem\forge.sh: soul-create failed"
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # noqa: ARG001
+        return _FakeFailingProc(raw_stderr)
+
+    monkeypatch.setattr(
+        _studios_mod.asyncio, "create_subprocess_exec", _fake_create_subprocess_exec
+    )
+
+    studio_dir = tmp_path / "studio_500_no_leak"
+    studio_dir.mkdir()
+
+    with caplog.at_level(logging.ERROR, logger="golem_gateway.api_studios"):
+        resp = await _post_studio({"name": "No Leak", "path": str(studio_dir), "goal": ""})
+
+    assert resp.status_code == 500, resp.text
+    detail = resp.json()["detail"]
+    assert "secretuser" not in detail
+    assert "C:\\Users" not in detail
+
+    full_logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "secretuser" in full_logged

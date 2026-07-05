@@ -11,6 +11,7 @@ registry entry.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -23,6 +24,7 @@ from golem_gateway.config import (
     FORGE_SH_BASH_PATH,
     FORGE_SH_PATH,
     build_forge_subprocess_env,
+    redact_stderr,
     to_bash_path,
 )
 from golem_gateway.registry import Project, ProjectRegistry
@@ -50,9 +52,38 @@ class CreateStudioRequest(BaseModel):
     goal: str = ""
 
 
+class StudioOut(Project):
+    """Project + goal — an enriched response-only view (BACKLOG.md P0-3).
+
+    goal is NOT persisted on the registry's Project model (GET /v1/projects
+    stays untouched); it is read best-effort from the studio's own
+    studio.json on list, and echoed back from the request body on create.
+    """
+
+    goal: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _read_studio_goal(path: str) -> str:
+    """Best-effort read of a studio's goal from its studio.json.
+
+    Missing file, unreadable, corrupt JSON, or a non-string/missing "goal"
+    field all fall back to "" rather than raising — this is a display nice-
+    to-have, not a source of truth.
+    """
+    try:
+        data = json.loads((Path(path) / "studio.json").read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if isinstance(data, dict):
+        goal = data.get("goal", "")
+        if isinstance(goal, str):
+            return goal
+    return ""
+
 
 async def _run_studio_init(project_path: Path, name: str, goal: str) -> str | None:
     """Run `bash forge.sh studio init <path> <name> <goal>` synchronously.
@@ -93,7 +124,18 @@ async def _run_studio_init(project_path: Path, name: str, goal: str) -> str | No
 
         if proc.returncode != 0:
             stderr_text = stderr_b.decode("utf-8", errors="replace").strip()
-            return stderr_text or f"forge studio init exited rc={proc.returncode}"
+            if not stderr_text:
+                return f"forge studio init exited rc={proc.returncode}"
+            # Full text server-side only (may contain absolute paths); the
+            # returned string (wrapped into the 500 detail by the caller) is
+            # redacted.
+            logger.error(
+                "forge studio init failed (rc=%s) for %s: %s",
+                proc.returncode,
+                project_path,
+                stderr_text,
+            )
+            return redact_stderr(stderr_text)
         return None
     except (OSError, FileNotFoundError) as exc:
         return f"forge studio init subprocess failed: {exc}"
@@ -103,11 +145,11 @@ async def _run_studio_init(project_path: Path, name: str, goal: str) -> str | No
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.post("", response_model=Project, status_code=201)
+@router.post("", response_model=StudioOut, status_code=201)
 async def create_studio(
     body: CreateStudioRequest,
     registry: ProjectRegistry = Depends(get_registry),
-) -> Project:
+) -> StudioOut:
     """Register a new studio and scaffold it via `forge studio init`.
 
     400 on invalid input (bad path/name, or name/goal with newlines).
@@ -158,15 +200,21 @@ async def create_studio(
         logger.error("studio init failed for %s (%s): %s", project.id, project.path, err)
         raise HTTPException(status_code=500, detail=f"studio init failed: {err}")
 
-    return project
+    # goal echoed from the request, not re-read from disk — forge studio init
+    # already wrote it into studio.json, but echoing avoids a redundant read
+    # and matches what the client just submitted.
+    return StudioOut(**project.model_dump(), goal=body.goal)
 
 
-@router.get("", response_model=list[Project])
+@router.get("", response_model=list[StudioOut])
 async def list_studios(
     registry: ProjectRegistry = Depends(get_registry),
-) -> list[Project]:
-    """Return all registered studios (kind=studio only)."""
-    return await registry.list(kind="studio")
+) -> list[StudioOut]:
+    """Return all registered studios (kind=studio only), goal read best-effort."""
+    projects = await registry.list(kind="studio")
+    return [
+        StudioOut(**p.model_dump(), goal=_read_studio_goal(p.path)) for p in projects
+    ]
 
 
 @router.delete("/{studio_id}", status_code=204)

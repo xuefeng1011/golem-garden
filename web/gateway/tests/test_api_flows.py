@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import golem_gateway.api_flows as _flows_mod
 from golem_gateway.main import app
 from golem_gateway.registry import Project, ProjectRegistry
+
+# Captured at import time, BEFORE the module-scoped autouse fixture below
+# monkeypatches `_flows_mod._validate_with_forge` to a noop stub for every
+# test in this file — the redaction test at the bottom needs the real
+# implementation, not the stub.
+_REAL_VALIDATE_WITH_FORGE = _flows_mod._validate_with_forge
 
 
 # ---------------------------------------------------------------------------
@@ -736,3 +744,57 @@ async def test_get_single_flow_invalid_id_400(registered_project) -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(f"/v1/projects/{project_id}/flows/notaflow!")
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# stderr redaction (BACKLOG.md P1) — _validate_with_forge is advisory-only
+# (never raised as an HTTPException), but its returned string still must not
+# carry a raw absolute path, since callers log/could surface it downstream.
+# ---------------------------------------------------------------------------
+
+
+class _FakeFailingProc:
+    def __init__(self, stderr: bytes, returncode: int = 1) -> None:
+        self.returncode = returncode
+        self._stderr = stderr
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        return b"", self._stderr
+
+
+@pytest.mark.asyncio
+async def test_validate_with_forge_redacts_absolute_paths_and_logs_full_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake_forge_sh = tmp_path / "forge.sh"
+    fake_forge_sh.write_text("#!/bin/bash\n", encoding="utf-8")
+    monkeypatch.setattr(_flows_mod, "FORGE_SH_PATH", fake_forge_sh)
+
+    project_dir = tmp_path / "redact_flow_project"
+    (project_dir / ".golem").mkdir(parents=True)
+    flow_dir = project_dir / ".golem" / "flows" / "flow_redact_1"
+    flow_dir.mkdir(parents=True)
+    state_path = flow_dir / "state.json"
+    state_path.write_text("{}", encoding="utf-8")
+
+    raw_stderr = (
+        rb"C:\Users\secretuser\AppData\Local\golem\forge.sh: line 7: flow_validate: cycle found"
+    )
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # noqa: ARG001
+        return _FakeFailingProc(raw_stderr)
+
+    monkeypatch.setattr(
+        _flows_mod.asyncio, "create_subprocess_exec", _fake_create_subprocess_exec
+    )
+
+    with caplog.at_level(logging.ERROR, logger="golem_gateway.api_flows"):
+        err = await _REAL_VALIDATE_WITH_FORGE(state_path, project_dir)
+
+    assert err is not None
+    assert "secretuser" not in err
+    assert "C:\\Users" not in err
+    assert len(err) <= 200
+
+    full_logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "secretuser" in full_logged

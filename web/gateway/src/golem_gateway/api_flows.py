@@ -28,6 +28,7 @@ from golem_gateway.config import (
     FORGE_SH_BASH_PATH,
     FORGE_SH_PATH,
     build_forge_subprocess_env,
+    redact_stderr,
 )
 from golem_gateway.registry import ProjectRegistry
 
@@ -376,7 +377,19 @@ async def _validate_with_forge(state_path: Path, project_path: Path) -> str | No
 
         if proc.returncode != 0:
             stderr_text = stderr_b.decode("utf-8", errors="replace").strip()
-            return stderr_text or f"forge validate exited rc={proc.returncode}"
+            if not stderr_text:
+                return f"forge validate exited rc={proc.returncode}"
+            # Full text server-side only (may contain absolute paths); the
+            # returned string (surfaced only in a warning log at the call
+            # site — this is an advisory check, never a raised error) is
+            # redacted so no caller can accidentally leak it further.
+            logger.error(
+                "forge flow validate failed (rc=%s) for %s: %s",
+                proc.returncode,
+                state_path,
+                stderr_text,
+            )
+            return redact_stderr(stderr_text)
         return None
     except (OSError, FileNotFoundError) as exc:
         logger.warning("flows: forge validate subprocess failed: %s", exc)

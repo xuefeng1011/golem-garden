@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -143,6 +144,44 @@ def build_forge_subprocess_env(project_path: Path | None = None) -> dict[str, st
         base["MSYS_NO_PATHCONV"] = "1"
         base["MSYS2_ARG_CONV_EXCL"] = "*"
     return base
+
+
+# ---------------------------------------------------------------------------
+# Subprocess stderr redaction (P1: forge.sh stderr must not leak to clients)
+# ---------------------------------------------------------------------------
+#
+# api_studios._run_studio_init and api_flows._validate_with_forge both shell
+# out to forge.sh and previously surfaced its raw stderr verbatim in
+# HTTPException details / warning logs — disclosing absolute server-side
+# paths (home dir, drive letters) to whatever's on the other end of the API.
+# This helper is the single place that turns raw stderr into a client-safe
+# snippet; callers must log the FULL, unredacted text themselves via
+# logger.error before calling it.
+
+# Matches an absolute path prefix: a Windows drive letter (`C:\...`,
+# `C:/...`) or a *nix-style root under /home, /Users, /mnt, or a bare drive
+# mount (/c/...). Only the path *prefix* up to the last separator is
+# replaced, so the trailing filename/context in the line is preserved.
+_PATH_PREFIX_RE = re.compile(
+    r"(?:[A-Za-z]:[\\/](?:[^\s\\/:*?\"<>|]+[\\/])*"
+    r"|/(?:home|Users|mnt|[a-zA-Z])/(?:[^\s/]+/)*)"
+)
+
+
+def redact_stderr(stderr_text: str, *, max_len: int = 200) -> str:
+    """Reduce raw subprocess stderr to a short, path-redacted client-safe snippet.
+
+    Keeps only the last non-empty line (the most relevant one for a CLI
+    failure), strips absolute path prefixes, and truncates to `max_len`
+    characters. The caller is responsible for logging the full, unredacted
+    `stderr_text` separately (logger.error) before this is called.
+    """
+    lines = [ln for ln in stderr_text.strip().splitlines() if ln.strip()]
+    last = lines[-1] if lines else stderr_text.strip()
+    redacted = _PATH_PREFIX_RE.sub("…", last)
+    if len(redacted) > max_len:
+        redacted = redacted[: max_len - 1] + "…"
+    return redacted
 
 
 # Server
