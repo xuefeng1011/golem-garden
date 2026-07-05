@@ -8,6 +8,7 @@
 #   VERIFY_AUTHOR_SOUL   — 작업을 수행한 SOUL 이름 (가드용)
 #   GOLEM_VERIFY_TMPDIR  — bats 실행용 TMPDIR 오버라이드 (Windows 대응)
 #   VERIFY_TESTS_ONLY    — "1" 이면 SOUL 호출 없이 테스트만 실행
+#   GOLEM_VERIFY_RUBRIC  — "0" 이면 루브릭(항목 채점) 끄고 구 총평 프롬프트 사용 (기본 1)
 
 GOLEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -193,6 +194,45 @@ _verify_parse_verdict() {
 }
 
 # ─────────────────────────────────────────────────────────
+# 루브릭 항목 집계 (P1-3 — 체크리스트 채점 계약)
+# ─────────────────────────────────────────────────────────
+# _verify_aggregate_items <soul_output>
+# 심판 출력에서 [ITEM-k: OK] / [ITEM-k: NG <사유>] 라인을 파싱해
+# 종합 판정을 스크립트가 집계한다. 약한 모델도 항목별 채점은 안정적 —
+# "총평 PASS/FAIL" 판단은 모델에게 맡기지 않는다.
+# stdout:
+#   "NONE"                       — 항목 마커 0건 (레거시 [VERDICT:] 폴백 대상)
+#   "PASS <n>항목 OK"            — 전 항목 OK
+#   "FAIL ITEM-k: 사유 | ..."    — NG 1건 이상 (사유 결합)
+# return: 항상 0 (판정은 stdout 으로만)
+_verify_aggregate_items() {
+  local out="$1"
+  local items
+  items=$(printf '%s\n' "$out" | grep -oE '\[ITEM-[0-9]+:[[:space:]]*(OK|NG[^]]*)\]' | head -50)
+  if [ -z "$items" ]; then
+    echo "NONE"
+    return 0
+  fi
+
+  local total
+  total=$(printf '%s\n' "$items" | grep -c '\[ITEM-' | tr -d '[:space:]')
+
+  local ng_lines
+  ng_lines=$(printf '%s\n' "$items" | grep -E '^\[ITEM-[0-9]+:[[:space:]]*NG' | head -20)
+  if [ -z "$ng_lines" ]; then
+    echo "PASS ${total}항목 OK"
+    return 0
+  fi
+
+  # NG 사유 결합: "[ITEM-2: NG 사유]" → "ITEM-2: 사유", 여러 건은 " | " 로 연결
+  local reasons
+  reasons=$(printf '%s\n' "$ng_lines" \
+    | sed -E 's/^\[(ITEM-[0-9]+):[[:space:]]*NG[[:space:]]*/\1: /; s/\]$//; s/^(ITEM-[0-9]+): $/\1: (사유 미기재)/' \
+    | tr '\n' '|' | sed -e 's/|$//' -e 's/|/ | /g')
+  echo "FAIL ${reasons}"
+}
+
+# ─────────────────────────────────────────────────────────
 # 공개 함수: verify_run
 # ─────────────────────────────────────────────────────────
 # verify_run <target_description> [verifier_soul]
@@ -294,8 +334,29 @@ verify_run() {
     else
       echo "[verify] [2/2] ${verifier_soul} SOUL 심판 호출 중..."
 
+      # 루브릭 모드 (P1-3, 기본 on) — GOLEM_VERIFY_RUBRIC=0 이면 구 총평 프롬프트
+      local rubric_on="${GOLEM_VERIFY_RUBRIC:-1}"
       local verifier_prompt
-      verifier_prompt="당신은 독립적인 검증자입니다. 저자와 다른 SOUL로서 아래 작업 결과를 공정하게 심판하세요.
+      if [ "$rubric_on" != "0" ]; then
+        verifier_prompt="당신은 독립적인 검증자입니다. 저자와 다른 SOUL로서 아래 작업 결과를 공정하게 심판하세요.
+
+검증 대상: ${target}
+
+테스트 결과: ${test_status}
+  ${test_detail}
+
+채점 절차 (루브릭 — 종합 판정 금지, 항목별 채점만):
+1. 검증 대상의 성공 기준을 검증 가능한 구체 항목 2~6개로 분해하세요
+2. 각 항목을 한 줄에 하나씩, 정확히 아래 대괄호 형식으로 채점하세요:
+   [ITEM-1: OK] 또는 [ITEM-1: NG <한 줄 사유>]
+3. 종합 PASS/FAIL 판정은 출력하지 마세요 — 집계는 스크립트가 수행합니다
+
+형식 예시:
+[ITEM-1: OK]
+[ITEM-2: NG 경계값 테스트 근거 없음]
+[ITEM-3: OK]"
+      else
+        verifier_prompt="당신은 독립적인 검증자입니다. 저자와 다른 SOUL로서 아래 작업 결과를 공정하게 심판하세요.
 
 검증 대상: ${target}
 
@@ -312,6 +373,7 @@ verify_run() {
 형식:
 [VERDICT: PASS]
 이유: ..."
+      fi
 
       local soul_output
       soul_output=$(agent_run "$verifier_soul" "$verifier_prompt" 2>/dev/null)
@@ -322,30 +384,56 @@ verify_run() {
         soul_verdict="SKIP(SOUL호출실패)"
         soul_reason="agent_run 오류 또는 빈 응답"
       else
-        # 마커 계약 파싱 (P0-1) — 마커 > 레거시 첫 줄, 불명확 시 재질의 1회
-        soul_verdict=$(_verify_parse_verdict "$soul_output")
+        # 루브릭 집계 (P1-3) — [ITEM-k:] 항목 채점 우선, 0건이면 레거시 폴백
+        local _vr_agg="NONE"
+        if [ "$rubric_on" != "0" ]; then
+          _vr_agg=$(_verify_aggregate_items "$soul_output")
+        fi
 
-        if [ "$soul_verdict" = "UNCLEAR" ]; then
-          echo "[verify] 판정 마커 불명확 — 형식 재질의 (1회)"
-          local _vr_excerpt _vr_reask _vr_retry_out
-          _vr_excerpt=$(printf '%s' "$soul_output" | head -10)
-          _vr_reask="다음은 검증자의 직전 판정 출력입니다. 내용을 다시 평가하지 말고, 이 출력이 의미하는 최종 판정만 정확히 한 줄로 출력하세요. 허용되는 출력은 '[VERDICT: PASS]' 또는 '[VERDICT: FAIL]' 두 가지뿐입니다.
+        case "$_vr_agg" in
+          PASS*)
+            soul_verdict="PASS"
+            soul_reason="루브릭 ${_vr_agg#PASS }"
+            ;;
+          FAIL*)
+            soul_verdict="FAIL"
+            soul_reason="루브릭 NG — ${_vr_agg#FAIL }"
+            ;;
+          *)
+            # 레거시 폴백 (P0-1): 마커 > 첫 줄, 불명확 시 재질의 1회
+            soul_verdict=$(_verify_parse_verdict "$soul_output")
+
+            if [ "$soul_verdict" = "UNCLEAR" ]; then
+              echo "[verify] 판정 마커 불명확 — 형식 재질의 (1회)"
+              local _vr_excerpt _vr_reask _vr_retry_out
+              _vr_excerpt=$(printf '%s' "$soul_output" | head -10)
+              _vr_reask="다음은 검증자의 직전 판정 출력입니다. 내용을 다시 평가하지 말고, 이 출력이 의미하는 최종 판정만 정확히 한 줄로 출력하세요. 허용되는 출력은 '[VERDICT: PASS]' 또는 '[VERDICT: FAIL]' 두 가지뿐입니다.
 
 직전 출력:
 ${_vr_excerpt}"
-          _vr_retry_out=$(agent_run "$verifier_soul" "$_vr_reask" 2>/dev/null)
-          soul_verdict=$(_verify_parse_verdict "$_vr_retry_out")
-        fi
+              _vr_retry_out=$(agent_run "$verifier_soul" "$_vr_reask" 2>/dev/null)
+              # 재질의 응답도 항목 채점 우선 수용 (1차 garbage → 2차 항목 케이스)
+              if [ "$rubric_on" != "0" ]; then
+                _vr_agg=$(_verify_aggregate_items "$_vr_retry_out")
+              fi
+              case "$_vr_agg" in
+                PASS*) soul_verdict="PASS"; soul_reason="루브릭 ${_vr_agg#PASS } (재질의)" ;;
+                FAIL*) soul_verdict="FAIL"; soul_reason="루브릭 NG — ${_vr_agg#FAIL }" ;;
+                *)     soul_verdict=$(_verify_parse_verdict "$_vr_retry_out") ;;
+              esac
+            fi
 
-        # 안전 기본값 (P0-1): 재질의 후에도 불명확 → FAIL.
-        # 기존 SKIP(판정불명확)은 soul_ok=1 로 처리돼 게이트가 열린 채 통과했다.
-        if [ "$soul_verdict" = "UNCLEAR" ]; then
-          soul_verdict="FAIL"
-          soul_reason="판정 마커 파싱 실패 (재질의 1회 포함) — 안전 기본값 FAIL"
-        else
-          # 첫 3줄을 이유로
-          soul_reason=$(printf '%s' "$soul_output" | head -3 | tr '\n' ' ')
-        fi
+            # 안전 기본값 (P0-1): 재질의 후에도 불명확 → FAIL.
+            # 기존 SKIP(판정불명확)은 soul_ok=1 로 처리돼 게이트가 열린 채 통과했다.
+            if [ "$soul_verdict" = "UNCLEAR" ]; then
+              soul_verdict="FAIL"
+              soul_reason="판정 마커 파싱 실패 (재질의 1회 포함) — 안전 기본값 FAIL"
+            elif [ -z "$soul_reason" ]; then
+              # 첫 3줄을 이유로
+              soul_reason=$(printf '%s' "$soul_output" | head -3 | tr '\n' ' ')
+            fi
+            ;;
+        esac
       fi
     fi
   fi

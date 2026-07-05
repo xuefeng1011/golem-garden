@@ -119,3 +119,73 @@ _source_verify() {
   run verify_run "심판 통과 대상" "zen"
   [ "$status" -eq 0 ]
 }
+
+# ─────────────────────────────────────────────────────────
+# 루브릭 채점 (P1-3) — [ITEM-k: OK|NG] 항목 채점 + 스크립트 집계
+# ─────────────────────────────────────────────────────────
+
+@test "verify: 루브릭 3항목 전부 OK — PASS (rc 0) + 프롬프트에 ITEM 지시 포함" {
+  _source_verify
+  # mock: 프롬프트 캡처 + 항목 3건 전부 OK
+  agent_run() {
+    printf '%s\n' "$2" > "$TEST_PROJECT/.judge_prompt"
+    printf '[ITEM-1: OK]\n[ITEM-2: OK]\n[ITEM-3: OK]\n'
+    return 0
+  }
+  run verify_run "루브릭 대상" "zen"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"3항목"* ]]
+  # 기본(루브릭 on) 프롬프트는 항목 채점 형식을 지시한다
+  grep -q 'ITEM-1' "$TEST_PROJECT/.judge_prompt"
+}
+
+@test "verify: 루브릭 1항목 NG — FAIL (rc 1) + 사유가 출력에 노출" {
+  _source_verify
+  agent_run() {
+    printf '[ITEM-1: OK]\n[ITEM-2: NG 경계값 테스트 누락]\n[ITEM-3: OK]\n'
+    return 0
+  }
+  run verify_run "루브릭 대상" "zen"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ITEM-2"* ]]
+  [[ "$output" == *"경계값 테스트 누락"* ]]
+}
+
+@test "verify: 항목 0건 + 레거시 [VERDICT: PASS] — 폴백으로 PASS" {
+  _source_verify
+  agent_run() { printf '판단 요약입니다.\n[VERDICT: PASS]\n이유: 기준 충족\n'; return 0; }
+  run verify_run "레거시 폴백 대상" "zen"
+  [ "$status" -eq 0 ]
+}
+
+@test "verify: 1차 garbage → 재질의에서 항목 채점 — 집계 동작 (호출 2회)" {
+  _source_verify
+  agent_run() {
+    local n=0
+    [ -f "$TEST_PROJECT/.judge_calls" ] && n=$(cat "$TEST_PROJECT/.judge_calls")
+    n=$((n + 1)); printf '%d' "$n" > "$TEST_PROJECT/.judge_calls"
+    if [ "$n" -eq 1 ]; then
+      printf '음... 판단이 애매합니다\n'
+    else
+      printf '[ITEM-1: OK]\n[ITEM-2: OK]\n'
+    fi
+    return 0
+  }
+  run verify_run "재질의 대상" "zen"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEST_PROJECT/.judge_calls")" -eq 2 ]
+  [[ "$output" == *"재질의"* ]]
+}
+
+@test "verify: GOLEM_VERIFY_RUBRIC=0 — 구 총평 프롬프트 (ITEM 지시 없음, VERDICT 지시 있음)" {
+  _source_verify
+  agent_run() {
+    printf '%s\n' "$2" > "$TEST_PROJECT/.judge_prompt"
+    printf '[VERDICT: PASS]\n이유: 충분함\n'
+    return 0
+  }
+  GOLEM_VERIFY_RUBRIC=0 run verify_run "킬스위치 대상" "zen"
+  [ "$status" -eq 0 ]
+  ! grep -q 'ITEM-1' "$TEST_PROJECT/.judge_prompt"
+  grep -q 'VERDICT' "$TEST_PROJECT/.judge_prompt"
+}
