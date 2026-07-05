@@ -1149,6 +1149,13 @@ export default {
       binary: 'Preview unavailable (binary) — {size}',
       truncated: 'Content truncated — showing a partial preview',
     },
+    delete: {
+      button: 'Delete',
+      title: 'Delete studio',
+      confirm: 'Remove "{name}" from the list? The folder and its artifacts stay on disk.',
+      success: 'Studio "{name}" deleted',
+      error: 'Failed to delete studio',
+    },
   },
 
   // Changelog

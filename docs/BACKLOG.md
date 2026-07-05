@@ -21,18 +21,23 @@
   test_agent_runner.bats 에 부재 시나리오 회귀 테스트 2건(강제 종료 계약/워치독 정리) 추가.
 - ~~게이트웨이 500 detail이 subprocess stderr 원문 노출~~ → **완료**: `redact_stderr` 공용 헬퍼
   (마지막 줄·200자·절대경로 제거), 원문은 서버 로그에만. api_flows/api_studios 적용.
-- `v-model:show` 닫기 가드 패턴 통일 — StudioCreateModal은 수정 완료, ProfileCreateModal·
-  ProviderFormModal 등 동일 패턴 잔존 (SSE 가드가 없는 모달이라 저위험이지만 통일 권장).
-- studio_run 최신 플로우 선택이 mtime 동초 tie에서 비결정 / soul frontmatter
-  `specialty: [role]`의 `]` 포함 role 이스케이프 (둘 다 코스메틱).
+- ~~`v-model:show` 닫기 가드 패턴 통일~~ → **완료**: NModal 직접 사용 10개 파일 전부
+  one-way `:show` + `@close`/`@mask-click` 패턴으로 통일 (loading 가드 보존).
+- ~~studio_run mtime tie / specialty 이스케이프~~ → **완료**: `-nt` 비교 + 사전순 tie-break,
+  specialty 값 `[]`,`,` 정화(role: 라인은 원문 유지).
 
-## P2 — 이월 (PERF-HARNESS-PLAN.md 참조)
+## P2 — 이월 → ✅ 전부 완료 (2026-07-05, retention 제외)
 
-- P2-1 모델 라우팅 테이블 (rank→모델 매핑 정책)
-- P1-1 턴 캡 stream 집행 (maxTurns 프롬프트 권고 → 코드 강제)
-- P1-3 rubric verify (검증 레인 루브릭 채점)
-- 2차 로케일(de/es/fr/ja/pt) flowEditor 네임스페이스 백필 — 현재 en 폴백, 신규 키만 존재
-- runs/sessions retention 정책, 글로벌 설치 드리프트 감지(doctor)
+- ~~P2-1 모델 라우팅~~ → `lib/model-routing.sh`: frontmatter 우선, `auto`/미지정 시 역할 테이블
+  (판단직→opus, expert/master→sonnet, 정형 novice→haiku), `GOLEM_MODEL_ESCALATE` 승급 훅.
+- ~~P1-1 턴 캡~~ → 워치독이 stream assistant 메시지 수 카운트, 초과 시 kill +
+  `result=turn_cap`·`turn_cap=1` usage 필드·rc 1. `GOLEM_TURN_CAP_ENFORCE=0` 해제.
+  (라이브 확인 1건은 미실시 — fake claude bats만. PERF-PLAN §10 체크박스 잔존)
+- ~~P1-3 rubric verify~~ → `[ITEM-k: OK|NG]` 항목별 채점 + 코드 집계, 레거시 VERDICT 폴백,
+  `GOLEM_VERIFY_RUBRIC=0` 해제.
+- ~~2차 로케일 백필~~ → de/es/fr/ja/pt flowEditor 91키 완역, i18n 가드 테스트 5로케일 확장.
+- ~~doctor 드리프트 감지~~ → install.sh가 `.golem-source` 마커 기록, doctor가 cksum 비교 WARN.
+- runs/sessions retention 정책 — **계속 보류** (실이슈 발생 전).
 
 ## P3 — 스튜디오 확장 아이디어
 

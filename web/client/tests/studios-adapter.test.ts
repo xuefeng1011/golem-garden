@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { adaptStudio, type RawStudio } from '@/api/hermes/studios'
+import { describe, expect, it, vi } from 'vitest'
+import { adaptStudio, deleteStudio, type RawStudio } from '@/api/hermes/studios'
+import { request } from '@/api/client'
+
+vi.mock('@/api/client', () => ({
+  request: vi.fn(),
+}))
 
 function raw(overrides: Partial<RawStudio> = {}): RawStudio {
   return {
@@ -37,5 +42,24 @@ describe('studios adapter — gateway snake_case → UI camelCase (단일 매핑
 
   it('defaults goal to empty string when absent (backward compat)', () => {
     expect(adaptStudio(raw({ goal: undefined })).goal).toBe('')
+  })
+})
+
+describe('deleteStudio — registry-only removal (disk untouched)', () => {
+  it('sends a DELETE request to /v1/studios/{id}', async () => {
+    vi.mocked(request).mockResolvedValue(undefined)
+    await deleteStudio('studio_1')
+    expect(request).toHaveBeenCalledWith('/v1/studios/studio_1', { method: 'DELETE' })
+  })
+
+  it('URL-encodes the studio id', async () => {
+    vi.mocked(request).mockResolvedValue(undefined)
+    await deleteStudio('studio with space')
+    expect(request).toHaveBeenCalledWith('/v1/studios/studio%20with%20space', { method: 'DELETE' })
+  })
+
+  it('propagates errors from the request layer (e.g. 404 unknown/non-studio id)', async () => {
+    vi.mocked(request).mockRejectedValue(new Error('API Error 404: not found'))
+    await expect(deleteStudio('missing')).rejects.toThrow('404')
   })
 })

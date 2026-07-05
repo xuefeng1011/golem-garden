@@ -697,6 +697,13 @@ export default {
       binary: '无法预览(二进制) — {size}',
       truncated: '内容已截断 — 仅显示部分预览',
     },
+    delete: {
+      button: '删除',
+      title: '删除工作室',
+      confirm: '从列表中删除「{name}」吗？文件夹及其产物将保留在磁盘上。',
+      success: '工作室「{name}」已删除',
+      error: '删除工作室失败',
+    },
   },
 
   // Flow Editor — 仅新增的键(其余回退到英文)

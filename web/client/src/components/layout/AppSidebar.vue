@@ -50,6 +50,10 @@ const showChangelog = ref(false);
 function openChangelog() {
   showChangelog.value = true;
 }
+
+function closeChangelog() {
+  showChangelog.value = false;
+}
 </script>
 
 <template>
@@ -290,7 +294,14 @@ function openChangelog() {
     </div>
 
     <!-- Changelog modal -->
-    <NModal v-model:show="showChangelog" preset="dialog" :title="t('sidebar.changelog')" style="width: 520px;">
+    <NModal
+      :show="showChangelog"
+      preset="dialog"
+      :title="t('sidebar.changelog')"
+      style="width: 520px;"
+      @close="closeChangelog"
+      @mask-click="closeChangelog"
+    >
       <div class="changelog-list">
         <div v-for="entry in changelog" :key="entry.version" class="changelog-version-block">
           <div class="changelog-version-header">

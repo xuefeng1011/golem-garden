@@ -395,6 +395,10 @@ async function handleRenameConfirm() {
   }
   showRenameModal.value = false
 }
+
+function handleRenameModalClose() {
+  showRenameModal.value = false
+}
 </script>
 
 <template>
@@ -504,12 +508,15 @@ async function handleRenameConfirm() {
     />
 
     <NModal
-      v-model:show="showRenameModal"
+      :show="showRenameModal"
       preset="dialog"
       :title="t('chat.renameSession')"
       :positive-text="t('common.ok')"
       :negative-text="t('common.cancel')"
       @positive-click="handleRenameConfirm"
+      @negative-click="handleRenameModalClose"
+      @close="handleRenameModalClose"
+      @mask-click="handleRenameModalClose"
     >
       <NInput
         ref="renameInputRef"

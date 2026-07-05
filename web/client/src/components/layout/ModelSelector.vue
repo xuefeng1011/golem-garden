@@ -78,6 +78,10 @@ function openModal() {
   customProvider.value = appStore.selectedProvider
   showModal.value = true
 }
+
+function handleClose() {
+  showModal.value = false
+}
 </script>
 
 <template>
@@ -91,11 +95,13 @@ function openModal() {
     </button>
 
     <NModal
-      v-model:show="showModal"
+      :show="showModal"
       preset="card"
       :title="t('models.title')"
       :style="{ width: 'min(480px, calc(100vw - 32px))' }"
       :mask-closable="true"
+      @close="handleClose"
+      @mask-click="handleClose"
     >
       <NInput
         v-model:value="searchQuery"

@@ -1090,6 +1090,13 @@ export default {
       binary: '미리보기 불가(바이너리) — {size}',
       truncated: '내용이 잘려 일부만 표시됩니다',
     },
+    delete: {
+      button: '삭제',
+      title: '스튜디오 삭제',
+      confirm: '"{name}"을(를) 목록에서 삭제하시겠습니까? 폴더와 산출물은 디스크에 그대로 남습니다.',
+      success: '스튜디오 "{name}"이(가) 삭제되었습니다',
+      error: '스튜디오 삭제 실패',
+    },
   },
 
   // 변경 이력

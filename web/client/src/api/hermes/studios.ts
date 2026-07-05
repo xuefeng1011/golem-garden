@@ -44,3 +44,10 @@ export async function createStudio(name: string, path: string, goal: string): Pr
   })
   return adaptStudio(raw)
 }
+
+// 레지스트리 항목만 제거 — 디스크 상의 스튜디오 폴더/산출물은 그대로 남는다 (204 No Content).
+export async function deleteStudio(studioId: string): Promise<void> {
+  await request<unknown>(`/v1/studios/${encodeURIComponent(studioId)}`, {
+    method: 'DELETE',
+  })
+}

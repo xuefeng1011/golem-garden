@@ -22,6 +22,10 @@ const loading = ref(false)
 const loadError = ref<ApiError | null>(null)
 const showRawModal = ref(false)
 
+function closeRawModal() {
+  showRawModal.value = false
+}
+
 const allEmpty = computed(() =>
   board.value !== null &&
   board.value.team.length === 0 &&
@@ -278,10 +282,12 @@ const historyData = computed<HistoryEntry[]>(() =>
 
     <!-- Raw MD modal -->
     <NModal
-      v-model:show="showRawModal"
+      :show="showRawModal"
       preset="dialog"
       :title="t('team.rawModalTitle')"
       style="width: min(800px, 92vw);"
+      @close="closeRawModal"
+      @mask-click="closeRawModal"
     >
       <div class="raw-md-wrap">
         <MarkdownRenderer v-if="board?.raw_md" :content="board.raw_md" />

@@ -219,12 +219,14 @@ onUnmounted(() => {
 
 <template>
   <NModal
-    v-model:show="sessionSearchOpen"
+    :show="sessionSearchOpen"
     preset="card"
     :title="t('chat.searchTitle')"
     :style="{ width: 'min(760px, calc(100vw - 24px))' }"
     :mask-closable="true"
     :auto-focus="false"
+    @close="closeModal"
+    @mask-click="closeModal"
   >
     <div class="session-search-modal">
       <div class="search-header">

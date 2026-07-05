@@ -24,6 +24,10 @@ const loading = ref(false)
 const loadError = ref<ApiError | null>(null)
 const showDebtModal = ref(false)
 
+function closeDebtModal() {
+  showDebtModal.value = false
+}
+
 const onRetry = () => {
   const id = profilesStore.activeProfile?.id
   if (!id) return
@@ -146,10 +150,12 @@ watch(
 
     <!-- Tech debt modal -->
     <NModal
-      v-model:show="showDebtModal"
+      :show="showDebtModal"
       preset="dialog"
       :title="t('overview.techDebtTitle')"
       style="width: 480px;"
+      @close="closeDebtModal"
+      @mask-click="closeDebtModal"
     >
       <ul class="debt-list">
         <li v-for="(item, idx) in board?.tech_debt ?? []" :key="idx" class="debt-item" :class="{ resolved: item.resolved }">

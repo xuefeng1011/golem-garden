@@ -6,9 +6,9 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton, NIcon, NSpin } from 'naive-ui'
-import { AlertCircleOutline, FolderOpenOutline, ArrowForwardOutline, DocumentTextOutline } from '@vicons/ionicons5'
-import { fetchStudios } from '@/api/hermes/studios'
+import { NButton, NIcon, NSpin, useDialog, useMessage } from 'naive-ui'
+import { AlertCircleOutline, FolderOpenOutline, ArrowForwardOutline, DocumentTextOutline, TrashOutline } from '@vicons/ionicons5'
+import { fetchStudios, deleteStudio } from '@/api/hermes/studios'
 import type { Studio } from '@/api/hermes/studios'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StudioCreateModal from '@/components/hermes/studio/StudioCreateModal.vue'
@@ -16,6 +16,8 @@ import ArtifactsDrawer from '@/components/hermes/studio/ArtifactsDrawer.vue'
 
 const { t } = useI18n()
 const router = useRouter()
+const dialog = useDialog()
+const message = useMessage()
 
 const studios = ref<Studio[]>([])
 const loading = ref(false)
@@ -43,6 +45,25 @@ function openStudio(studio: Studio) {
 function openArtifacts(studio: Studio) {
   artifactsProjectId.value = studio.id
   showArtifactsDrawer.value = true
+}
+
+function handleDelete(studio: Studio) {
+  dialog.warning({
+    title: t('flowStudio.delete.title'),
+    content: t('flowStudio.delete.confirm', { name: studio.name }),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        await deleteStudio(studio.id)
+        message.success(t('flowStudio.delete.success', { name: studio.name }))
+        await loadStudios()
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err)
+        message.error(`${t('flowStudio.delete.error')}: ${detail}`)
+      }
+    },
+  })
 }
 
 function formatDate(iso: string): string {
@@ -103,6 +124,10 @@ onMounted(loadStudios)
             <NButton size="small" @click="openStudio(studio)">
               {{ t('flowStudio.open') }}
               <template #icon><NIcon><ArrowForwardOutline /></NIcon></template>
+            </NButton>
+            <NButton size="small" type="error" quaternary @click="handleDelete(studio)">
+              {{ t('flowStudio.delete.button') }}
+              <template #icon><NIcon><TrashOutline /></NIcon></template>
             </NButton>
           </div>
         </div>
