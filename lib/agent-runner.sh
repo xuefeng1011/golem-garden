@@ -143,10 +143,13 @@ _agent_persist_run() {
   return 0
 }
 
-# timeout 명령 프리픽스 배열을 stdout 으로 출력한다.
-# - GNU coreutils `timeout` (리눅스/Git-bash) 또는 `gtimeout` (macОS coreutils) 탐지.
-# - 둘 다 없으면 빈 출력 → 호출부가 무가드로 폴백(한 번 경고).
-# 사용: read -r -a _pfx < <(_agent_timeout_cmd) ; "${_pfx[@]}" claude ...
+# timeout 명령 프리픽스 배열을 stdout 으로 출력한다 (진단/탐지 전용).
+# - GNU coreutils `timeout` (리눅스) 또는 `gtimeout` (macOS coreutils) 탐지.
+# - 둘 다 없으면 빈 출력 (Windows Git Bash 기본 상태).
+# NOTE: agent_run 은 이 프리픽스를 prepend 하지 않는다 — MSYS `timeout` 이 네이티브
+#   Windows claude.exe 에 시그널을 전달하지 못하므로, 바이너리 유무와 무관하게
+#   소환 지점의 bash 워치독(_agent_kill_tree 루프)이 벽시계 가드를 담당한다.
+#   즉 timeout/gtimeout 부재(Windows Git Bash)여도 가드는 비활성화되지 않는다.
 # 단위 테스트 가능: AGENT_MAX_SECONDS=5 _agent_timeout_cmd → "timeout 5"
 _agent_timeout_cmd() {
   local secs="${AGENT_MAX_SECONDS:-300}"
@@ -446,7 +449,7 @@ ${_ar_body}"
   # P1-1 턴 캡 — claude CLI 가 --max-turns 를 미지원(설치본 --help 확인: --max-budget-usd
   # 만 존재)하므로 하드 집행 불가. SOUL_MAX_TURNS 가 양의 정수면 advisory 로 유저
   # 메시지에 주입한다(CLAUDE.md "프롬프트 가이드로 안내" 와 일치). 하드 런어웨이
-  # 가드는 별개로 _agent_timeout_cmd(벽시계) + AGENT_MAX_COST_USD(비용) 가 담당.
+  # 가드는 별개로 bash 워치독(벽시계, 소환 지점) + AGENT_MAX_COST_USD(비용) 가 담당.
   if [ "${_ar_max_turns:-0}" -gt 0 ] 2>/dev/null; then
     _ar_user_msg="${_ar_user_msg}
 
@@ -540,15 +543,14 @@ ${_ar_body}"
   fi
   argv+=(-- "$_ar_user_msg")
 
-  # 타임아웃 프리픽스 결정 (D1) — dry-run 에서는 가시화만, 실제 소환 시에는 prepend.
-  # max_secs 를 AGENT_MAX_SECONDS env 로 전달해 _agent_timeout_cmd 가 해석값을 쓰도록 함.
-  local -a _ar_timeout_pfx=()
-  read -r -a _ar_timeout_pfx < <(AGENT_MAX_SECONDS="$max_secs" _agent_timeout_cmd)
+  # 가드 가시성 (D1/D3) — 실제 벽시계 가드는 아래 소환 지점의 bash 워치독이며,
+  # timeout/gtimeout 바이너리 유무와 무관하게 max_secs>0 이면 항상 동작한다
+  # (Windows Git Bash 에 GNU timeout 이 없어도 무제한 실행되지 않음 — BACKLOG P1).
   local _ar_guard_desc
-  if [ "${#_ar_timeout_pfx[@]}" -gt 0 ]; then
-    _ar_guard_desc="${_ar_timeout_pfx[*]} (max_seconds=${max_secs})"
+  if [ "${max_secs:-0}" -gt 0 ] 2>/dev/null; then
+    _ar_guard_desc="bash-watchdog (max_seconds=${max_secs})"
   else
-    _ar_guard_desc="DISABLED (no timeout/gtimeout — unbounded, max_seconds=${max_secs})"
+    _ar_guard_desc="DISABLED (max_seconds=${max_secs} — unbounded)"
   fi
 
   # --dry-run: argv 만 출력 (각 인자 한 줄, 따옴표로 가독성)
@@ -556,8 +558,7 @@ ${_ar_body}"
     echo "[agent-runner] DRY-RUN argv (소환 안 함):"
     echo "[agent-runner] runaway guard: timeout=${_ar_guard_desc} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
     local a
-    # 실제 소환 시 prepend 될 타임아웃 프리픽스를 명시 (가시성 D3)
-    for a in "${_ar_timeout_pfx[@]}" "${argv[@]}"; do
+    for a in "${argv[@]}"; do
       printf '  %q\n' "$a"
     done
     echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"

@@ -836,12 +836,43 @@ JSON
   grep -qF '본문 작업' "$TEST_PROJECT/.task_dump"
   unset GOLEM_FLOW_OUTPUT_DIR
 
-  # env 미설정 시 — 목표 줄은 있고 산출물 규칙 줄은 없음
+  # env 미설정 시 — 목표 줄은 있고 산출물 규칙 줄은 없음 (studio.json 도 없음)
   run flow_create "컨텍스트 목표2" "$TEST_PROJECT/steps.json"
   local flow_id2="$output"
   flow_step_run "$flow_id2" s1
   grep -qF '플로우 목표: 컨텍스트 목표2' "$TEST_PROJECT/.task_dump"
   ! grep -qF '디렉토리 아래에 저장하라' "$TEST_PROJECT/.task_dump"
+}
+
+@test "flow: 컨텍스트 주입 — studio.json 있으면 env 미설정에도 <project>/output 규칙 주입 (BACKLOG P0-1)" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"본문 작업","deps":[],"type":"agent"}]
+JSON
+  run flow_create "스튜디오 목표" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  agent_run() { printf '%s' "$2" > "$TEST_PROJECT/.task_dump"; echo ok; return 0; }
+
+  echo '{}' > "$TEST_PROJECT/studio.json"
+  flow_step_run "$flow_id" s1
+  grep -qF "'$TEST_PROJECT/output' 디렉토리 아래에 저장하라" "$TEST_PROJECT/.task_dump"
+  [ -d "$TEST_PROJECT/output" ]
+}
+
+@test "flow: 컨텍스트 주입 — GOLEM_FLOW_OUTPUT_DIR 명시 시 studio.json 기본값보다 우선" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"본문 작업","deps":[],"type":"agent"}]
+JSON
+  run flow_create "우선순위 목표" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  agent_run() { printf '%s' "$2" > "$TEST_PROJECT/.task_dump"; echo ok; return 0; }
+
+  echo '{}' > "$TEST_PROJECT/studio.json"
+  export GOLEM_FLOW_OUTPUT_DIR="$TEST_PROJECT/explicit-out"
+  flow_step_run "$flow_id" s1
+  unset GOLEM_FLOW_OUTPUT_DIR
+  grep -qF "'$TEST_PROJECT/explicit-out' 디렉토리 아래에 저장하라" "$TEST_PROJECT/.task_dump"
+  ! grep -qF "'$TEST_PROJECT/output' 디렉토리 아래에 저장하라" "$TEST_PROJECT/.task_dump"
+  # 명시적 override 경로는 이 함수가 mkdir 하지 않음 (studio_run 이 담당) — 존재 단언 안 함
 }
 
 @test "flow: 미존재 {{id}} 는 그대로 보존" {

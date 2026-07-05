@@ -79,11 +79,12 @@ _source_agent_runner() {
   [[ "$result" =~ "max_seconds=5" ]]
 }
 
-@test "runaway: AGENT_MAX_SECONDS=5 agent_run --dry-run — timeout 5 또는 gtimeout 5 포함" {
+@test "runaway: AGENT_MAX_SECONDS=5 agent_run --dry-run — 가드 라인에 bash-watchdog + max_seconds=5" {
   _source_agent_runner
   AGENT_MAX_SECONDS=5 result=$(agent_run "zen" "테스트 태스크" --dry-run 2>&1)
-  # timeout 5 또는 gtimeout 5 가 argv 섹션에 표시되어야 함
-  [[ "$result" =~ "timeout" ]] && [[ "$result" =~ "5" ]]
+  # 실제 가드는 bash 워치독 (timeout 바이너리 prepend 안 함) — 가드 라인이 이를 표시
+  [[ "$result" =~ "bash-watchdog" ]]
+  [[ "$result" =~ "max_seconds=5" ]]
 }
 
 @test "runaway: agent_run --dry-run — cost_cap 라인 포함 (disabled 또는 값)" {

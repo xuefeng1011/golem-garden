@@ -78,8 +78,11 @@ _flow_marker_snip() {
 
 # ── 플로우 컨텍스트 주입 ──────────────────────────────────────────────────────
 # agent 단계 task 에 플로우 목표/현재 단계 헤더를 프리펜드 — 에이전트가 전체
-# 맥락 없이 저장 경로를 되묻는 문제 방지. GOLEM_FLOW_OUTPUT_DIR 이 설정된
-# 경우(studio_run)에만 산출물 저장 규칙 줄을 추가한다.
+# 맥락 없이 저장 경로를 되묻는 문제 방지. 산출물 저장 규칙 줄은
+# GOLEM_FLOW_OUTPUT_DIR(명시적 override, studio_run 이 설정) 이 있으면 그 값,
+# 없고 GOLEM_PROJECT/studio.json 이 존재하면 GOLEM_PROJECT/output 을 기본값으로
+# 딱 한 줄만 추가한다 (UI가 studio_run 을 안 거치고 flow_run 을 직접 호출해도
+# 동일 규칙이 적용되도록 — BACKLOG P0-1).
 # {{}} 치환이 끝난 task 에 프리펜드한다 (치환 순서 불변).
 _flow_prepend_context() {
   local state_file="$1" step_id="$2" task="$3"
@@ -90,9 +93,20 @@ _flow_prepend_context() {
   local ctx="[플로우 컨텍스트]
 - 플로우 목표: ${goal}
 - 현재 단계: ${step_id}"
-  if [ -n "${GOLEM_FLOW_OUTPUT_DIR:-}" ]; then
+
+  # 산출물 디렉토리(단일 유효값) — 명시적 env(GOLEM_FLOW_OUTPUT_DIR)가 우선.
+  # 미설정이고 GOLEM_PROJECT가 스튜디오(studio.json 존재)면 <project>/output을
+  # 기본 적용 — UI가 studio_run 을 거치지 않고 flow_run 을 직접 호출해도
+  # 저장 규칙이 에이전트에게 전달되도록 한다 (BACKLOG P0-1).
+  local out_dir="${GOLEM_FLOW_OUTPUT_DIR:-}"
+  if [ -z "$out_dir" ] && [ -n "${GOLEM_PROJECT:-}" ] && [ -f "${GOLEM_PROJECT}/studio.json" ]; then
+    out_dir="${GOLEM_PROJECT}/output"
+    mkdir -p "$out_dir" 2>/dev/null || true
+  fi
+
+  if [ -n "$out_dir" ]; then
     ctx="${ctx}
-- 파일 산출물은 반드시 '${GOLEM_FLOW_OUTPUT_DIR}' 디렉토리 아래에 저장하라. 저장 경로를 사용자에게 묻지 마라."
+- 파일 산출물은 반드시 '${out_dir}' 디렉토리 아래에 저장하라. 저장 경로를 사용자에게 묻지 마라."
   fi
   printf '%s\n\n---\n\n%s' "$ctx" "$task"
 }

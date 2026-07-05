@@ -460,6 +460,80 @@ _plant_warm_ptr() {
   ! grep -q '11111111-2222-4333-8444-555555555555' "$TEST_PROJECT/.golem/sessions/soul-zen.ptr"
 }
 
+# ─────────────────────────────────────────────────────────
+# 벽시계 워치독 — GNU timeout/gtimeout 부재(Windows Git Bash)에서도
+# 행 걸린 claude 를 데드라인에 강제 종료하고 GNU 경로와 동일 계약을 반환 (BACKLOG P1)
+# ─────────────────────────────────────────────────────────
+
+# fake claude: 자기 pid 를 기록하고 오래 잔다 (행 시뮬레이션).
+# fd3 닫기: bats 는 백그라운드 잔존 프로세스가 fd3 를 쥐고 있으면 대기하므로,
+# (POSIX 경로에서 sleep 고아가 1~10s 남을 수 있는 경우 대비) 상속 차단.
+_setup_hung_claude() {
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<FAKE
+#!/usr/bin/env bash
+exec 3>&-
+echo \$\$ > "$TEST_PROJECT/.claude_pid"
+sleep 60
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"TOO-LATE"}]}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+@test "watchdog: timeout 바이너리 부재 + 행 claude → 데드라인 강제 종료 (GNU 경로 동일 계약)" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  _setup_hung_claude
+  # GNU timeout/gtimeout 탐지 무력화 — Windows Git Bash 부재 시나리오 재현.
+  # (소환 경로는 프리픽스를 쓰지 않지만, 부재 상태에서도 가드가 살아있음을 못박는다)
+  _agent_timeout_cmd() { printf '\n'; }
+
+  local start elapsed rc=0
+  start=$(date +%s)
+  AGENT_MAX_SECONDS=1 agent_run zen "행 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+  elapsed=$(( $(date +%s) - start ))
+
+  # GNU timeout(rc 124) 경로와 동일 계약: agent_run rc=1(fail), TIMEOUT 텍스트, usage timeout=1
+  [ "$rc" -eq 1 ]
+  grep -q "TIMEOUT after 1s" "$TEST_PROJECT/run.out"
+  grep -q "timeout=1 max_seconds=1" "$TEST_PROJECT/run.out"
+  # 60초 sleep 을 기다리지 않고 반환 — 무제한 아님 증명.
+  # (킬 자체는 데드라인 ~1s 에 발생하나, agent_run 의 고정 오버헤드[프롬프트 조립/
+  #  growth-log/persist 등 fork 비용]가 Windows 에서 ~12s 라 여유 있는 상한을 쓴다)
+  [ "$elapsed" -le 30 ]
+  # fake claude 프로세스가 실제로 죽었는지 (워치독 → _agent_kill_tree 효과)
+  local cpid
+  cpid=$(cat "$TEST_PROJECT/.claude_pid")
+  ! kill -0 "$cpid" 2>/dev/null
+  # 워치독 잔존 없음 — 이 셸의 실행 중 백그라운드 잡이 모두 정리돼야 함
+  [ -z "$(jobs -rp)" ]
+}
+
+@test "watchdog: 정상 종료 시 워치독 즉시 정리 — 잔존 프로세스 없음 + 출력 파싱 불변" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"FAST-OK"}]}}'
+echo '{"type":"result","is_error":false,"duration_ms":120,"result":"FAST-OK","usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+  _agent_timeout_cmd() { printf '\n'; }
+
+  local rc=0
+  AGENT_MAX_SECONDS=30 agent_run zen "빠른 태스크" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+
+  [ "$rc" -eq 0 ]
+  grep -q "FAST-OK" "$TEST_PROJECT/run.out"
+  grep -q "result=success" "$TEST_PROJECT/run.out"
+  grep -q "timeout=0 max_seconds=30" "$TEST_PROJECT/run.out"
+  # 데드라인이 30초 남았어도 부모가 워치독을 kill+reap — 잔존 잡 없음
+  [ -z "$(jobs -rp)" ]
+}
+
 @test "agent-runner: fresh 소환 실패는 폴백 재시도 없음 (1회만)" {
   load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
   _source_agent_runner
