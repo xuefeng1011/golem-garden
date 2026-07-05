@@ -50,6 +50,13 @@ cp "$SCRIPT_DIR/forge.sh" "$GOLEM_HOME/forge.sh"
 cp "$SCRIPT_DIR/lib/"*.sh "$GOLEM_HOME/lib/" 2>/dev/null || true
 cp -r "$SCRIPT_DIR/domain-packs/"* "$GOLEM_HOME/domain-packs/" 2>/dev/null || true
 
+# 3.6. 소스 드리프트 마커 — 설치 대상이 소스 저장소 자체가 아닐 때만 기록.
+#      forge doctor 가 이 마커로 설치본과 원본 lib/forge.sh 를 비교해 드리프트를 경고한다.
+GOLEM_HOME_REAL="$(cd "$GOLEM_HOME" && pwd)"
+if [ "$GOLEM_HOME_REAL" != "$SCRIPT_DIR" ]; then
+  printf '%s' "$SCRIPT_DIR" > "$GOLEM_HOME/.golem-source"
+fi
+
 # 4.5. CRLF → LF 정규화 (Git for Windows bash compatibility)
 echo "[3.5/6] Line ending 정규화 (CRLF → LF)..."
 if command -v tr &>/dev/null; then

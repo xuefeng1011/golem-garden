@@ -163,13 +163,19 @@ studio_agent_add() {
   local date
   date=$(date +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
 
+  # specialty 는 YAML flow-seq(`[...]`) 값이므로 role 원문에 포함된 '[' ']' ','
+  # 가 시퀀스 구조를 깨거나(닫는 ']' 조기 종료) 잘못 분할(',')시킬 수 있다.
+  # role: 라인은 원문 그대로 유지하고, specialty 값에서만 정화한다.
+  local specialty_val
+  specialty_val=$(printf '%s' "$role" | tr -d '[]' | sed 's/,/·/g')
+
   local tmp="${soul_file}.tmp.$$"
   {
     printf -- '---\n'
     printf 'name: %s\n' "$name"
     printf 'role: %s\n' "$role"
     printf 'rank: novice\n'
-    printf 'specialty: [%s]\n' "$role"
+    printf 'specialty: [%s]\n' "$specialty_val"
     printf 'model: %s\n' "$model"
     printf 'isolation: none\n'
     printf 'created: %s\n' "$date"
@@ -441,8 +447,24 @@ studio_run() {
 
   local flows_dir="${dir}/.golem/flows"
   if [ -z "$flow_id" ]; then
-    local newest
-    newest=$(ls -1t "${flows_dir}"/*/state.json 2>/dev/null | head -1)
+    # mtime 내림차순 최신 선택 — 동률(같은 초)일 때 `ls -1t` 순서는 미정의라
+    # bash 빌트인 `-nt`(외부 stat/ls 의존 없이 GNU/BSD 겸용)로 직접 비교하고,
+    # 동률 시 flow_id(dirname) 사전순 최댓값을 결정적으로 고른다
+    # (flow_id 는 epoch+pid 를 포함하므로 사전순 비교가 안정적인 2차 키가 된다).
+    local newest="" f d1 d2 lexmax
+    for f in "${flows_dir}"/*/state.json; do
+      [ -f "$f" ] || continue
+      if [ -z "$newest" ]; then
+        newest="$f"
+      elif [ "$f" -nt "$newest" ]; then
+        newest="$f"
+      elif [ ! "$newest" -nt "$f" ]; then
+        d1=$(basename "$(dirname "$f")")
+        d2=$(basename "$(dirname "$newest")")
+        lexmax=$(printf '%s\n%s\n' "$d1" "$d2" | LC_ALL=C sort | tail -1)
+        [ "$lexmax" = "$d1" ] && newest="$f"
+      fi
+    done
     if [ -z "$newest" ]; then
       echo "[studio] ERROR: 플로우가 없습니다: ${dir}" >&2
       return 1

@@ -10,6 +10,7 @@
 #   ✓ 이름 — 상세
 #   ✗ 이름 — 상세 (CRITICAL 실패)
 #   ⚠ 이름 — 상세 (경고)
+#   ℹ 이름 — 상세 (정보, pass/warn/fail 카운트 미포함)
 #
 # 종료 코드: 0 = CRITICAL 전부 통과, 1 = CRITICAL 실패 있음
 
@@ -23,7 +24,57 @@ _DR_ROOT="${GOLEM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 _dr_pass()  { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 _dr_fail()  { printf '  \033[31m✗\033[0m %s\n' "$*"; }
 _dr_warn()  { printf '  \033[33m⚠\033[0m %s\n' "$*"; }
+_dr_info()  { printf '  \033[36mℹ\033[0m %s\n' "$*"; }
 _dr_head()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+# ─────────────────────────────────────────────────────────
+# 소스 드리프트 체크 — install.sh 가 기록한 <install_dir>/.golem-source
+# 마커(원본 저장소 경로, 평문 1줄) 기반. 설치본의 lib/*.sh + forge.sh 를
+# 원본과 cksum 비교해 드리프트를 감지한다(재설치 없이 로컬 수정이 방치되는
+# 것을 조기 발견). 마커/소스 디렉토리가 없으면 pass/warn 카운트 없이
+# info 라인만 출력하고 조용히 건너뜀(rc=2).
+# 반환값: 0=드리프트 없음, 1=드리프트 있음, 2=체크 건너뜀
+# ─────────────────────────────────────────────────────────
+_dr_check_source_drift() {
+  local marker="${_DR_ROOT}/.golem-source"
+  if [ ! -f "$marker" ]; then
+    _dr_info "소스 드리프트 — 체크 건너뜀 (.golem-source 마커 없음)"
+    return 2
+  fi
+
+  local source_dir
+  source_dir=$(tr -d '\r\n' < "$marker")
+  if [ -z "$source_dir" ] || [ ! -d "$source_dir" ]; then
+    _dr_info "소스 드리프트 — 체크 건너뜀 (소스 디렉토리 없음: ${source_dir})"
+    return 2
+  fi
+
+  local drift_count=0 drift_files="" f rel src_f src_sum inst_sum
+  for f in "${_DR_ROOT}/lib/"*.sh "${_DR_ROOT}/forge.sh"; do
+    [ -f "$f" ] || continue
+    rel="${f#${_DR_ROOT}/}"
+    src_f="${source_dir}/${rel}"
+    if [ ! -f "$src_f" ]; then
+      drift_count=$((drift_count + 1))
+      [ "$drift_count" -le 5 ] && drift_files="${drift_files}${rel} "
+      continue
+    fi
+    src_sum=$(cksum < "$src_f" 2>/dev/null)
+    inst_sum=$(cksum < "$f" 2>/dev/null)
+    if [ "$src_sum" != "$inst_sum" ]; then
+      drift_count=$((drift_count + 1))
+      [ "$drift_count" -le 5 ] && drift_files="${drift_files}${rel} "
+    fi
+  done
+
+  if [ "$drift_count" -eq 0 ]; then
+    _dr_pass "소스 드리프트 — 없음 (설치본이 원본과 동기화됨: ${source_dir})"
+    return 0
+  else
+    _dr_warn "소스 드리프트 — ${drift_count}개 파일 다름: ${drift_files}(bash install.sh 재실행 권장)"
+    return 1
+  fi
+}
 
 # ─────────────────────────────────────────────────────────
 # doctor_run — 메인 진단 함수
@@ -149,6 +200,14 @@ doctor_run() {
     _dr_fail "bash 버전 — ${bash_ver} (3.2 미만: 연관 배열 등 미지원)"
     fail=$((fail+1))
   fi
+
+  # 6. 소스 드리프트 (install.sh 로 설치된 경우만 — .golem-source 마커)
+  _dr_check_source_drift
+  case "$?" in
+    0) pass=$((pass+1)) ;;
+    1) warn=$((warn+1)) ;;
+    *) : ;;
+  esac
 
   # ══════════════════════════════════════════════════════
   # DEPENDENCIES — 선택 도구 경고

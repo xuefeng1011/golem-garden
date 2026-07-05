@@ -152,6 +152,30 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
+@test "studio: agent-add — specialty 값에서 '[' ']' ',' 정화(role: 라인은 원문 유지)" {
+  local dir="$TEST_PROJECT/studio-agent-specialty"
+  run studio_agent_add "$dir" specagent sonnet 'DB[관리],백엔드'
+  [ "$status" -eq 0 ]
+
+  local soul="$dir/.golem/souls/specagent.md"
+  [ -f "$soul" ]
+  grep -qF 'role: DB[관리],백엔드' "$soul"
+
+  local specialty_line inner
+  specialty_line=$(grep '^specialty:' "$soul")
+  inner="${specialty_line#specialty: [}"
+  inner="${inner%]}"
+  case "$inner" in
+    *'['*|*']'*|*','*)
+      echo "specialty 내부에 브래킷/쉼표 잔존: $inner" >&2
+      false ;;
+  esac
+
+  source "${GOLEM_ROOT}/lib/soul-parser.sh"
+  run soul_parse "$soul"
+  [ "$status" -eq 0 ]
+}
+
 # ─────────────────────────────────────────────────────────
 # 4. studio_design — 정상 경로
 # ─────────────────────────────────────────────────────────
@@ -314,6 +338,29 @@ teardown() {
   studio_init "$dir" >/dev/null
   run studio_run "$dir"
   [ "$status" -eq 1 ]
+}
+
+@test "studio: run — mtime 동률 시 flow_id 사전순 최댓값을 결정적으로 선택(2회 반복 동일)" {
+  local dir="$TEST_PROJECT/studio-run-tie"
+  mkdir -p "$dir/.golem/flows/flow_aaa" "$dir/.golem/flows/flow_bbb"
+  printf '{"flow_id":"flow_aaa","goal":"a","created":"x","status":"pending","steps":[]}' \
+    > "$dir/.golem/flows/flow_aaa/state.json"
+  printf '{"flow_id":"flow_bbb","goal":"b","created":"x","status":"pending","steps":[]}' \
+    > "$dir/.golem/flows/flow_bbb/state.json"
+  touch -t 202601010000 "$dir/.golem/flows/flow_aaa/state.json"
+  touch -t 202601010000 "$dir/.golem/flows/flow_bbb/state.json"
+
+  flow_create() { :; }
+  flow_validate() { return 0; }
+  flow_run() { echo "ran:$1"; return 0; }
+
+  run studio_run "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ran:flow_bbb"* ]]
+
+  run studio_run "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ran:flow_bbb"* ]]
 }
 
 # ─────────────────────────────────────────────────────────

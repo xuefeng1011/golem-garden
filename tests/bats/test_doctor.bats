@@ -94,3 +94,58 @@ _source_doctor() {
   after_count=$(find "$TEST_PROJECT/.golem/growth-log" -type f 2>/dev/null | wc -l | tr -d ' ')
   [ "$before_count" = "$after_count" ]
 }
+
+# ─────────────────────────────────────────────────────────
+# 소스 드리프트 체크 (_dr_check_source_drift) — .golem-source 마커 기반
+# 가짜 install/source 트리를 만들어 doctor_run 의 다른 CRITICAL 체크와
+# 분리해 함수 단위로 검증한다.
+# ─────────────────────────────────────────────────────────
+
+@test "doctor: 소스 드리프트 — 마커 없음 → 건너뜀(info, rc=2)" {
+  local real_root="$GOLEM_ROOT"
+  local install_dir="$TEST_PROJECT/fake-install-nomarker"
+  mkdir -p "$install_dir/lib"
+
+  export GOLEM_ROOT="$install_dir"
+  source "${real_root}/lib/doctor.sh"
+  run _dr_check_source_drift
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"건너뜀"* ]]
+}
+
+@test "doctor: 소스 드리프트 — 마커+소스 일치 시 OK(rc=0)" {
+  local real_root="$GOLEM_ROOT"
+  local install_dir="$TEST_PROJECT/fake-install-ok"
+  local source_dir="$TEST_PROJECT/fake-source-ok"
+  mkdir -p "$install_dir/lib" "$source_dir/lib"
+  printf '#!/usr/bin/env bash\necho hi\n' > "$install_dir/lib/foo.sh"
+  cp "$install_dir/lib/foo.sh" "$source_dir/lib/foo.sh"
+  printf '#!/usr/bin/env bash\necho forge\n' > "$install_dir/forge.sh"
+  cp "$install_dir/forge.sh" "$source_dir/forge.sh"
+  printf '%s' "$source_dir" > "$install_dir/.golem-source"
+
+  export GOLEM_ROOT="$install_dir"
+  source "${real_root}/lib/doctor.sh"
+  run _dr_check_source_drift
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"소스 드리프트"* ]]
+  [[ "$output" == *"없음"* ]]
+}
+
+@test "doctor: 소스 드리프트 — 파일 수정 시 WARN + 파일명 표시(rc=1)" {
+  local real_root="$GOLEM_ROOT"
+  local install_dir="$TEST_PROJECT/fake-install-drift"
+  local source_dir="$TEST_PROJECT/fake-source-drift"
+  mkdir -p "$install_dir/lib" "$source_dir/lib"
+  printf '#!/usr/bin/env bash\necho original\n' > "$source_dir/lib/foo.sh"
+  printf '#!/usr/bin/env bash\necho MODIFIED\n' > "$install_dir/lib/foo.sh"
+  printf '#!/usr/bin/env bash\necho forge\n' > "$install_dir/forge.sh"
+  cp "$install_dir/forge.sh" "$source_dir/forge.sh"
+  printf '%s' "$source_dir" > "$install_dir/.golem-source"
+
+  export GOLEM_ROOT="$install_dir"
+  source "${real_root}/lib/doctor.sh"
+  run _dr_check_source_drift
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"lib/foo.sh"* ]]
+}
