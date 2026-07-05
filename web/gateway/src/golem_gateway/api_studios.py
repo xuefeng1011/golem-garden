@@ -119,20 +119,25 @@ def _scan_studio_presets() -> list[PresetSummary]:
     if not presets_dir.is_dir():
         return []
 
-    presets: list[PresetSummary] = []
-    for f in sorted(presets_dir.glob("*.json")):
+    # 파일명 정렬은 최종 id 정렬에 밀려 무의미하므로 glob 순서 그대로 순회.
+    # 동일 id 를 선언한 파일이 둘이면 먼저 읽힌 쪽만 유지(경고) — id 는
+    # 클라이언트 목록 키로 쓰이므로 중복이 UI 버그로 번지지 않게 차단.
+    by_id: dict[str, PresetSummary] = {}
+    for f in presets_dir.glob("*.json"):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
-            presets.append(
-                PresetSummary(
-                    id=data["id"], name=data["name"], description=data["description"]
-                )
+            preset = PresetSummary(
+                id=data["id"], name=data["name"], description=data["description"]
             )
         except Exception:
             logger.warning("skipping unreadable/invalid studio preset file: %s", f)
             continue
+        if preset.id in by_id:
+            logger.warning("duplicate studio preset id %r in %s — keeping first", preset.id, f)
+            continue
+        by_id[preset.id] = preset
 
-    return sorted(presets, key=lambda p: p.id)
+    return sorted(by_id.values(), key=lambda p: p.id)
 
 
 async def _run_studio_init(project_path: Path, name: str, goal: str) -> str | None:

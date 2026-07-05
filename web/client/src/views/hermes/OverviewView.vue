@@ -156,6 +156,7 @@ watch(
       style="width: 480px;"
       @close="closeDebtModal"
       @mask-click="closeDebtModal"
+      @update:show="(v: boolean) => { if (!v) closeDebtModal() }"
     >
       <ul class="debt-list">
         <li v-for="(item, idx) in board?.tech_debt ?? []" :key="idx" class="debt-item" :class="{ resolved: item.resolved }">

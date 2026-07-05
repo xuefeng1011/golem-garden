@@ -665,6 +665,70 @@ SOUL
   grep -q "turn_cap=0 max_seconds=180 max_turns=0" "$TEST_PROJECT/run.out"
 }
 
+# ─────────────────────────────────────────────────────────
+# 앵커 — assistant 카운트는 envelope 라인만, 본문 텍스트 내 리터럴
+# "type":"assistant" 문자열 등장은 무시해야 한다 (오카운트 방지)
+# ─────────────────────────────────────────────────────────
+
+# fake claude: envelope 이 아닌 "user" 필러 라인 4개(본문에 리터럴
+# "type":"assistant" 문자열 포함, 즉 앵커 없으면 매칭됨) + 실제 assistant
+# envelope 1개(본문에도 같은 문자열이 여러 번 인용됨) + result. 전부 즉시 출력.
+_setup_anchor_claude() {
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"type":"user","note":"예시 인용: "type":"assistant" 문자열이 여기 있다 (1)"}'
+echo '{"type":"user","note":"예시 인용: "type":"assistant" 문자열이 여기 있다 (2)"}'
+echo '{"type":"user","note":"예시 인용: "type":"assistant" 문자열이 여기 있다 (3)"}'
+echo '{"type":"user","note":"예시 인용: "type":"assistant" 문자열이 여기 있다 (4)"}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"본문 인용: "type":"assistant" a "type":"assistant" b "type":"assistant" c"}]}}'
+echo '{"type":"result","is_error":false,"duration_ms":50,"result":"DONE","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+@test "turn-cap: 앵커 — 본문에 리터럴 \"type\":\"assistant\" 문자열이 여러 번 등장해도 실제 envelope 1개면 캡 미적용" {
+  _make_capped_soul
+  _source_agent_runner
+  _setup_anchor_claude
+
+  local rc=0
+  AGENT_MAX_SECONDS=120 agent_run capy "앵커 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+
+  # 실제 assistant envelope 은 1개뿐(cap=3 이하) — 앵커 없으면 필러 4줄 + 실제
+  # 1줄 = 5줄이 매칭돼 캡(3) 초과로 오판된다. 앵커가 있으면 정상 완주해야 한다.
+  [ "$rc" -eq 0 ]
+  grep -q "result=success" "$TEST_PROJECT/run.out"
+  grep -q "turn_cap=0" "$TEST_PROJECT/run.out"
+  ! grep -q "TURN CAP" "$TEST_PROJECT/run.out"
+}
+
+# ─────────────────────────────────────────────────────────
+# 사후 정산(post-run reconciliation) — 폴링(1s) 사이의 고속 버스트가 kill 없이
+# 끝나버려도 turn_cap 으로 분류돼야 한다 (라이브 워치독이 못 잡는 빈틈 봉인)
+# ─────────────────────────────────────────────────────────
+
+@test "turn-cap: 사후 정산 — cap+2 assistant 라인을 즉시 방출 후 exit 0(kill 없음) → turn_cap 으로 분류" {
+  _make_capped_soul
+  _source_agent_runner
+  # cap=3, 5(=cap+2)개 assistant 라인을 sleep 없이 즉시 방출 + 정상 종료.
+  # 1초 폴링 워치독이 개입하기 전에 자식이 이미 끝나므로 kill 은 발생하지 않는다.
+  _setup_fast_chatty_claude
+
+  local rc=0
+  AGENT_MAX_SECONDS=120 agent_run capy "고속 버스트 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+
+  [ "$rc" -eq 1 ]
+  grep -q "result=turn_cap" "$TEST_PROJECT/run.out"
+  grep -q "turn_cap=1" "$TEST_PROJECT/run.out"
+  # kill 이 아닌 사후 정산 경로임을 메시지로 구분 (killed 경로 문구와 달라야 함)
+  grep -q "사후 정산" "$TEST_PROJECT/run.out"
+  ! grep -q "프로세스 강제 종료" "$TEST_PROJECT/run.out"
+  # growth-log 도 turn_cap 으로 기록되어야 함
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "turn_cap"
+}
+
 @test "agent-runner: fresh 소환 실패는 폴백 재시도 없음 (1회만)" {
   load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
   _source_agent_runner

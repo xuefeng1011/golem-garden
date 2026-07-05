@@ -136,7 +136,8 @@ _source_verify() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"3항목"* ]]
   # 기본(루브릭 on) 프롬프트는 항목 채점 형식을 지시한다
-  grep -q 'ITEM-1' "$TEST_PROJECT/.judge_prompt"
+  # (예시는 숫자 대신 '번호' 자리표시자를 쓴다 — 에코 방어, 아래 별도 테스트 참조)
+  grep -q 'ITEM-' "$TEST_PROJECT/.judge_prompt"
 }
 
 @test "verify: 루브릭 1항목 NG — FAIL (rc 1) + 사유가 출력에 노출" {
@@ -175,6 +176,48 @@ _source_verify() {
   [ "$status" -eq 0 ]
   [ "$(cat "$TEST_PROJECT/.judge_calls")" -eq 2 ]
   [[ "$output" == *"재질의"* ]]
+}
+
+@test "verify: 루브릭 위반 — ITEM NG 존재 + 상충하는 [VERDICT: PASS] 동시 존재 — 항목이 우선(FAIL)" {
+  _source_verify
+  # 심판이 항목별로는 NG를 매겼지만 총평 마커는 실수로 PASS를 남긴 경우 —
+  # 집계는 VERDICT 를 보지 않고 항목만 보므로 항목이 이겨야 한다 (FAIL).
+  agent_run() {
+    printf '[ITEM-1: OK]\n[ITEM-2: NG 경계값 테스트 근거 없음]\n[VERDICT: PASS]\n'
+    return 0
+  }
+  run verify_run "루브릭 우선 대상" "zen"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ITEM-2"* ]]
+  [[ "$output" == *"경계값 테스트 근거 없음"* ]]
+}
+
+@test "verify: 프롬프트 예시 에코 방어 — 번호 자리표시자 라인만 에코 + [VERDICT: PASS] — phantom item 없이 레거시 폴백 PASS" {
+  _source_verify
+  # 심판이 프롬프트의 형식 예시(번호 자리표시자)를 그대로 베껴 쓰고 실제 채점은
+  # 하지 않은 채 총평 마커만 붙인 최악의 경우 — 자리표시자는 숫자가 아니므로
+  # 집계 정규식([0-9]+)에 걸리지 않아 phantom item 이 생기지 않고, 레거시
+  # [VERDICT:] 폴백으로 정상 PASS 되어야 한다.
+  agent_run() {
+    printf '[ITEM-번호: OK]\n[ITEM-번호: NG <한 줄 사유>]\n[VERDICT: PASS]\n'
+    return 0
+  }
+  run verify_run "에코 방어 대상" "zen"
+  [ "$status" -eq 0 ]
+}
+
+@test "verify: 루브릭 프롬프트 예시는 숫자 대신 '번호' 자리표시자 사용 (에코 방어 원천 차단)" {
+  _source_verify
+  agent_run() {
+    printf '%s\n' "$2" > "$TEST_PROJECT/.judge_prompt"
+    printf '[ITEM-1: OK]\n'
+    return 0
+  }
+  run verify_run "프롬프트 형식 검증 대상" "zen"
+  # 실제 지시문/예시에 'ITEM-번호' 자리표시자가 있어야 하고, 숫자 예시(ITEM-1 등)는
+  # 프롬프트 본문에 없어야 한다 (에코 시 집계 정규식에 걸리지 않도록).
+  grep -q 'ITEM-번호' "$TEST_PROJECT/.judge_prompt"
+  ! grep -q 'ITEM-1' "$TEST_PROJECT/.judge_prompt"
 }
 
 @test "verify: GOLEM_VERIFY_RUBRIC=0 — 구 총평 프롬프트 (ITEM 지시 없음, VERDICT 지시 있음)" {

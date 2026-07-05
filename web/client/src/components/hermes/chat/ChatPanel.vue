@@ -517,6 +517,7 @@ function handleRenameModalClose() {
       @negative-click="handleRenameModalClose"
       @close="handleRenameModalClose"
       @mask-click="handleRenameModalClose"
+      @update:show="(v: boolean) => { if (!v) handleRenameModalClose() }"
     >
       <NInput
         ref="renameInputRef"

@@ -301,6 +301,7 @@ function closeChangelog() {
       style="width: 520px;"
       @close="closeChangelog"
       @mask-click="closeChangelog"
+      @update:show="(v: boolean) => { if (!v) closeChangelog() }"
     >
       <div class="changelog-list">
         <div v-for="entry in changelog" :key="entry.version" class="changelog-version-block">

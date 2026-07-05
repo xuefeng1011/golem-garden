@@ -120,6 +120,40 @@ describe('StudioRedesignModal', () => {
     expect(wrapper?.emitted('update:show')).toBeUndefined()
   })
 
+  it('closes on Escape when idle (update:show emitted false)', async () => {
+    mountModal()
+    await flushPromises()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper?.emitted('update:show')).toBeTruthy()
+    expect(wrapper?.emitted('update:show')?.at(-1)).toEqual([false])
+  })
+
+  it('does not close on Escape while a redesign run is streaming', async () => {
+    vi.mocked(startForge).mockResolvedValue({ run_id: 'run_esc' })
+    const abortMock = vi.fn()
+    // Never invokes onEvent/onDone/onError — simulates a still-streaming run.
+    vi.mocked(streamForgeEvents).mockReturnValue({ abort: abortMock })
+
+    mountModal()
+    const textarea = document.body.querySelector('textarea') as HTMLTextAreaElement
+    textarea.value = 'add a QA reviewer'
+    textarea.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    const redesignBtn = bodyButtons().find((b) => b.textContent?.trim() === 'Redesign')
+    await redesignBtn?.dispatchEvent(new Event('click'))
+    await flushPromises()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }))
+    await flushPromises()
+
+    expect(abortMock).not.toHaveBeenCalled()
+    expect(wrapper?.emitted('update:show')).toBeUndefined()
+  })
+
   it('aborts the live stream on unmount even if the run never finished (no EventSource leak)', async () => {
     vi.mocked(startForge).mockResolvedValue({ run_id: 'run_3' })
     const abortMock = vi.fn()

@@ -227,6 +227,7 @@ onUnmounted(() => {
     :auto-focus="false"
     @close="closeModal"
     @mask-click="closeModal"
+    @update:show="(v: boolean) => { if (!v) closeModal() }"
   >
     <div class="session-search-modal">
       <div class="search-header">

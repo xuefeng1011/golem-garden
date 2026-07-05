@@ -52,6 +52,11 @@ describe('deleteStudio — registry-only removal (disk untouched)', () => {
     expect(request).toHaveBeenCalledWith('/v1/studios/studio_1', { method: 'DELETE' })
   })
 
+  it('resolves to undefined when request resolves undefined (204 No Content passthrough)', async () => {
+    vi.mocked(request).mockResolvedValue(undefined)
+    await expect(deleteStudio('studio_1')).resolves.toBeUndefined()
+  })
+
   it('URL-encodes the studio id', async () => {
     vi.mocked(request).mockResolvedValue(undefined)
     await deleteStudio('studio with space')

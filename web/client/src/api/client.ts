@@ -51,6 +51,13 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     throw new ApiError(`API Error ${res.status}: ${text || res.statusText}`, res.status, kind)
   }
 
+  // 204 No Content (and any other empty body) has nothing for res.json() to parse —
+  // parsing an empty string throws a SyntaxError. Callers expecting void (DELETE etc.)
+  // get undefined instead.
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T
+  }
+
   return res.json()
 }
 

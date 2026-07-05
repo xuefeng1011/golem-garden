@@ -430,9 +430,14 @@ agent_run() {
   if printf '%s' "${SOUL_MAX_TURNS:-}" | grep -qE '^[1-9][0-9]*$'; then
     _ar_max_turns="$SOUL_MAX_TURNS"
   fi
-  # P1-1 턴 캡 하드 집행 — SOUL_MAX_TURNS>0 이면 기본 활성.
-  # 워치독 루프가 stream-json 의 "type":"assistant" 이벤트 라인을 라이브 카운트,
-  # 캡 초과 시 _agent_kill_tree 로 중단한다 (CLI --max-turns 부재를 하네스가 대체).
+  # P1-1 턴 캡 — SOUL_MAX_TURNS>0 이면 기본 활성.
+  # 폴링(1s) 기반 집행 — 워치독이 stream-json 의 "type":"assistant" 이벤트 라인 수를
+  # 1초 주기로 재확인해, 저속 런어웨이는 캡 초과 시점에 _agent_kill_tree 로 중단한다.
+  # 폴 사이(<1s)에 캡을 넘기고 스스로 끝나버리는 고속 버스트는 kill 이 개입할 기회가
+  # 없으므로, 자식 종료 후 최종 카운트를 다시 세어 turn_cap 으로 사후 정산한다
+  # (CLI --max-turns 부재를 하네스가 대체. 두 경로 모두 result=turn_cap 으로 수렴).
+  # 캡은 invocation 단위로만 유효하다 — --resume 으로 이전 세션을 이어도 새 stream_file
+  # 이 매 호출마다 새로 생성되므로 카운트는 0부터 다시 시작한다(누적되지 않음).
   # 킬스위치: GOLEM_TURN_CAP_ENFORCE=0. 캡 미설정(SOUL_MAX_TURNS 비어있음)이면 무캡.
   local _ar_turn_cap_active=0
   if [ "${GOLEM_TURN_CAP_ENFORCE:-1}" != "0" ] && [ "${_ar_max_turns:-0}" -gt 0 ] 2>/dev/null; then
@@ -458,8 +463,10 @@ ${_ar_body}"
   # P1-1 턴 캡 — claude CLI 가 --max-turns 를 미지원(설치본 --help 확인: --max-budget-usd
   # 만 존재)하므로 CLI 레벨 집행 불가. SOUL_MAX_TURNS 가 양의 정수면:
   #   ① advisory 로 유저 메시지에 주입 (아래) — 모델이 스스로 수렴하게 유도
-  #   ② 하드 집행 — 워치독이 stream 의 assistant 이벤트를 카운트, 초과 시 kill
-  #      (_ar_turn_cap_active, 소환 지점 참조. result=turn_cap 으로 기록됨)
+  #   ② 폴링(1s) 기반 집행 — 워치독이 stream 의 assistant 이벤트를 카운트, 저속
+  #      런어웨이는 캡 초과 시 kill, 폴 사이 고속 버스트는 자식 종료 후 사후 정산
+  #      (_ar_turn_cap_active, 소환 지점 참조. 두 경로 모두 result=turn_cap 으로 기록됨)
+  #      캡은 invocation 단위 — --resume 시에도 이번 호출의 stream_file 기준으로 리셋된다.
   if [ "${_ar_max_turns:-0}" -gt 0 ] 2>/dev/null; then
     _ar_user_msg="${_ar_user_msg}
 
@@ -537,9 +544,10 @@ ${_ar_body}"
 
   # [Fix A → P1-1 해소] maxTurns 시행 — `--max-turns` 플래그는 여전히 claude CLI 에
   # 없지만(`claude --help 2>&1 | grep -iE 'max.?turn'` → 빈 출력), 하네스가 대체
-  # 집행한다: 워치독이 stream-json assistant 이벤트를 라이브 카운트해 캡 초과 시
-  # _agent_kill_tree 로 중단 (result=turn_cap). CLI 가 플래그를 추가하면 아래로
-  # 이관 가능:
+  # 집행한다: 워치독이 stream-json assistant 이벤트 라인 수를 1초 폴링으로 재확인해
+  # 저속 런어웨이는 캡 초과 시 _agent_kill_tree 로 중단하고, 폴 사이 고속 버스트는
+  # 자식 정상 종료 후 최종 카운트로 사후 정산한다 (두 경로 모두 result=turn_cap).
+  # CLI 가 플래그를 추가하면 아래로 이관 가능:
   #
   #   if printf '%s' "$SOUL_MAX_TURNS" | grep -qE '^[0-9]+$'; then
   #     argv+=(--max-turns "$SOUL_MAX_TURNS")
@@ -591,7 +599,10 @@ ${_ar_body}"
   # 멈춤. 그래서 claude 를 백그라운드로 띄우고 워치독이 데드라인 초과 시 프로세스
   # 트리를 _agent_kill_tree(taskkill//kill)로 강제 종료한다. 모든 플랫폼 공통 경로.
   # P1-1 — 같은 워치독 루프가 턴 캡도 집행한다: stream 파일의 assistant 이벤트
-  # 라인("type":"assistant")을 1초 주기로 카운트, 캡 초과 시 트리 kill.
+  # 라인("type":"assistant")을 1초 주기로 폴링해, 캡 초과 시점에 트리를 kill.
+  # 폴링 주기(1s)보다 빠르게 캡을 넘기고 스스로 종료하는 고속 버스트는 워치독이
+  # kill 할 기회를 못 잡으므로, 자식 종료 직후 최종 카운트를 다시 세어 turn_cap 으로
+  # 사후 정산한다(아래 wait 이후 elif 분기) — killed 경로는 그대로 유지된다.
   # 워치독은 subshell 이라 부모 변수에 쓸 수 없으므로 벽시계 killflag 와 동일한
   # 마커 파일 패턴(turnflag)으로 사유를 부모에 전달한다.
   if [ "${max_secs:-0}" -gt 0 ] 2>/dev/null || [ "$_ar_turn_cap_active" -eq 1 ]; then
@@ -606,7 +617,10 @@ ${_ar_body}"
         kill -0 "$_ar_child" 2>/dev/null || exit 0   # 자식이 먼저 끝남 → 워치독 종료
         # P1-1 턴 캡 — assistant 이벤트 수가 캡을 초과하면 즉시 중단
         if [ "$_ar_turn_cap_active" -eq 1 ]; then
-          _ar_tc=$(grep -c '"type":"assistant"' "$stream_file" 2>/dev/null | tr -d ' \r')
+          # 앵커(^{"type":"assistant") — envelope 라인만 매칭한다. 앵커 없으면
+          # assistant 메시지 "text" 본문에 리터럴 "type":"assistant" 문자열이
+          # (예: 로그 인용, 튜토리얼 설명) 포함될 때 오카운트로 조기 kill 될 수 있다.
+          _ar_tc=$(grep -c '^{"type":"assistant"' "$stream_file" 2>/dev/null | tr -d ' \r')
           if [ "${_ar_tc:-0}" -gt "$_ar_max_turns" ] 2>/dev/null; then
             : > "$_ar_turnflag"                      # 턴 캡 표식
             _agent_kill_tree "$_ar_child"
@@ -635,6 +649,17 @@ ${_ar_body}"
     elif [ -f "$_ar_killflag" ]; then
       _ar_timed_out=1
       rc=124
+    elif [ "$_ar_turn_cap_active" -eq 1 ]; then
+      # 사후 정산(post-run reconciliation) — 자식이 kill 없이 정상 종료했더라도,
+      # 폴링(1s) 간격 사이에 캡을 넘긴 뒤 곧바로 끝나버리는 고속 버스트는 워치독이
+      # kill 할 기회를 못 잡는다. 자식 종료 후 최종 assistant 라인 수를 다시 세어
+      # 캡 초과면 turn_cap 으로 분류한다 (killed 경로와 달리 kill 은 발생하지 않음).
+      local _ar_tc_final
+      _ar_tc_final=$(grep -c '^{"type":"assistant"' "$stream_file" 2>/dev/null | tr -d ' \r')
+      if [ "${_ar_tc_final:-0}" -gt "$_ar_max_turns" ] 2>/dev/null; then
+        _ar_turn_capped=1
+        rc=1
+      fi
     fi
     rm -f "$_ar_killflag" "$_ar_turnflag"
   else
@@ -677,9 +702,15 @@ ${_ar_body}"
   fi
 
   # P1-1 — 턴 캡 초과 시: 사유를 명시하고 fail 계열(turn_cap) 처리.
-  # (child 는 워치독이 이미 kill — 타임아웃 경로와 동일 계약.)
+  # rc=125 는 워치독이 폴링(1s) 중 캡 초과를 감지해 kill 한 경로(타임아웃 경로와
+  # 동일 계약). 그 외(rc=1)는 폴 사이 고속 버스트가 kill 없이 스스로 종료된 뒤
+  # 사후 정산으로 turn_cap 분류된 경로 — 메시지로 구분해 kill 여부를 오도하지 않는다.
   if [ "$_ar_turn_capped" -eq 1 ]; then
-    _AR_RESULT_TEXT="[agent-runner] TURN CAP: assistant 턴 ${_ar_max_turns} 초과 — 프로세스 강제 종료"
+    if [ "$rc" -eq 125 ]; then
+      _AR_RESULT_TEXT="[agent-runner] TURN CAP: assistant 턴 ${_ar_max_turns} 초과 — 프로세스 강제 종료"
+    else
+      _AR_RESULT_TEXT="[agent-runner] TURN CAP: assistant 턴 ${_ar_max_turns} 초과 (사후 정산 — 폴 사이 고속 버스트, kill 없이 종료됨)"
+    fi
     _AR_IS_ERROR=1
   fi
 

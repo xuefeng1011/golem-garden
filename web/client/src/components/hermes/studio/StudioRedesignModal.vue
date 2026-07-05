@@ -113,6 +113,7 @@ onUnmounted(() => {
     :close-on-esc="!running"
     @close="handleClose"
     @mask-click="handleClose"
+    @update:show="(v: boolean) => { if (!v) handleClose() }"
   >
     <NForm label-placement="top" :disabled="!canSubmit">
       <NFormItem :label="t('flowStudio.redesignModal.feedbackLabel')" required>

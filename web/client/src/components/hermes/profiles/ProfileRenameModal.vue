@@ -58,6 +58,7 @@ function handleMaskClick() {
     :mask-closable="!loading"
     @close="handleClose"
     @mask-click="handleMaskClick"
+    @update:show="(v: boolean) => { if (!v) handleClose() }"
     @after-leave="emit('close')"
   >
     <NForm label-placement="top">

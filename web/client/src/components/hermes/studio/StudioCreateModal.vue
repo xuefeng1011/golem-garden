@@ -202,6 +202,7 @@ onUnmounted(() => {
     :close-on-esc="!creating && !running"
     @close="handleClose"
     @mask-click="handleClose"
+    @update:show="(v: boolean) => { if (!v) handleClose() }"
     @after-leave="emit('close')"
   >
     <!-- Stage 1: form -->

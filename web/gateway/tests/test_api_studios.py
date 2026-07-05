@@ -542,6 +542,40 @@ async def test_list_studio_presets_missing_dir_returns_empty_list(
 
 
 @pytest.mark.asyncio
+async def test_list_studio_presets_duplicate_id_keeps_first(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """같은 id 를 선언한 파일이 둘이면 하나만 남는다 (id 는 클라이언트 목록 키)."""
+    presets_dir = tmp_path / "studio-presets"
+    _write_preset(
+        presets_dir,
+        "a-dup.json",
+        {"id": "dup", "name": "First", "description": "first wins", "agents": [], "steps": []},
+    )
+    _write_preset(
+        presets_dir,
+        "b-dup.json",
+        {"id": "dup", "name": "Second", "description": "dropped", "agents": [], "steps": []},
+    )
+    monkeypatch.setattr(_studios_mod, "_studio_presets_dir", lambda: presets_dir)
+
+    resp = await _get_studio_presets()
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "dup"
+
+
+def test_studio_presets_dir_resolves_from_forge_sh_path() -> None:
+    """_studio_presets_dir 실경로 계산 회귀 가드 (모든 목록 테스트가 이를 monkeypatch 하므로)."""
+    from golem_gateway.config import FORGE_SH_PATH
+
+    assert _studios_mod._studio_presets_dir() == (
+        FORGE_SH_PATH.parent / "templates" / "studio-presets"
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_studio_500_detail_has_no_raw_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

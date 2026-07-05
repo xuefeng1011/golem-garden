@@ -102,6 +102,7 @@ function handleClose() {
       :mask-closable="true"
       @close="handleClose"
       @mask-click="handleClose"
+      @update:show="(v: boolean) => { if (!v) handleClose() }"
     >
       <NInput
         v-model:value="searchQuery"

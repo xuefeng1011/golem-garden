@@ -83,7 +83,18 @@ async function onStudioRedesigned() {
   message.success(t('flowStudio.redesignModal.success'))
   await reloadFlows()
   const newest = flows.value[0]
-  if (newest) _loadFlow(newest)
+  if (!newest) return
+  if (dirty.value) {
+    dialog.warning({
+      title: t('flowEditor.leaveTitle'),
+      content: t('flowEditor.leaveContent'),
+      positiveText: t('flowEditor.leaveConfirm'),
+      negativeText: t('common.cancel'),
+      onPositiveClick: () => _loadFlow(newest),
+    })
+  } else {
+    _loadFlow(newest)
+  }
 }
 
 // ── Vue Flow instance ─────────────────────────────────────────────────────────
@@ -911,10 +922,10 @@ onBeforeRouteUpdate((to, from, next) => {
 
       <!-- Studio 컨텍스트 전용 바 (R9: 중간에 에이전트 추가) -->
       <div v-if="isStudioContext" class="studio-context-bar">
-        <NButton size="small" @click="showStudioAgentModal = true">
+        <NButton size="small" :disabled="running" @click="showStudioAgentModal = true">
           {{ t('flowStudio.agentModal.trigger') }}
         </NButton>
-        <NButton size="small" @click="showStudioRedesignModal = true">
+        <NButton size="small" :disabled="running" @click="showStudioRedesignModal = true">
           {{ t('flowStudio.redesignModal.trigger') }}
         </NButton>
         <NButton size="small" @click="showArtifactsDrawer = true">
