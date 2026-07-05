@@ -100,8 +100,6 @@ function handleClose() {
       :title="t('models.title')"
       :style="{ width: 'min(480px, calc(100vw - 32px))' }"
       :mask-closable="true"
-      @close="handleClose"
-      @mask-click="handleClose"
       @update:show="(v: boolean) => { if (!v) handleClose() }"
     >
       <NInput

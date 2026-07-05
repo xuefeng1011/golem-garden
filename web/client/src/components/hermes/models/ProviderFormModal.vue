@@ -169,11 +169,6 @@ function handleClose() {
   showModal.value = false
   setTimeout(() => emit('close'), 200)
 }
-
-function handleMaskClick() {
-  if (loading.value) return
-  handleClose()
-}
 </script>
 
 <template>
@@ -183,8 +178,6 @@ function handleMaskClick() {
     :title="t('models.addProvider')"
     :style="{ width: 'min(520px, calc(100vw - 32px))' }"
     :mask-closable="!loading"
-    @close="handleClose"
-    @mask-click="handleMaskClick"
     @update:show="(v: boolean) => { if (!v) handleClose() }"
     @after-leave="emit('close')"
   >

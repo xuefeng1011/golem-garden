@@ -200,8 +200,6 @@ onUnmounted(() => {
     :style="{ width: 'min(520px, calc(100vw - 32px))' }"
     :mask-closable="!creating && !running"
     :close-on-esc="!creating && !running"
-    @close="handleClose"
-    @mask-click="handleClose"
     @update:show="(v: boolean) => { if (!v) handleClose() }"
     @after-leave="emit('close')"
   >

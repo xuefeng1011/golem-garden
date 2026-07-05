@@ -23,7 +23,7 @@ const emit = defineEmits<{
   (e: 'update:show', v: boolean): void
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const artifacts = ref<Artifact[]>([])
 const loading = ref(false)
@@ -34,29 +34,43 @@ const content = ref<ArtifactContent | null>(null)
 const contentLoading = ref(false)
 const contentError = ref<string | null>(null)
 
+let loadToken = 0
+
 async function loadArtifacts() {
   if (!props.projectId) return
   loading.value = true
   loadError.value = null
+  const token = ++loadToken
   try {
-    artifacts.value = await fetchArtifacts(props.projectId, props.dir ?? 'output')
+    const result = await fetchArtifacts(props.projectId, props.dir ?? 'output')
+    if (token !== loadToken) return
+    artifacts.value = result
   } catch (err) {
+    if (token !== loadToken) return
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
+    if (token !== loadToken) return
     loading.value = false
   }
 }
+
+let openToken = 0
 
 async function openArtifact(artifact: Artifact) {
   selected.value = artifact
   content.value = null
   contentError.value = null
   contentLoading.value = true
+  const token = ++openToken
   try {
-    content.value = await fetchArtifactContent(props.projectId, artifact.path)
+    const result = await fetchArtifactContent(props.projectId, artifact.path)
+    if (token !== openToken) return
+    content.value = result
   } catch (err) {
+    if (token !== openToken) return
     contentError.value = err instanceof Error ? err.message : String(err)
   } finally {
+    if (token !== openToken) return
     contentLoading.value = false
   }
 }
@@ -74,7 +88,7 @@ function dirOf(artifact: Artifact): string {
 
 function formatMtime(iso: string): string {
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(locale.value)
 }
 
 function handleUpdateShow(v: boolean) {
@@ -82,8 +96,8 @@ function handleUpdateShow(v: boolean) {
 }
 
 watch(
-  () => props.show,
-  (visible) => {
+  [() => props.show, () => props.projectId],
+  ([visible]) => {
     if (visible) {
       backToList()
       loadArtifacts()

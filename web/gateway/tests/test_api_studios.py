@@ -545,7 +545,10 @@ async def test_list_studio_presets_missing_dir_returns_empty_list(
 async def test_list_studio_presets_duplicate_id_keeps_first(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """같은 id 를 선언한 파일이 둘이면 하나만 남는다 (id 는 클라이언트 목록 키)."""
+    """같은 id 를 선언한 파일이 둘이면 하나만 남는다 (id 는 클라이언트 목록 키).
+
+    파일명순으로 정렬해 순회하므로 가장 작은 파일명(a-dup.json)이 항상 승리
+    한다 — 이 결정성 자체가 회귀 가드 대상."""
     presets_dir = tmp_path / "studio-presets"
     _write_preset(
         presets_dir,
@@ -564,6 +567,8 @@ async def test_list_studio_presets_duplicate_id_keeps_first(
     data = resp.json()
     assert len(data) == 1
     assert data[0]["id"] == "dup"
+    assert data[0]["name"] == "First"
+    assert data[0]["description"] == "first wins"
 
 
 def test_studio_presets_dir_resolves_from_forge_sh_path() -> None:

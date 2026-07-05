@@ -120,6 +120,19 @@ describe('StudioRedesignModal', () => {
     expect(wrapper?.emitted('update:show')).toBeUndefined()
   })
 
+  it('X-close fires the close handler exactly once (no @close + @update:show double-fire)', async () => {
+    mountModal()
+    await flushPromises()
+
+    const closeBtn = bodyCloseButton()
+    expect(closeBtn).not.toBeNull()
+    await closeBtn?.dispatchEvent(new Event('click', { bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper?.emitted('update:show')).toHaveLength(1)
+    expect(wrapper?.emitted('update:show')?.[0]).toEqual([false])
+  })
+
   it('closes on Escape when idle (update:show emitted false)', async () => {
     mountModal()
     await flushPromises()

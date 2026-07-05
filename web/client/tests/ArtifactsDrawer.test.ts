@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n'
 import en from '@/i18n/locales/en'
 import ArtifactsDrawer from '@/components/hermes/studio/ArtifactsDrawer.vue'
 import { fetchArtifacts, fetchArtifactContent } from '@/api/hermes/artifacts'
+import type { ArtifactContent } from '@/api/hermes/artifacts'
 
 vi.mock('@/api/hermes/artifacts', () => ({
   fetchArtifacts: vi.fn(),
@@ -181,5 +182,40 @@ describe('ArtifactsDrawer', () => {
 
     await (wrapper as unknown as { vm: { refresh: () => Promise<void> } }).vm.refresh()
     expect(fetchArtifacts).toHaveBeenCalledTimes(2)
+  })
+
+  it('a slow first click does not clobber a fast second click (generation-token guard)', async () => {
+    vi.mocked(fetchArtifacts).mockResolvedValue([
+      { path: 'a.txt', name: 'a.txt', size: 1, mtime: '2026-07-05T00:00:00' },
+      { path: 'b.txt', name: 'b.txt', size: 1, mtime: '2026-07-05T00:00:00' },
+    ])
+
+    let resolveA: ((v: ArtifactContent) => void) | null = null
+    vi.mocked(fetchArtifactContent).mockImplementation((_projectId, path) => {
+      if (path === 'a.txt') {
+        return new Promise((resolve) => {
+          resolveA = resolve
+        })
+      }
+      return Promise.resolve({ path: 'b.txt', content: 'content B', truncated: false, binary: false, size: 9 })
+    })
+
+    mountDrawer()
+    await flushPromises()
+
+    const items = bodyItems()
+    // Click A first (its fetch stays pending), then click B (resolves immediately).
+    await items[0].dispatchEvent(new Event('click', { bubbles: true }))
+    await items[1].dispatchEvent(new Event('click', { bubbles: true }))
+    await flushPromises()
+
+    expect(document.body.querySelector('.content-viewer')?.textContent).toContain('content B')
+
+    // A's delayed response arrives after B is already displayed — must not overwrite it.
+    resolveA?.({ path: 'a.txt', content: 'content A', truncated: false, binary: false, size: 9 })
+    await flushPromises()
+
+    expect(document.body.querySelector('.content-viewer')?.textContent).toContain('content B')
+    expect(document.body.querySelector('.content-viewer')?.textContent).not.toContain('content A')
   })
 })

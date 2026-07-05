@@ -108,7 +108,8 @@ def _validate_relative_path(raw: str, project_path: Path) -> Path:
     try:
         resolved = candidate.resolve()
     except OSError as exc:
-        raise ValueError(f"failed to resolve path: {exc}") from exc
+        logger.error("failed to resolve path %r under %s: %s", raw, project_path, exc)
+        raise ValueError("invalid path") from exc
 
     try:
         resolved.relative_to(root)
@@ -143,6 +144,9 @@ def _walk_artifacts(base: Path, *, max_depth: int, max_entries: int) -> list[Pat
             if len(results) >= max_entries:
                 return
             if entry.name.startswith("."):
+                continue
+            if entry.is_symlink():
+                # Windows 정션 포함, 확산 방지 + relative_to 크래시 방지
                 continue
             if entry.is_dir():
                 if depth < max_depth:
@@ -191,7 +195,13 @@ async def list_artifacts(
             st = f.stat()
         except OSError:
             continue
-        rel = f.resolve().relative_to(root).as_posix()
+        try:
+            # Defense in depth: _walk_artifacts already skips symlinks, but a
+            # pathological case (e.g. a race, or a symlink type check quirk)
+            # must not 500 — just drop the offending entry from the listing.
+            rel = f.resolve().relative_to(root).as_posix()
+        except ValueError:
+            continue
         mtime_iso = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
@@ -238,7 +248,8 @@ async def get_artifact_content(
             fh.seek(0)
             data = fh.read(_CONTENT_CAP_BYTES)
     except OSError as exc:
-        raise HTTPException(status_code=404, detail=f"failed to read artifact: {exc}") from exc
+        logger.error("failed to read artifact %s: %s", target, exc)
+        raise HTTPException(status_code=404, detail="failed to read artifact") from exc
 
     truncated = size > _CONTENT_CAP_BYTES
     content = data.decode("utf-8", errors="replace")

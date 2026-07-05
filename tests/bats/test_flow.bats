@@ -95,6 +95,47 @@ EOF
   [ "$(_fc_steps_lines < "$state" | grep -c '"status":"pending"')" -eq 2 ]
 }
 
+@test "flow: create — deps 배열까지 개행된 pretty-print 입력에서도 마지막 step에 status 주입 (E2E 실결함 회귀)" {
+  # 프리셋 JSON(json.dumps indent) 형상: deps 원소가 각 줄로 분리되면 마지막
+  # step 라인이 후행 공백으로 끝나 `}$` 주입이 빗나가던 결함 — 마지막 step 이
+  # status 없이 저장되면 flow_next_ready 에 안 잡혀 조용히 스킵된다.
+  _mk_steps <<'EOF'
+[
+  {
+    "id": "s1",
+    "soul": "alpha",
+    "task": "task1",
+    "deps": []
+  },
+  {
+    "id": "s2",
+    "soul": "beta",
+    "task": "task2",
+    "deps": [
+      "s1"
+    ]
+  },
+  {
+    "id": "s3",
+    "soul": "gamma",
+    "task": "task3",
+    "deps": [
+      "s2"
+    ]
+  }
+]
+EOF
+
+  run flow_create "pretty deps" "$TEST_PROJECT/steps.json"
+  [ "$status" -eq 0 ]
+
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+  [ "$(_fc_steps_lines < "$state" | grep -c '"status":"pending"')" -eq 3 ]
+  # 마지막 step(s3) 라인에 status 존재를 명시 확인
+  _fc_steps_lines < "$state" | grep '"id":"s3"' | grep -q '"status":"pending"'
+}
+
 # ───────────────────────────────────────────────────────────────────────────────
 # 2. flow_validate — 사이클(a→b→a) 검출 → 비-0 종료
 # ───────────────────────────────────────────────────────────────────────────────

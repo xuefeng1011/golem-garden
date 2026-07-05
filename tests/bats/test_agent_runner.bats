@@ -593,6 +593,58 @@ FAKE
   export PATH="$TEST_PROJECT/bin:$PATH"
 }
 
+# 실스트림 형상 재현 — 하나의 논리 턴(msg id)이 콘텐츠 블록 단위로 여러 assistant
+# 이벤트로 분할 방출된다 (라이브 E2E 실측: 논리 턴 21 ↔ envelope 41줄).
+# 2개 논리 턴 × 4이벤트 = 8 envelope 라인 — 라인 수로 세면 캡 3 오발동, id 수로는 2.
+_setup_multiblock_claude() {
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+for m in 01AAA 01BBB; do
+  for b in 1 2 3 4; do
+    echo '{"type":"assistant","message":{"id":"msg_'$m'","content":[{"type":"text","text":"block"}]}}'
+  done
+done
+echo '{"type":"result","is_error":false,"duration_ms":100,"result":"DONE","usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+@test "turn-cap: 논리 턴 카운트 — 메시지당 다중 이벤트(블록 분할)는 1턴 (실스트림 오발동 회귀)" {
+  _make_capped_soul   # maxTurns: 3
+  _source_agent_runner
+  _setup_multiblock_claude
+
+  # envelope 8줄이지만 고유 msg id 2 — 캡 3을 넘지 않아 성공해야 한다
+  local rc=0
+  AGENT_MAX_SECONDS=60 agent_run capy "다중블록 테스트" > "$TEST_PROJECT/mb.out" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ]
+  grep -q 'turn_cap=0' "$TEST_PROJECT/mb.out"
+  grep -q 'DONE' "$TEST_PROJECT/mb.out"
+}
+
+@test "turn-cap: 고유 msg id 4개 > 캡 3 → turn_cap (id 기반 카운트도 캡 집행)" {
+  _make_capped_soul   # maxTurns: 3
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+for m in 01A 01B 01C 01D; do
+  echo '{"type":"assistant","message":{"id":"msg_'$m'","content":[{"type":"text","text":"t"}]}}'
+done
+echo '{"type":"result","is_error":false,"duration_ms":100,"result":"DONE","usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  local rc=0
+  AGENT_MAX_SECONDS=60 agent_run capy "id캡 테스트" > "$TEST_PROJECT/idcap.out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ]
+  grep -q 'turn_cap=1' "$TEST_PROJECT/idcap.out"
+  grep -q 'result=turn_cap' "$TEST_PROJECT/idcap.out"
+}
+
 @test "turn-cap: maxTurns 초과 → 중도 kill + rc≠0 + turn_cap=1 + growth-log result=turn_cap" {
   _make_capped_soul
   _source_agent_runner

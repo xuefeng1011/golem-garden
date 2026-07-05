@@ -64,11 +64,6 @@ function handleClose() {
   showModal.value = false
   setTimeout(() => emit('close'), 200)
 }
-
-function handleMaskClick() {
-  if (loading.value) return
-  handleClose()
-}
 </script>
 
 <template>
@@ -78,8 +73,6 @@ function handleMaskClick() {
     :title="t('profiles.import')"
     :style="{ width: 'min(420px, calc(100vw - 32px))' }"
     :mask-closable="!loading"
-    @close="handleClose"
-    @mask-click="handleMaskClick"
     @update:show="(v: boolean) => { if (!v) handleClose() }"
     @after-leave="emit('close')"
   >

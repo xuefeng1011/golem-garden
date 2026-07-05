@@ -148,8 +148,6 @@ function handleClose() {
     :style="{ width: 'min(480px, calc(100vw - 32px))' }"
     :mask-closable="!running"
     :close-on-esc="!running"
-    @close="handleClose"
-    @mask-click="handleClose"
     @update:show="(v: boolean) => { if (!v) handleClose() }"
   >
     <NForm label-placement="top" :disabled="!canSubmit">

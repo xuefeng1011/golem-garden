@@ -286,8 +286,6 @@ const historyData = computed<HistoryEntry[]>(() =>
       preset="dialog"
       :title="t('team.rawModalTitle')"
       style="width: min(800px, 92vw);"
-      @close="closeRawModal"
-      @mask-click="closeRawModal"
       @update:show="(v: boolean) => { if (!v) closeRawModal() }"
     >
       <div class="raw-md-wrap">

@@ -225,8 +225,6 @@ onUnmounted(() => {
     :style="{ width: 'min(760px, calc(100vw - 24px))' }"
     :mask-closable="true"
     :auto-focus="false"
-    @close="closeModal"
-    @mask-click="closeModal"
     @update:show="(v: boolean) => { if (!v) closeModal() }"
   >
     <div class="session-search-modal">

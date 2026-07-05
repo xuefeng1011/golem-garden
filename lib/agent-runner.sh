@@ -358,6 +358,25 @@ HEADER
 }
 
 # ─────────────────────────────────────────────────────────
+# P1-1 — 논리 턴 카운터
+# ─────────────────────────────────────────────────────────
+# 실제 claude stream-json 은 하나의 assistant 메시지(논리 턴)를 콘텐츠 블록
+# 단위로 여러 개의 assistant 이벤트 라인으로 분할 방출한다 (라이브 E2E 실측:
+# 논리 턴 21 ↔ envelope 라인 41). envelope 라인 수로 세면 캡이 ~2x 부풀려
+# 정상 에이전트를 조기 kill 하므로, 고유 message id(msg_*) 수를 논리 턴으로
+# 센다. id 가 전혀 없는 스트림(테스트용 합성 스트림)은 라인 수 폴백.
+_ar_count_turns() {
+  local sf="$1" n
+  [ -f "$sf" ] || { echo 0; return 0; }
+  n=$(grep '^{"type":"assistant"' "$sf" 2>/dev/null \
+      | grep -oE '"id":"msg_[A-Za-z0-9]+"' | sort -u | wc -l | tr -d ' \r')
+  if [ "${n:-0}" -eq 0 ]; then
+    n=$(grep -c '^{"type":"assistant"' "$sf" 2>/dev/null | tr -d ' \r')
+  fi
+  echo "${n:-0}"
+}
+
+# ─────────────────────────────────────────────────────────
 # 메인: agent_run
 # ─────────────────────────────────────────────────────────
 # agent_run <soul_name> <task_text> [session_id] [--dry-run]
@@ -615,12 +634,11 @@ ${_ar_body}"
       _ar_w=0
       while :; do
         kill -0 "$_ar_child" 2>/dev/null || exit 0   # 자식이 먼저 끝남 → 워치독 종료
-        # P1-1 턴 캡 — assistant 이벤트 수가 캡을 초과하면 즉시 중단
+        # P1-1 턴 캡 — 논리 턴 수(_ar_count_turns: 고유 msg id)가 캡을 초과하면 즉시 중단.
+        # envelope 라인 수로 세면 실스트림에서 논리 턴이 ~2x 부풀려(블록 분할 방출)
+        # 정상 에이전트를 조기 kill 한다 — 라이브 E2E 실측으로 확인된 결함.
         if [ "$_ar_turn_cap_active" -eq 1 ]; then
-          # 앵커(^{"type":"assistant") — envelope 라인만 매칭한다. 앵커 없으면
-          # assistant 메시지 "text" 본문에 리터럴 "type":"assistant" 문자열이
-          # (예: 로그 인용, 튜토리얼 설명) 포함될 때 오카운트로 조기 kill 될 수 있다.
-          _ar_tc=$(grep -c '^{"type":"assistant"' "$stream_file" 2>/dev/null | tr -d ' \r')
+          _ar_tc=$(_ar_count_turns "$stream_file")
           if [ "${_ar_tc:-0}" -gt "$_ar_max_turns" ] 2>/dev/null; then
             : > "$_ar_turnflag"                      # 턴 캡 표식
             _agent_kill_tree "$_ar_child"
@@ -655,7 +673,7 @@ ${_ar_body}"
       # kill 할 기회를 못 잡는다. 자식 종료 후 최종 assistant 라인 수를 다시 세어
       # 캡 초과면 turn_cap 으로 분류한다 (killed 경로와 달리 kill 은 발생하지 않음).
       local _ar_tc_final
-      _ar_tc_final=$(grep -c '^{"type":"assistant"' "$stream_file" 2>/dev/null | tr -d ' \r')
+      _ar_tc_final=$(_ar_count_turns "$stream_file")
       if [ "${_ar_tc_final:-0}" -gt "$_ar_max_turns" ] 2>/dev/null; then
         _ar_turn_capped=1
         rc=1

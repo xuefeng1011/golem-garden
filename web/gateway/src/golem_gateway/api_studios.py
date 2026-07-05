@@ -119,11 +119,11 @@ def _scan_studio_presets() -> list[PresetSummary]:
     if not presets_dir.is_dir():
         return []
 
-    # 파일명 정렬은 최종 id 정렬에 밀려 무의미하므로 glob 순서 그대로 순회.
-    # 동일 id 를 선언한 파일이 둘이면 먼저 읽힌 쪽만 유지(경고) — id 는
-    # 클라이언트 목록 키로 쓰이므로 중복이 UI 버그로 번지지 않게 차단.
+    # 최종 목록은 id 로 재정렬되지만, 동일 id 파일이 둘 이상이면 "먼저 읽힌
+    # 쪽만 유지"의 결정성이 필요하다 — glob() 자체는 순서를 보장하지 않으므로
+    # 파일명으로 정렬해 항상 가장 작은 파일명이 승리하도록 고정한다.
     by_id: dict[str, PresetSummary] = {}
-    for f in presets_dir.glob("*.json"):
+    for f in sorted(presets_dir.glob("*.json")):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             preset = PresetSummary(

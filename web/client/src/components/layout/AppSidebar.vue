@@ -299,8 +299,6 @@ function closeChangelog() {
       preset="dialog"
       :title="t('sidebar.changelog')"
       style="width: 520px;"
-      @close="closeChangelog"
-      @mask-click="closeChangelog"
       @update:show="(v: boolean) => { if (!v) closeChangelog() }"
     >
       <div class="changelog-list">

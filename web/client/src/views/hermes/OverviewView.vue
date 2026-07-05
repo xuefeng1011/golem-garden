@@ -154,8 +154,6 @@ watch(
       preset="dialog"
       :title="t('overview.techDebtTitle')"
       style="width: 480px;"
-      @close="closeDebtModal"
-      @mask-click="closeDebtModal"
       @update:show="(v: boolean) => { if (!v) closeDebtModal() }"
     >
       <ul class="debt-list">

@@ -87,6 +87,12 @@ flow_create() {
   local steps_arr=""
   local line
   while IFS= read -r line; do
+    # 앞뒤 공백 트리밍 — pretty-print 입력(프리셋 JSON 등)은 마지막 원소가
+    # `}\n  ]` 형상이라 라인이 `}  `(후행 공백)로 끝나고, 트리밍 없이는 아래
+    # `}$` 주입 정규식이 빗나가 마지막 step 만 status 없이 저장된다
+    # (→ flow_next_ready 에 영원히 안 잡혀 조용히 스킵된 채 flow 가 "완료"
+    # 처리되는 실결함 — 라이브 E2E 로 발견).
+    line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     [ -z "$line" ] && continue
     case "$line" in
       *'"status"'*) : ;;

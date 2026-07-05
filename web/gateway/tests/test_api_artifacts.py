@@ -185,6 +185,59 @@ async def test_list_symlink_escape_returns_400(registered_project, tmp_path: Pat
     assert resp.status_code == 400, resp.text
 
 
+@pytest.mark.asyncio
+async def test_list_nested_symlink_dir_escape_skipped_no_500(
+    registered_project, tmp_path: Path
+) -> None:
+    """A symlink SUBDIRECTORY nested under an otherwise-valid `dir` (not the
+    `dir` itself) must be skipped during the walk, not crash the request."""
+    project_id, project_path = registered_project
+    outside = tmp_path / "outside_nested_dir"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("nope", encoding="utf-8")
+
+    out = project_path / "output"
+    out.mkdir()
+    (out / "visible.txt").write_text("x", encoding="utf-8")
+
+    nested_link = out / "sub_link"
+    try:
+        nested_link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported in this environment")
+
+    resp = await _list(project_id, {"dir": "output"})
+    assert resp.status_code == 200, resp.text
+    paths = [e["path"] for e in resp.json()]
+    assert paths == ["output/visible.txt"]
+
+
+@pytest.mark.asyncio
+async def test_list_nested_symlink_file_escape_skipped_no_500(
+    registered_project, tmp_path: Path
+) -> None:
+    """A symlink FILE nested under an otherwise-valid `dir` must be skipped
+    during the walk, not crash the request."""
+    project_id, project_path = registered_project
+    outside_file = tmp_path / "outside_secret_file.txt"
+    outside_file.write_text("nope", encoding="utf-8")
+
+    out = project_path / "output"
+    out.mkdir()
+    (out / "visible.txt").write_text("x", encoding="utf-8")
+
+    link_file = out / "linked_file.txt"
+    try:
+        link_file.symlink_to(outside_file)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported in this environment")
+
+    resp = await _list(project_id, {"dir": "output"})
+    assert resp.status_code == 200, resp.text
+    paths = [e["path"] for e in resp.json()]
+    assert paths == ["output/visible.txt"]
+
+
 # ---------------------------------------------------------------------------
 # Content tests
 # ---------------------------------------------------------------------------
