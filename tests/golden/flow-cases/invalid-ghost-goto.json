@@ -1,0 +1,1 @@
+{"goal":"ghost goto","steps":[{"id":"s1","soul":"","task":"t1","deps":[],"on_fail":"goto:ghost"}]}

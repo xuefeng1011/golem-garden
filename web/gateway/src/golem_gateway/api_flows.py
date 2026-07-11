@@ -15,10 +15,12 @@ import logging
 import os
 import re
 import shutil
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, field_validator, model_validator
@@ -27,9 +29,13 @@ from golem_gateway.config import (
     BASH_BIN,
     FORGE_SH_BASH_PATH,
     FORGE_SH_PATH,
+    RUN_LOCK_STALE_SECONDS,
+    STATE_LOCK_STALE_SECONDS,
+    STATE_LOCK_TIMEOUT_SECONDS,
     build_forge_subprocess_env,
     redact_stderr,
 )
+from golem_gateway.forge_runner import ForgeRunner
 from golem_gateway.registry import ProjectRegistry
 
 logger = logging.getLogger(__name__)
@@ -45,6 +51,12 @@ _ON_FAIL_RE = re.compile(r"^(abort|continue|goto:[A-Za-z0-9_-]+)$")
 # Valid step id pattern.
 _STEP_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
+# Mirrors lib/flow-contract.sh's `sed 's/},[[:space:]]*{/}\n{/g'` step splitter —
+# a literal `},{` (optionally with whitespace after the comma) in a task value
+# breaks the bash parser's 1-depth step-object boundary detection. Do not widen
+# this regex; it must stay an exact mirror of the bash-side separator.
+_BRACE_SPLIT_RE = re.compile(r"\},\s*\{")
+
 
 # ---------------------------------------------------------------------------
 # Models — read (response)
@@ -57,6 +69,7 @@ class FlowStep(BaseModel):
     task: str
     deps: list[str]
     status: str
+    retry: int = 1
     approval: bool = False
     on_fail: str = "abort"
     # 단계 실행 트래젝토리 링크 (단계별 결과 보기) — 미실행 단계는 None
@@ -105,6 +118,11 @@ class FlowStepInput(BaseModel):
     def validate_task(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("task must not be empty")
+        if _BRACE_SPLIT_RE.search(v):
+            raise ValueError(
+                "task must not contain a literal '},{' sequence "
+                "(1-depth flow contract — breaks the bash steps parser)"
+            )
         return v
 
     @field_validator("retry")
@@ -167,6 +185,14 @@ class FlowWriteRequest(BaseModel):
                 raise ValueError(
                     f"step {step.id!r} deps reference unknown ids: {bad_deps}"
                 )
+        # goto target reference check.
+        for step in self.steps:
+            if step.on_fail.startswith("goto:"):
+                target = step.on_fail[5:]
+                if target not in id_set:
+                    raise ValueError(
+                        f"step {step.id!r} on_fail goto references unknown id {target!r}"
+                    )
         return self
 
 
@@ -194,7 +220,9 @@ async def _resolve_project_path(
 # ---------------------------------------------------------------------------
 
 
-def _load_flow(state_path: Path) -> dict[str, Any] | None:
+def _load_flow(
+    state_path: Path, *, include_output: bool = True
+) -> dict[str, Any] | None:
     """Parse a flow state.json into a FlowSummary-compatible dict, or None on error."""
     try:
         raw = json.loads(state_path.read_text(encoding="utf-8"))
@@ -210,11 +238,12 @@ def _load_flow(state_path: Path) -> dict[str, Any] | None:
                 "task": s["task"],
                 "deps": s.get("deps", []),
                 "status": s.get("status", "pending"),
+                "retry": s.get("retry", 1),
                 "approval": bool(s.get("approval", False)),
                 "on_fail": s.get("on_fail", "abort"),
                 "run_id": s.get("run_id"),
                 "type": s.get("type", "agent"),
-                "output": s.get("output"),
+                "output": s.get("output") if include_output else None,
             }
             for s in raw.get("steps", [])
         ]
@@ -231,15 +260,19 @@ def _load_flow(state_path: Path) -> dict[str, Any] | None:
 
 
 def _step_def_unchanged(prev: dict[str, Any], s: FlowStepInput) -> bool:
-    """True if a step's definition (task/soul/deps) is identical to the prior one.
+    """True if a step's definition (task/soul/deps/type) is identical to the prior one.
 
     deps are compared as sets — the editor derives deps from edges, so order may
-    differ without a semantic change.
+    differ without a semantic change. retry/on_fail/approval are not compared —
+    they don't affect a step's produced output, so cache preservation ignores
+    them. type IS compared: switching agent<->input changes execution semantics,
+    so a cached result under the old type is invalid.
     """
     return (
         prev.get("task") == s.task
         and prev.get("soul", "") == s.soul
         and set(prev.get("deps", [])) == set(s.deps)
+        and prev.get("type", "agent") == s.type
     )
 
 
@@ -334,6 +367,74 @@ def _write_state_atomic(state_path: Path, data: dict[str, Any]) -> None:
     tmp = state_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, state_path)
+
+
+def _flow_run_active(
+    flow_dir: Path, project_id: str, flow_id: str, runner: ForgeRunner | None
+) -> bool:
+    """True if a `flow run <flow_id>` is currently executing for this project.
+
+    Two independent execution paths can drive the same flow: the Gateway's own
+    ForgeRunner (in-process) and a bash CLI invocation elsewhere on the machine
+    (which holds lib/flow.sh's run.lock directory). A crashed run can leave
+    state.json's status stuck at "running" forever with no live process behind
+    it, so that field alone is never trusted here (HIGH-2).
+    """
+    if runner is not None and runner.find_active_flow_run(project_id, flow_id) is not None:
+        return True
+
+    run_lock_dir = flow_dir / "run.lock"
+    if run_lock_dir.is_dir():
+        try:
+            age = time.time() - run_lock_dir.stat().st_mtime
+        except OSError:
+            return False  # vanished between is_dir() and stat() — treat as gone
+        if age < RUN_LOCK_STALE_SECONDS:
+            return True
+
+    return False
+
+
+@contextmanager
+def _state_write_lock(state_path: Path) -> Iterator[None]:
+    """Mirror lib/flow-dag.sh's mkdir-based state.json.lock protocol.
+
+    mkdir is POSIX-atomic (no flock — unavailable on Git Bash), so the same
+    lock directory doubles as the mutual-exclusion primitive shared with the
+    bash CLI. The bash side reclaims stale locks via `kill -0 <holder-pid>`;
+    Python cannot reliably kill -0 a bash-spawned pid on Windows, so staleness
+    here is judged purely by the lock directory's mtime age
+    (STATE_LOCK_STALE_SECONDS) rather than liveness.
+    """
+    lock_dir = state_path.parent / "state.json.lock"
+    deadline = time.monotonic() + STATE_LOCK_TIMEOUT_SECONDS
+    reclaimed = False
+    while True:
+        try:
+            os.mkdir(lock_dir)
+            break
+        except FileExistsError:
+            if not reclaimed:
+                try:
+                    age = time.time() - lock_dir.stat().st_mtime
+                except OSError:
+                    age = STATE_LOCK_STALE_SECONDS + 1.0
+                if age > STATE_LOCK_STALE_SECONDS:
+                    shutil.rmtree(lock_dir, ignore_errors=True)
+                    reclaimed = True
+                    continue
+            if time.monotonic() >= deadline:
+                raise HTTPException(
+                    status_code=409,
+                    detail="flow state is locked by another writer",
+                )
+            time.sleep(0.1)
+
+    try:
+        (lock_dir / "pid").write_text(str(os.getpid()), encoding="utf-8")
+        yield
+    finally:
+        shutil.rmtree(lock_dir, ignore_errors=True)
 
 
 async def _validate_with_forge(state_path: Path, project_path: Path) -> str | None:
@@ -464,7 +565,7 @@ async def list_flows(
     for _, state_path in top_entries:
         if len(results) >= limit:
             break
-        data = _load_flow(state_path)
+        data = _load_flow(state_path, include_output=False)
         if data is None:
             continue
         try:
@@ -551,11 +652,14 @@ async def update_flow(
     project_id: str,
     flow_id: str,
     body: FlowWriteRequest,
+    request: Request,
     registry: ProjectRegistry = Depends(_get_registry),
 ) -> dict[str, str]:
     """Update an existing flow's state.json, resetting status to pending.
 
-    Returns 404 if flow or project not found; 400 on DAG validation failure.
+    Returns 404 if flow or project not found; 400 on DAG validation failure;
+    409 if the flow currently has an active run, or its state.json is locked
+    by another writer (HIGH-2).
     """
     if not _FLOW_DIR_RE.match(flow_id):
         raise HTTPException(status_code=400, detail=f"invalid flow_id: {flow_id!r}")
@@ -565,6 +669,10 @@ async def update_flow(
     if not flow_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"flow {flow_id!r} not found")
 
+    runner: ForgeRunner | None = getattr(request.app.state, "forge_runner", None)
+    if _flow_run_active(flow_dir, project_id, flow_id, runner):
+        raise HTTPException(status_code=409, detail="cannot edit a running flow")
+
     # Pure-Python cycle check.
     cycle_err = _python_cycle_check(body.steps)
     if cycle_err:
@@ -572,22 +680,23 @@ async def update_flow(
 
     state_path = flow_dir / "state.json"
 
-    # Preserve original created timestamp + prior per-step run state (status/run_id/
-    # output) so editing a flow doesn't wipe execution results.
-    created = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    prev_by_id: dict[str, Any] = {}
-    if state_path.is_file():
-        try:
-            old = json.loads(state_path.read_text(encoding="utf-8"))
-            created = old.get("created", created)
-            prev_by_id = {
-                s["id"]: s for s in old.get("steps", []) if isinstance(s, dict) and "id" in s
-            }
-        except Exception:
-            pass
+    with _state_write_lock(state_path):
+        # Preserve original created timestamp + prior per-step run state (status/run_id/
+        # output) so editing a flow doesn't wipe execution results.
+        created = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        prev_by_id: dict[str, Any] = {}
+        if state_path.is_file():
+            try:
+                old = json.loads(state_path.read_text(encoding="utf-8"))
+                created = old.get("created", created)
+                prev_by_id = {
+                    s["id"]: s for s in old.get("steps", []) if isinstance(s, dict) and "id" in s
+                }
+            except Exception:
+                pass
 
-    data = _build_state_json(flow_id, body, created, prev_by_id)
-    _write_state_atomic(state_path, data)
+        data = _build_state_json(flow_id, body, created, prev_by_id)
+        _write_state_atomic(state_path, data)
 
     # NON-fatal advisory (see create_flow) — Python guards are authoritative.
     err = await _validate_with_forge(state_path, project_path)
@@ -601,11 +710,13 @@ async def update_flow(
 async def delete_flow(
     project_id: str,
     flow_id: str,
+    request: Request,
     registry: ProjectRegistry = Depends(_get_registry),
 ) -> None:
     """Delete a flow directory entirely.
 
-    Returns 404 if the flow does not exist; 204 on success.
+    Returns 404 if the flow does not exist; 409 if it has an active run or its
+    state.json is locked by another writer (HIGH-2); 204 on success.
     """
     if not _FLOW_DIR_RE.match(flow_id):
         raise HTTPException(status_code=400, detail=f"invalid flow_id: {flow_id!r}")
@@ -615,4 +726,10 @@ async def delete_flow(
     if not flow_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"flow {flow_id!r} not found")
 
-    shutil.rmtree(flow_dir)
+    runner: ForgeRunner | None = getattr(request.app.state, "forge_runner", None)
+    if _flow_run_active(flow_dir, project_id, flow_id, runner):
+        raise HTTPException(status_code=409, detail="cannot delete a running flow")
+
+    state_path = flow_dir / "state.json"
+    with _state_write_lock(state_path):
+        shutil.rmtree(flow_dir)

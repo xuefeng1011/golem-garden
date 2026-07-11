@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 import golem_gateway.api_flows as _flows_mod
+from golem_gateway.forge_runner import ForgeRunner
 from golem_gateway.main import app
 from golem_gateway.registry import Project, ProjectRegistry
 
@@ -35,9 +37,13 @@ _REAL_VALIDATE_WITH_FORGE = _flows_mod._validate_with_forge
 
 @pytest.fixture(autouse=True)
 def _prime_app_state() -> None:
-    """Set app.state.registry if the lifespan hasn't done it yet."""
+    """Set app.state.registry/forge_runner if the lifespan hasn't done it yet."""
     if not hasattr(app.state, "registry"):
         app.state.registry = ProjectRegistry()
+    # Fresh ForgeRunner per test — _flow_run_active looks this up via
+    # getattr(request.app.state, "forge_runner", None); tests that need an
+    # "active run" hit populate app.state.forge_runner._runs directly.
+    app.state.forge_runner = ForgeRunner()
 
 
 @pytest.fixture(autouse=True)
@@ -338,6 +344,57 @@ async def test_post_flow_deps_unknown_id(registered_project) -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_flow_task_literal_brace_422(registered_project) -> None:
+    """task containing a literal '},{' (bash steps-splitter boundary) → 422."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "brace breaker",
+        "steps": [{"id": "s1", "task": "x},{y", "soul": "ryn"}],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_flow_task_brace_with_space_before_comma_ok(registered_project) -> None:
+    """Space BEFORE the comma ('} ,{') does not match the bash splitter — allowed."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "not a brace breaker",
+        "steps": [{"id": "s1", "task": "x} ,{y", "soul": "ryn"}],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_post_flow_goto_unknown_id_422(registered_project) -> None:
+    """on_fail goto:<id> referencing a non-existent step id must be rejected."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "ghost goto",
+        "steps": [{"id": "s1", "task": "t1", "soul": "ryn", "on_fail": "goto:ghost"}],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_flow_goto_existing_id_ok(registered_project) -> None:
+    """on_fail goto:<id> referencing an existing step id must be accepted."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "valid goto",
+        "steps": [
+            {"id": "s1", "task": "t1", "soul": "ryn", "on_fail": "goto:s2"},
+            {"id": "s2", "task": "t2", "soul": "ryn"},
+        ],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
 async def test_post_flow_unknown_project_404() -> None:
     resp = await _post("no-such-project", _SIMPLE_BODY)
     assert resp.status_code == 404
@@ -559,6 +616,97 @@ async def test_put_flow_resets_nonterminal_status_even_if_unchanged(registered_p
 
 
 @pytest.mark.asyncio
+async def test_put_flow_retry_roundtrip(registered_project) -> None:
+    """PUT with retry=3 must persist and be readable back via GET."""
+    project_id, project_path = registered_project
+    post_resp = await _post(project_id, _SIMPLE_BODY)
+    assert post_resp.status_code == 201, post_resp.text
+    flow_id = post_resp.json()["flow_id"]
+
+    body = {
+        "goal": "retry roundtrip",
+        "steps": [{"id": "s1", "task": "t1", "soul": "ryn", "retry": 3}],
+    }
+    put_resp = await _put(project_id, flow_id, body)
+    assert put_resp.status_code == 200, put_resp.text
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        get_resp = await client.get(f"/v1/projects/{project_id}/flows/{flow_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["steps"][0]["retry"] == 3
+
+
+@pytest.mark.asyncio
+async def test_get_flow_retry_defaults_to_1_when_missing(registered_project) -> None:
+    """A bash-written state.json with no 'retry' key on a step defaults to 1."""
+    project_id, project_path = registered_project
+    _write_flow(
+        project_path,
+        "flow_retry_default",
+        steps=[{"id": "s1", "soul": "ryn", "task": "t1", "deps": [], "status": "pending"}],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/flows/flow_retry_default")
+    assert resp.status_code == 200
+    assert resp.json()["steps"][0]["retry"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_flows_omits_output_detail_includes_it(registered_project) -> None:
+    """list_flows() must null out step output; get_flow() must still return it."""
+    project_id, project_path = registered_project
+    steps_with_output = [
+        {
+            "id": "s1", "soul": "ryn", "task": "build", "deps": [],
+            "retry": 1, "approval": False, "on_fail": "abort",
+            "status": "done", "type": "agent", "output": "build succeeded",
+        },
+    ]
+    _write_flow(project_path, "flow_list_output", goal="list output test", steps=steps_with_output)
+
+    list_resp = await _get(project_id)
+    assert list_resp.status_code == 200
+    assert list_resp.json()[0]["steps"][0]["output"] is None
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        detail_resp = await client.get(f"/v1/projects/{project_id}/flows/flow_list_output")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["steps"][0]["output"] == "build succeeded"
+
+
+@pytest.mark.asyncio
+async def test_put_flow_type_change_invalidates_cache(registered_project) -> None:
+    """Same id, type agent->input must NOT inherit prior 'done' status/output."""
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "s1", "soul": "ryn", "task": "t1", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-1", "output": "result one"},
+    ]
+    _write_flow(project_path, "flow_type_change", status="completed", steps=seeded)
+
+    body = {
+        "goal": "g",
+        "steps": [{"id": "s1", "task": "t1", "soul": "ryn", "type": "input"}],
+    }
+    resp = await _put(project_id, "flow_type_change", body)
+    assert resp.status_code == 200, resp.text
+
+    step = json.loads(
+        (project_path / ".golem" / "flows" / "flow_type_change" / "state.json").read_text(
+            encoding="utf-8"
+        )
+    )["steps"][0]
+    assert step["status"] == "pending"
+    assert "run_id" not in step
+    assert "output" not in step
+
+
+@pytest.mark.asyncio
 async def test_put_flow_not_found_404(registered_project) -> None:
     project_id, _ = registered_project
     resp = await _put(project_id, "00000000-0000-0000-0000-000000000000", _SIMPLE_BODY)
@@ -668,7 +816,10 @@ async def test_post_flow_invalid_type_422(registered_project) -> None:
 
 @pytest.mark.asyncio
 async def test_get_flow_output_passthrough(registered_project) -> None:
-    """GET must expose output field when state.json contains it (runtime passthrough)."""
+    """GET (detail) must expose output field when state.json contains it (runtime
+    passthrough) — list_flows() nulls output (LOW-2), so this exercises the
+    single-flow detail endpoint instead.
+    """
     project_id, project_path = registered_project
     steps_with_output = [
         {
@@ -684,11 +835,11 @@ async def test_get_flow_output_passthrough(registered_project) -> None:
     ]
     _write_flow(project_path, "flow_output_test", goal="output test", steps=steps_with_output)
 
-    resp = await _get(project_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/flows/flow_output_test")
     assert resp.status_code == 200
-    flows = resp.json()
-    assert len(flows) == 1
-    steps = {s["id"]: s for s in flows[0]["steps"]}
+    steps = {s["id"]: s for s in resp.json()["steps"]}
     assert steps["s1"]["output"] == "build succeeded"
     assert steps["s2"]["output"] is None
 
@@ -798,3 +949,123 @@ async def test_validate_with_forge_redacts_absolute_paths_and_logs_full_text(
 
     full_logged = "\n".join(r.getMessage() for r in caplog.records)
     assert "secretuser" in full_logged
+
+
+# ---------------------------------------------------------------------------
+# HIGH-2: PUT/DELETE concurrency guards — active-run 409 + state.json.lock
+# ---------------------------------------------------------------------------
+
+
+def _make_active_forge_run(project_id: str, flow_id: str):
+    import asyncio as _asyncio
+
+    from golem_gateway.forge_runner import ForgeRun
+
+    return ForgeRun(
+        run_id="fake-active-run",
+        command="flow",
+        args=["run", flow_id],
+        project_id=project_id,
+        project_path=Path("."),
+        proc=None,
+        queue=_asyncio.Queue(),
+        done=_asyncio.Event(),
+        started_at=0.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_put_flow_active_forge_run_409(registered_project) -> None:
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_600_1", goal="active")
+    app.state.forge_runner._runs["fake-active-run"] = _make_active_forge_run(
+        project_id, "flow_600_1"
+    )
+
+    resp = await _put(project_id, "flow_600_1", _SIMPLE_BODY)
+    assert resp.status_code == 409
+    assert "running" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_flow_active_forge_run_409(registered_project) -> None:
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_600_2", goal="active")
+    app.state.forge_runner._runs["fake-active-run"] = _make_active_forge_run(
+        project_id, "flow_600_2"
+    )
+
+    resp = await _delete(project_id, "flow_600_2")
+    assert resp.status_code == 409
+    flow_dir = project_path / ".golem" / "flows" / "flow_600_2"
+    assert flow_dir.is_dir(), "flow dir must survive a rejected delete"
+
+
+@pytest.mark.asyncio
+async def test_put_flow_fresh_run_lock_409(registered_project) -> None:
+    """A fresh (bash-CLI-held) run.lock dir blocks edits even with no in-process run."""
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_610_1", goal="bash active")
+    run_lock = project_path / ".golem" / "flows" / "flow_610_1" / "run.lock"
+    run_lock.mkdir(parents=True)
+
+    resp = await _put(project_id, "flow_610_1", _SIMPLE_BODY)
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_put_flow_stale_run_lock_allows_edit(registered_project) -> None:
+    """A run.lock dir older than RUN_LOCK_STALE_SECONDS is presumed abandoned."""
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_610_2", goal="stale bash run")
+    run_lock = project_path / ".golem" / "flows" / "flow_610_2" / "run.lock"
+    run_lock.mkdir(parents=True)
+    old_time = time.time() - (_flows_mod.RUN_LOCK_STALE_SECONDS + 60)
+    os.utime(run_lock, (old_time, old_time))
+
+    resp = await _put(project_id, "flow_610_2", _SIMPLE_BODY)
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_put_flow_locked_state_json_409(
+    registered_project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A freshly-held state.json.lock (another writer) blocks a concurrent PUT."""
+    monkeypatch.setattr(_flows_mod, "STATE_LOCK_TIMEOUT_SECONDS", 0.2)
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_620_1", goal="locked")
+    lock_dir = project_path / ".golem" / "flows" / "flow_620_1" / "state.json.lock"
+    lock_dir.mkdir(parents=True)
+
+    resp = await _put(project_id, "flow_620_1", _SIMPLE_BODY)
+    assert resp.status_code == 409
+    assert "locked" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_put_flow_stale_state_json_lock_reclaimed(
+    registered_project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale state.json.lock (older than STATE_LOCK_STALE_SECONDS) is reclaimed."""
+    monkeypatch.setattr(_flows_mod, "STATE_LOCK_STALE_SECONDS", 0.05)
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_620_2", goal="stale lock")
+    lock_dir = project_path / ".golem" / "flows" / "flow_620_2" / "state.json.lock"
+    lock_dir.mkdir(parents=True)
+    old_time = time.time() - 10
+    os.utime(lock_dir, (old_time, old_time))
+
+    resp = await _put(project_id, "flow_620_2", _SIMPLE_BODY)
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_put_flow_success_leaves_no_lock_dir(registered_project) -> None:
+    project_id, project_path = registered_project
+    _write_flow(project_path, "flow_620_3", goal="clean")
+
+    resp = await _put(project_id, "flow_620_3", _SIMPLE_BODY)
+    assert resp.status_code == 200, resp.text
+    lock_dir = project_path / ".golem" / "flows" / "flow_620_3" / "state.json.lock"
+    assert not lock_dir.exists()

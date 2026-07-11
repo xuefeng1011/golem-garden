@@ -31,10 +31,25 @@ _flow_set_flow_status() {
 }
 
 # ── 데이터 전달: {{step_id}} 치환 ──────────────────────────────────────────────
-# JSON 이스케이프된 output 을 실제 텍스트로 복원 (\n→줄바꿈, \"→", \\→\)
+# JSON 이스케이프된 output 을 실제 텍스트로 복원 (\n→줄바꿈, \t→탭, \"→", \\→\)
+# 순서 주의(MED-7): \\(더블 백슬래시)를 센티널(\001)로 먼저 빼내고 나서 \n/\t/\"
+# 를 복원하고 마지막에 센티널을 \ 로 되돌린다. 반대 순서(\" → \n → \\)면 리터럴
+# "\n"(역슬래시+n 두 글자, 실제 개행이 아님)이 이스케이프 단계에서 역슬래시가
+# 배가돼 "\\n"(석 자)로 저장돼 있어도 \n 치환이 뒤쪽 두 글자(역슬래시+n)를 먼저
+# 개행으로 오매칭해 "역슬래시+실제개행"으로 변질된다. \001 은 저장측
+# (_flow_json_escape, lib/flow-dag.sh)이 tr -d '\000-\010...' 로 제어문자를
+# 제거하므로 저장된 output 에 리터럴로 존재할 수 없어 센티널 충돌이 불가능하다.
+# gap: \b(backspace)/\f(formfeed) 는 escape 측 대칭이 없어 여기서 복원하지 않는다.
 _flow_unescape() {
-  printf '%s' "$1" | sed -e 's/\\"/"/g' -e 's/\\n/\
-/g' -e 's/\\\\/\\/g'
+  local _s
+  _s=$(printf '\001')
+  printf '%s' "$1" | sed \
+    -e 's/\\\\/'"${_s}"'/g' \
+    -e 's/\\n/\
+/g' \
+    -e 's/\\t/'"$(printf '\t')"'/g' \
+    -e 's/\\"/"/g' \
+    -e 's/'"${_s}"'/\\/g'
 }
 
 # _flow_subst <state_file> <text> — text 내 {{<step_id>}} 를 그 step 의 저장된
@@ -124,6 +139,147 @@ _flow_retry_backoff_secs() {
   echo "$secs"
 }
 
+# ── 병렬 배치 실행 (GOLEM_FLOW_PARALLEL) ─────────────────────────────────────
+# 노브: GOLEM_FLOW_PARALLEL — 정수 최대 동시 수. 미설정/1/비숫자 → 직렬(기존
+# 동작 무변화, 코드 경로 분기). 2 이상 → 웨이브 배치 실행. 상한 8 클램프.
+_flow_parallel_n() {
+  local raw="${GOLEM_FLOW_PARALLEL:-1}"
+  case "$raw" in
+    ''|*[!0-9]*) echo 1; return ;;
+  esac
+  [ "$raw" -lt 1 ] && raw=1
+  [ "$raw" -gt 8 ] && raw=8
+  echo "$raw"
+}
+
+# _flow_step_field <state_file> <step_id> <field> — 배치 분류용 단일 필드 조회
+# (flow_step_run 과 동일 grep -F 패턴 — step_id 의 정규식 메타문자 오매칭 차단)
+_flow_step_field() {
+  local state_file="$1" step_id="$2" field="$3"
+  local line
+  line=$(_fc_steps_lines < "$state_file" | grep -F "\"id\":\"${step_id}\"")
+  [ -z "$line" ] && return 1
+  _fc_get_field "$field" "$line"
+}
+
+# _flow_soul_rank <soul_name> — SOUL 파일의 rank 필드 조회(프로젝트 오버라이드
+# 우선, _resolve_soul_file/soul_get_field — lib/soul-parser.sh, agent-runner.sh
+# 경유 이미 source 됨). 파일 미발견 시 빈 문자열.
+_flow_soul_rank() {
+  local soul_name="$1"
+  [ -z "$soul_name" ] && return 0
+  local soul_file
+  soul_file=$(_resolve_soul_file "$soul_name" 2>/dev/null)
+  [ -z "$soul_file" ] && return 0
+  soul_get_field "$soul_file" "rank"
+}
+
+# _flow_is_low_rank <soul_name> — novice/junior면 0(true, 병렬 배치에서 제외).
+# GOLEM_FLOW_PARALLEL_RANK_GATE=0 이면 게이트 해제(항상 1/false) — 세션 포인터
+# --resume 동시 재개 + growth-log 기록 경합을 피하려는 기본 안전장치.
+_flow_is_low_rank() {
+  local soul_name="$1"
+  [ "${GOLEM_FLOW_PARALLEL_RANK_GATE:-1}" = "0" ] && return 1
+  case "$(_flow_soul_rank "$soul_name")" in
+    novice|junior) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# _flow_build_batches <state_file> <cap> <id...> — stdout: 배치당 1줄(공백
+# 구분 id 목록). 배치당 동일 soul 최대 1회 + 배치 크기 cap 이하가 되도록
+# first-fit 배정(입력 순서 보존 → 론치 순서 = 재생 순서). bash 3.2 대응
+# (연관배열 금지) — 인덱스 배열 병렬 페어(batch_ids/batch_souls)로 추적.
+_flow_build_batches() {
+  local state_file="$1" cap="$2"
+  shift 2
+  local -a cand=("$@")
+  local -a batch_ids=() batch_souls=()
+  local id soul bi cnt placed
+
+  for id in "${cand[@]}"; do
+    soul=$(_flow_step_field "$state_file" "$id" "soul")
+    placed=0
+    bi=0
+    while [ "$bi" -lt "${#batch_ids[@]}" ]; do
+      case " ${batch_souls[$bi]} " in
+        *" ${soul} "*) : ;;
+        *)
+          cnt=$(printf '%s\n' "${batch_ids[$bi]}" | wc -w)
+          if [ "$cnt" -lt "$cap" ]; then
+            batch_ids[$bi]="${batch_ids[$bi]} ${id}"
+            batch_souls[$bi]="${batch_souls[$bi]} ${soul}"
+            placed=1
+            break
+          fi
+          ;;
+      esac
+      bi=$((bi + 1))
+    done
+    if [ "$placed" -eq 0 ]; then
+      batch_ids+=("$id")
+      batch_souls+=("$soul")
+    fi
+  done
+
+  for bi in "${!batch_ids[@]}"; do
+    printf '%s\n' "${batch_ids[$bi]}" | sed 's/^ *//'
+  done
+}
+
+# _flow_run_wave <flow_id> <state_file> <step_id...> — 배치를 병렬 실행.
+# 각 step 을 백그라운드 서브셸로 소환하고 stdout/stderr/rc 를 wave_dir 에
+# 캡처, 전원 종료(wait) 후 론치 순서대로 재생 — 출력 스트림이 직렬 실행과
+# 동형이 되어 마커 파서(web/client) 는 무변경으로 병렬/직렬을 구분하지 못한다.
+# 실패해도 형제를 죽이지 않는다(전원 완주 후 판정) — on_fail 시맨틱은
+# flow_step_run 내부에서 이미 처리되므로 여기서는 rc 집계만 한다.
+# 주의: 백그라운드 서브셸 안에서 $$ 는 부모(flow_run) pid 그대로다(bash 3.2 —
+# BASHPID 는 4.0+ 전용이라 사용 금지). 그래서 형제 서브셸이 동시에 잡는
+# per-op 잠금(_flow_lock, lib/flow-dag.sh)의 holder pid 는 전부 같은 값을
+# 기록하고, 대기 타임아웃 후 stale 판정(kill -0)도 이 살아있는 공유 pid를
+# 보게 되어 항상 "살아있음"으로 나온다 — 형제 락을 죽은 것으로 오판해
+# 강탈하는 사고가 구조적으로 불가능하다.
+_flow_run_wave() {
+  local flow_id="$1" state_file="$2"
+  shift 2
+  local -a ids=("$@")
+  [ "${#ids[@]}" -eq 0 ] && return 0
+
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+  local wave_dir="${flow_dir}/wave.$$"
+  rm -rf "$wave_dir" 2>/dev/null
+  mkdir -p "$wave_dir" || { echo "[ERROR] _flow_run_wave: wave_dir 생성 실패" >&2; return 1; }
+
+  local -a pids=()
+  local sid
+  for sid in "${ids[@]}"; do
+    ( flow_step_run "$flow_id" "$sid" >"${wave_dir}/${sid}.out" 2>"${wave_dir}/${sid}.err"
+      echo $? >"${wave_dir}/${sid}.rc" ) &
+    pids+=("$!")
+  done
+
+  local p
+  for p in "${pids[@]}"; do
+    wait "$p" || true
+  done
+
+  local rc_all=0 rc
+  for sid in "${ids[@]}"; do
+    cat "${wave_dir}/${sid}.out" 2>/dev/null
+    cat "${wave_dir}/${sid}.err" 2>/dev/null >&2
+    if [ -f "${wave_dir}/${sid}.rc" ]; then
+      rc=$(cat "${wave_dir}/${sid}.rc" 2>/dev/null)
+    else
+      rc=1
+    fi
+    case "$rc" in ''|*[!0-9]*) rc=1 ;; esac
+    [ "$rc" -ne 0 ] && rc_all=1
+  done
+
+  rm -rf "$wave_dir"
+  return "$rc_all"
+}
+
 # ── 1. flow_step_run ──────────────────────────────────────────────────────────
 # flow_step_run <flow_id> <step_id>
 flow_step_run() {
@@ -142,7 +298,7 @@ flow_step_run() {
   retry=$(_fc_get_field "retry" "$step_line")
   on_fail=$(_fc_get_field "on_fail" "$step_line")
   type=$(_fc_get_field "type" "$step_line")
-  retry=${retry:-0}; on_fail=${on_fail:-abort}; type=${type:-agent}
+  retry=${retry:-1}; on_fail=${on_fail:-abort}; type=${type:-agent}
 
   flow_set_step_status "$state_file" "$step_id" "running"
 
@@ -173,11 +329,15 @@ flow_step_run() {
   # 플로우 컨텍스트 헤더 프리펜드 — {{}} 치환 완료 후 (마커 미리보기는 원래 task)
   task=$(_flow_prepend_context "$state_file" "$step_id" "$task")
 
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+  local _errf="${flow_dir}/.step-stderr.$$"
   local attempt=0 rc=0 _out=""
   while true; do
     # 출력 캡처 후 재출력 — run_id 추출(단계별 결과 보기) + SSE 로그 보존.
     # if 분기로 호출 — `cmd; rc=$?`는 set -e(bats/forge.sh) 환경에서 즉사한다
-    if _out=$(agent_run "$soul" "$task" 2>/dev/null); then rc=0; else rc=$?; fi
+    # stderr는 flow 디렉토리 내 임시 파일로 캡처(재시도 시 마지막 시도로 덮어씀,
+    # /tmp 미사용 — LOW-5) — 실패 사유가 stdout에 없을 때 폴백 소스로 쓴다.
+    if _out=$(agent_run "$soul" "$task" 2>"$_errf"); then rc=0; else rc=$?; fi
     printf '%s\n' "$_out"
     [ "$rc" -eq 0 ] && break
     attempt=$((attempt + 1))
@@ -186,6 +346,10 @@ flow_step_run() {
     local _bk; _bk=$(_flow_retry_backoff_secs "$attempt")
     [ "${_bk:-0}" -gt 0 ] 2>/dev/null && sleep "$_bk"
   done
+
+  local _stderr_tail=""
+  [ "$rc" -ne 0 ] && [ -f "$_errf" ] && _stderr_tail=$(tail -c 300 "$_errf" 2>/dev/null)
+  rm -f "$_errf"
 
   # <usage> ... run=<uuid> ... 에서 run_id 추출해 step 에 기록 (단계 클릭 시 결과 조회)
   local _step_run
@@ -205,7 +369,13 @@ flow_step_run() {
 
   local _reason
   _reason=$(_flow_marker_snip "$_out" 120)
-  [ -z "${_reason// /}" ] && _reason="agent_run rc=${rc}"
+  if [ -z "${_reason// /}" ]; then
+    if [ -n "${_stderr_tail// /}" ]; then
+      _reason=$(_flow_marker_snip "$_stderr_tail" 120)
+    else
+      _reason="agent_run rc=${rc}"
+    fi
+  fi
   printf '[FLOW][STEP][%s] 실패: %s\n' "$step_id" "$_reason"
 
   flow_set_step_status "$state_file" "$step_id" "failed"
@@ -223,7 +393,11 @@ flow_step_run() {
       _flow_set_flow_status "$state_file" "failed"
       return 1
     fi
-    flow_set_step_status "$state_file" "$goto_target" "pending" 2>/dev/null || true
+    if ! flow_set_step_status "$state_file" "$goto_target" "pending"; then
+      echo "[FLOW] goto 실패: target '${goto_target}' 상태 변경 불가 — abort 처리" >&2
+      _flow_set_flow_status "$state_file" "failed"
+      return 1
+    fi
     return 0
   else
     _flow_set_flow_status "$state_file" "failed"
@@ -242,18 +416,162 @@ flow_approve() {
   flow_set_step_status "$state_file" "$step_id" "approved"
 }
 
+# ── 하류 skip 전파 + 종결 status 확정 (MED-6) ────────────────────────────────
+# flow_reject 는 대상 step 만 skipped 로 바꾸고 끝나면 하류 step 이 deps 미충족
+# 상태로 영원히 pending 고착되고 flow status 도 갱신되지 않는 limbo 에 빠진다.
+# _flow_cascade_skip 로 하류를 고정점까지 skip 전파하고, flow_run 과 동일한
+# _flow_finalize_status 로 최종 status 를 확정한다.
+
+# _flow_cascade_skip <state_file>
+# status 가 pending/waiting_approval/approved 인 step 중 deps 에 skipped 인 id 가
+# 하나라도 있으면 skipped 로 전이. 변화가 없을 때까지 반복(스텝 수로 상한).
+# 멤버십 검사(" ${list} " 패턴)는 flow_next_ready(lib/flow-dag.sh)의 done_ids
+# 관용구를 그대로 재사용. 새로 skipped 로 전이된 step id 를 한 줄씩 stdout 출력
+# (flow_reject 가 "하류 skip: ..." 메시지 조립에 사용).
+_flow_cascade_skip() {
+  local state_file="$1"
+  local total
+  total=$(_fc_steps_lines < "$state_file" | grep -c '"id"') || total=0
+  local max_iter=$(( total + 1 )); [ "$max_iter" -lt 1 ] && max_iter=1
+
+  local iter=0 changed=1
+  while [ "$changed" -eq 1 ] && [ "$iter" -lt "$max_iter" ]; do
+    iter=$((iter + 1))
+    changed=0
+
+    local steps_lines line s_id s_status skipped_ids=""
+    steps_lines=$(_fc_steps_lines < "$state_file")
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      s_status=$(_fc_get_field "status" "$line")
+      [ "$s_status" = "skipped" ] || continue
+      s_id=$(_fc_get_field "id" "$line")
+      [ -n "$s_id" ] && skipped_ids="${skipped_ids} ${s_id}"
+    done <<EOF
+$steps_lines
+EOF
+
+    local s_deps dep hit
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      s_status=$(_fc_get_field "status" "$line")
+      case "$s_status" in pending|waiting_approval|approved) : ;; *) continue ;; esac
+      s_id=$(_fc_get_field "id" "$line")
+      [ -z "$s_id" ] && continue
+      s_deps=$(_fc_get_deps "$line")
+
+      hit=0
+      for dep in $s_deps; do
+        [ -z "$dep" ] && continue
+        case " ${skipped_ids} " in
+          *" ${dep} "*) hit=1; break ;;
+        esac
+      done
+      if [ "$hit" -eq 1 ]; then
+        flow_set_step_status "$state_file" "$s_id" "skipped"
+        printf '%s\n' "$s_id"
+        changed=1
+      fi
+    done <<EOF
+$steps_lines
+EOF
+  done
+}
+
+# _flow_finalize_status <state_file>
+# 미종결(pending|waiting_approval|approved|running) step 이 남아있으면 아무것도
+#하지 않는다(호출자가 판단할 몫). 0개면: failed step 존재 시 flow status
+# "failed", 아니면 "completed". flow_run 마감 로직과 flow_reject 양쪽이 공유 —
+# 신규 status 값 도입 없음(클라 union: pending|running|paused|completed|failed).
+_flow_finalize_status() {
+  local state_file="$1"
+  local has_unfinished has_failed
+  has_unfinished=$(_fc_steps_lines < "$state_file" | \
+    grep -cE '"status":"(pending|waiting_approval|approved|running)"' 2>/dev/null) || has_unfinished=0
+  [ "${has_unfinished:-0}" -gt 0 ] && return 0
+
+  has_failed=$(_fc_steps_lines < "$state_file" | \
+    grep -c '"status":"failed"' 2>/dev/null) || has_failed=0
+  if [ "${has_failed:-0}" -gt 0 ]; then
+    _flow_set_flow_status "$state_file" "failed"
+  else
+    _flow_set_flow_status "$state_file" "completed"
+  fi
+}
+
 # ── 3. flow_reject ────────────────────────────────────────────────────────────
 # flow_reject <flow_id> <step_id>
 flow_reject() {
   local flow_id="$1" step_id="$2"
   local state_file="${FLOW_DIR}/${flow_id}/state.json"
   [ -f "$state_file" ] || { echo "[ERROR] flow_reject: state.json 없음" >&2; return 1; }
-  flow_set_step_status "$state_file" "$step_id" "skipped"
+  flow_set_step_status "$state_file" "$step_id" "skipped" || return 1
+
+  local cascaded_ids cascaded_list
+  cascaded_ids=$(_flow_cascade_skip "$state_file")
+  _flow_finalize_status "$state_file"
+
+  cascaded_list=$(printf '%s' "$cascaded_ids" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+  printf '[FLOW] 거부: %s — 하류 skip: %s\n' "$step_id" "${cascaded_list:-(없음)}"
 }
 
 # ── 4. flow_run ───────────────────────────────────────────────────────────────
-# flow_run <flow_id>
+# flow 단위 실행 락 (HIGH-1) — 동시 러너가 같은 flow 를 실행하면 서로의 running
+# step 을 리셋하고 이중 에이전트 소환이 발생한다. 대기 루프 없이 즉시 실패시켜
+# 상위(mission 루프 등)가 재시도 여부를 결정하게 한다. stale 회수 정책은
+# flow-dag.sh _flow_lock 을 미러.
+_flow_run_lock() {
+  local flow_dir="$1"
+  local lock_dir="${flow_dir}/run.lock"
+
+  if mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s' "$$" > "${lock_dir}/pid" 2>/dev/null || true
+    return 0
+  fi
+
+  local _holder
+  _holder=$(cat "${lock_dir}/pid" 2>/dev/null)
+  if [ -n "$_holder" ] && kill -0 "$_holder" 2>/dev/null; then
+    echo "[ERROR] flow_run: 이미 실행 중인 flow (holder pid=${_holder})" >&2
+    return 1
+  fi
+
+  echo "[WARN] flow_run: stale run.lock 회수 (holder=${_holder:-none}): $lock_dir" >&2
+  rm -rf "$lock_dir" 2>/dev/null
+  if mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s' "$$" > "${lock_dir}/pid" 2>/dev/null || true
+    return 0
+  fi
+  echo "[ERROR] flow_run: 잠금 획득 실패: $lock_dir" >&2
+  return 1
+}
+
+_flow_run_unlock() {
+  rm -rf "${1}/run.lock" 2>/dev/null || true
+}
+
+# flow_run <flow_id> — 잠금 획득 후 본체(_flow_run_locked) 실행, 모든 경로에서 해제 보장
 flow_run() {
+  local flow_id="$1"
+  local state_file="${FLOW_DIR}/${flow_id}/state.json"
+  [ -f "$state_file" ] || { echo "[ERROR] flow_run: state.json 없음" >&2; return 1; }
+
+  # 병렬 웨이브(GOLEM_FLOW_PARALLEL>=2) 동시 종료 시 state.json per-op 잠금
+  # 경합이 늘어나므로, 명시적 override 가 없으면 대기 상한을 상향한다.
+  if [ "$(_flow_parallel_n)" -ge 2 ] && [ -z "${GOLEM_FLOW_LOCK_WAIT_ITERS:-}" ]; then
+    export GOLEM_FLOW_LOCK_WAIT_ITERS=150
+  fi
+
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+  _flow_run_lock "$flow_dir" || return 1
+  local _rc=0
+  _flow_run_locked "$flow_id" || _rc=$?
+  _flow_run_unlock "$flow_dir"
+  return "$_rc"
+}
+
+# 잠금 보유 전제의 본체 — 직접 호출 금지
+_flow_run_locked() {
   local flow_id="$1"
   local state_file="${FLOW_DIR}/${flow_id}/state.json"
   [ -f "$state_file" ] || { echo "[ERROR] flow_run: state.json 없음" >&2; return 1; }
@@ -278,7 +596,7 @@ $(_fc_steps_lines < "$state_file" | grep '"status":"running"')
 EOF
 
   local ready_lines got_approval got_abort step_id prefix
-  local has_unfinished has_failed
+  local has_unfinished
   local max_iter=$(( total_steps * 5 )); [ "$max_iter" -lt 5 ] && max_iter=5
   local iter=0
   while [ "$iter" -lt "$max_iter" ]; do
@@ -289,38 +607,111 @@ EOF
     if [ -z "$ready_lines" ]; then
       # 미종결(pending/승인대기/승인됨/실행중) step이 하나라도 남았으면
       # 플로우 status를 건드리지 않고 중단 — waiting_approval만 남은 플로우를
-      # completed로 오기록하던 회귀 방지 (리뷰 HIGH-2)
+      # completed로 오기록하던 회귀 방지 (리뷰 HIGH-2). 종결 판정 자체는
+      # flow_reject 와 공유하는 _flow_finalize_status 가 담당(MED-6).
       has_unfinished=$(_fc_steps_lines < "$state_file" | \
         grep -cE '"status":"(pending|waiting_approval|approved|running)"' 2>/dev/null) || has_unfinished=0
       [ "${has_unfinished:-0}" -gt 0 ] && break
-      has_failed=$(_fc_steps_lines < "$state_file" | \
-        grep -c '"status":"failed"' 2>/dev/null) || has_failed=0
-      if [ "${has_failed:-0}" -gt 0 ]; then
-        _flow_set_flow_status "$state_file" "failed"
-      else
-        _flow_set_flow_status "$state_file" "completed"
-      fi
+      _flow_finalize_status "$state_file"
       break
     fi
-    while IFS= read -r step_id; do
-      [ -z "$step_id" ] && continue
-      case "$step_id" in
-        APPROVAL:*)
-          prefix="${step_id#APPROVAL:}"
-          flow_set_step_status "$state_file" "$prefix" "waiting_approval"
-          printf '[FLOW] 승인 대기: step=%s\n  → flow_approve %s %s\n' \
-            "$prefix" "$flow_id" "$prefix"
-          got_approval=1 ;;
-        *)
-          # abort(rc 1) 시 같은 ready 그룹의 잔여 step 실행 중단 (리뷰 HIGH-1)
-          if ! flow_step_run "$flow_id" "$step_id"; then
-            got_abort=1
-            break
-          fi ;;
-      esac
-    done <<EOF
+    local _parallel_n
+    _parallel_n=$(_flow_parallel_n)
+
+    if [ "$_parallel_n" -le 1 ]; then
+      # 직렬 경로 (GOLEM_FLOW_PARALLEL 미설정/1/비숫자) — 기존 동작 그대로
+      while IFS= read -r step_id; do
+        [ -z "$step_id" ] && continue
+        case "$step_id" in
+          APPROVAL:*)
+            prefix="${step_id#APPROVAL:}"
+            flow_set_step_status "$state_file" "$prefix" "waiting_approval"
+            printf '[FLOW] 승인 대기: step=%s\n  → flow_approve %s %s\n' \
+              "$prefix" "$flow_id" "$prefix"
+            got_approval=1 ;;
+          *)
+            # abort(rc 1) 시 같은 ready 그룹의 잔여 step 실행 중단 (리뷰 HIGH-1)
+            if ! flow_step_run "$flow_id" "$step_id"; then
+              got_abort=1
+              break
+            fi ;;
+        esac
+      done <<EOF
 $ready_lines
 EOF
+    else
+      # 병렬 경로 — APPROVAL/host/input 스텝은 부모에서 즉시 처리(마커 라이브
+      # 유지), agent 스텝(soul 존재 + type=agent)만 병렬 배치 후보로 수집
+      local -a _agent_candidates=()
+      local _c_soul _c_type
+      while IFS= read -r step_id; do
+        [ -z "$step_id" ] && continue
+        case "$step_id" in
+          APPROVAL:*)
+            prefix="${step_id#APPROVAL:}"
+            flow_set_step_status "$state_file" "$prefix" "waiting_approval"
+            printf '[FLOW] 승인 대기: step=%s\n  → flow_approve %s %s\n' \
+              "$prefix" "$flow_id" "$prefix"
+            got_approval=1 ;;
+          *)
+            _c_soul=$(_flow_step_field "$state_file" "$step_id" "soul")
+            _c_type=$(_flow_step_field "$state_file" "$step_id" "type")
+            _c_type=${_c_type:-agent}
+            if [ -z "$_c_soul" ] || [ "$_c_type" != "agent" ]; then
+              if ! flow_step_run "$flow_id" "$step_id"; then
+                got_abort=1
+                break
+              fi
+            else
+              _agent_candidates+=("$step_id")
+            fi ;;
+        esac
+      done <<EOF
+$ready_lines
+EOF
+
+      if [ "$got_abort" -eq 0 ] && [ "${#_agent_candidates[@]}" -gt 0 ]; then
+        local -a _par_ids=() _tail_ids=()
+        local _cid _csoul
+        for _cid in "${_agent_candidates[@]}"; do
+          _csoul=$(_flow_step_field "$state_file" "$_cid" "soul")
+          if _flow_is_low_rank "$_csoul"; then
+            _tail_ids+=("$_cid")
+          else
+            _par_ids+=("$_cid")
+          fi
+        done
+
+        if [ "${#_par_ids[@]}" -gt 0 ]; then
+          local _batches_out _batch_line
+          local -a _batch_ids
+          _batches_out=$(_flow_build_batches "$state_file" "$_parallel_n" "${_par_ids[@]}")
+          while IFS= read -r _batch_line; do
+            [ -z "$_batch_line" ] && continue
+            [ "$got_abort" -eq 1 ] && break
+            _batch_ids=()
+            read -r -a _batch_ids <<< "$_batch_line"
+            printf '[FLOW] 병렬 배치 실행: %s (N=%s)\n' "$_batch_line" "${#_batch_ids[@]}"
+            if ! _flow_run_wave "$flow_id" "$state_file" "${_batch_ids[@]}"; then
+              got_abort=1
+            fi
+          done <<BATCH_EOF
+$_batches_out
+BATCH_EOF
+        fi
+
+        # rank 게이트로 미룬 novice/junior 스텝 — 배치 완료 후 직렬 꼬리 실행
+        if [ "$got_abort" -eq 0 ] && [ "${#_tail_ids[@]}" -gt 0 ]; then
+          for _cid in "${_tail_ids[@]}"; do
+            if ! flow_step_run "$flow_id" "$_cid"; then
+              got_abort=1
+              break
+            fi
+          done
+        fi
+      fi
+    fi
+
     [ "$got_abort" -eq 1 ] && break
     [ "$got_approval" -eq 1 ] && break
   done

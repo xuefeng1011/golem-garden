@@ -259,6 +259,22 @@ class ForgeRunner:
     async def get_run(self, run_id: str) -> ForgeRun | None:
         return self._runs.get(run_id)
 
+    def find_active_flow_run(self, project_id: str, flow_id: str) -> ForgeRun | None:
+        """Return the live `flow run <flow_id>` ForgeRun for this project, if any.
+
+        Synchronous (no lock) — call sites only need a best-effort duplicate
+        check, and `self._runs` mutation always happens on the event loop thread.
+        """
+        for run in self._runs.values():
+            if (
+                run.project_id == project_id
+                and run.command == "flow"
+                and run.args[:2] == ["run", flow_id]
+                and not run.done.is_set()
+            ):
+                return run
+        return None
+
     async def terminate_run(self, run_id: str) -> None:
         """Kill subprocess, cancel tasks, evict from _runs. Idempotent."""
         async with self._lock:

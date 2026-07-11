@@ -74,6 +74,18 @@ async def start_forge(
             ),
         )
 
+    # 409: a `flow run <flow_id>` is already active for this project — a second
+    # concurrent runner would race the same state.json (double agent summons,
+    # clobbered step results). See lib/flow.sh _flow_run_lock (bash-side mirror).
+    if body.command == "flow" and body.args[:1] == ["run"] and len(body.args) >= 2:
+        flow_id = body.args[1]
+        active = runner.find_active_flow_run(project_id, flow_id)
+        if active is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"flow {flow_id!r} already has an active run {active.run_id!r}",
+            )
+
     project_path = Path(project.path)
 
     try:

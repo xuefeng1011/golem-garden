@@ -429,6 +429,146 @@ class TestPathConversion:
         assert result == "/c/already/converted"
 
 
+# ---------------------------------------------------------------------------
+# TestFindActiveFlowRun — HIGH-1 duplicate-run lookup (forge_runner side)
+# ---------------------------------------------------------------------------
+
+
+class TestFindActiveFlowRun:
+    def test_hits_matching_active_flow_run(self) -> None:
+        runner = ForgeRunner()
+        run = _make_run("r1", command="flow", args=["run", "flow-1"])
+        run.project_id = "proj-a"
+        runner._runs["r1"] = run
+
+        found = runner.find_active_flow_run("proj-a", "flow-1")
+        assert found is run
+
+    def test_excludes_done_run(self) -> None:
+        runner = ForgeRunner()
+        run = _make_run("r1", command="flow", args=["run", "flow-1"])
+        run.project_id = "proj-a"
+        run.done.set()
+        runner._runs["r1"] = run
+
+        assert runner.find_active_flow_run("proj-a", "flow-1") is None
+
+    def test_misses_different_flow_id(self) -> None:
+        runner = ForgeRunner()
+        run = _make_run("r1", command="flow", args=["run", "flow-1"])
+        run.project_id = "proj-a"
+        runner._runs["r1"] = run
+
+        assert runner.find_active_flow_run("proj-a", "flow-2") is None
+
+    def test_misses_different_project(self) -> None:
+        runner = ForgeRunner()
+        run = _make_run("r1", command="flow", args=["run", "flow-1"])
+        run.project_id = "proj-a"
+        runner._runs["r1"] = run
+
+        assert runner.find_active_flow_run("proj-b", "flow-1") is None
+
+    def test_misses_non_flow_command(self) -> None:
+        runner = ForgeRunner()
+        run = _make_run("r1", command="mission", args=["run", "flow-1"])
+        run.project_id = "proj-a"
+        runner._runs["r1"] = run
+
+        assert runner.find_active_flow_run("proj-a", "flow-1") is None
+
+    def test_no_runs_returns_none(self) -> None:
+        runner = ForgeRunner()
+        assert runner.find_active_flow_run("proj-a", "flow-1") is None
+
+
+# ---------------------------------------------------------------------------
+# TestForgeDuplicateFlowRun409 — HIGH-1 POST /forge duplicate rejection
+# ---------------------------------------------------------------------------
+
+
+class TestForgeDuplicateFlowRun409:
+    @staticmethod
+    def _prime_registry(
+        monkeypatch: pytest.MonkeyPatch, app, project_id: str, project_path: Path
+    ) -> None:
+        from datetime import datetime, timezone
+
+        from golem_gateway.registry import Project, ProjectRegistry
+
+        fake_project = Project(
+            id=project_id,
+            name="Forge Test Project",
+            path=str(project_path),
+            created_at=datetime.now(tz=timezone.utc).isoformat(),
+        )
+
+        async def fake_get(self_or_pid, pid: str | None = None):
+            actual = pid if pid is not None else self_or_pid
+            return fake_project if actual == project_id else None
+
+        app.state.registry = ProjectRegistry()
+        # monkeypatch (not a bare assignment) so the stub is restored after the
+        # test — a permanent ProjectRegistry.get overwrite here previously leaked
+        # into every other test file sharing the module-level `app` singleton.
+        monkeypatch.setattr(ProjectRegistry, "get", fake_get)
+
+    @pytest.mark.asyncio
+    async def test_duplicate_flow_run_returns_409(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from httpx import ASGITransport, AsyncClient
+
+        from golem_gateway.main import app
+
+        runner = ForgeRunner()
+        app.state.forge_runner = runner
+        self._prime_registry(monkeypatch, app, "proj-dup", tmp_path)
+
+        active = _make_run("active-1", command="flow", args=["run", "flow-1"])
+        active.project_id = "proj-dup"
+        runner._runs["active-1"] = active
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/v1/projects/proj-dup/forge",
+                json={"command": "flow", "args": ["run", "flow-1"]},
+            )
+        assert resp.status_code == 409, resp.text
+        assert "flow-1" in resp.json()["detail"]
+        assert "active-1" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_different_flow_id_spawns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from httpx import ASGITransport, AsyncClient
+
+        from golem_gateway.main import app
+
+        runner = ForgeRunner()
+        app.state.forge_runner = runner
+        self._prime_registry(monkeypatch, app, "proj-dup2", tmp_path)
+
+        active = _make_run("active-2", command="flow", args=["run", "flow-1"])
+        active.project_id = "proj-dup2"
+        runner._runs["active-2"] = active
+
+        spawned = _make_run("new-run", command="flow", args=["run", "flow-2"])
+        spawn_mock = AsyncMock(return_value=spawned)
+        with patch.object(runner, "spawn", spawn_mock):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/v1/projects/proj-dup2/forge",
+                    json={"command": "flow", "args": ["run", "flow-2"]},
+                )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["run_id"] == "new-run"
+        spawn_mock.assert_awaited_once()
+
+
 class TestBashResolution:
     def test_env_override_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """GOLEM_BASH_BIN override is honored verbatim."""

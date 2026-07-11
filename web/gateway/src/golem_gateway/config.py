@@ -311,6 +311,22 @@ MAX_FLOW_SECONDS: int = int(os.environ.get("GOLEM_MAX_FLOW_SECONDS", "1800"))
 # Maximum combined stdout+stderr bytes per forge run before termination.
 FORGE_OUTPUT_CAP_BYTES: int = 2 * 1024 * 1024  # 2 MB
 
+# ---------------------------------------------------------------------------
+# Flow concurrency guards (HIGH-2) — state.json.lock mkdir protocol + run.lock
+# staleness. Mirrors lib/flow-dag.sh _flow_lock / lib/flow.sh _flow_run_lock.
+# ---------------------------------------------------------------------------
+
+# Max time a PUT/DELETE waits to acquire the state.json.lock mkdir before 409.
+STATE_LOCK_TIMEOUT_SECONDS: float = 5.0
+
+# A state.json.lock dir older than this is presumed crash-abandoned and reclaimed.
+STATE_LOCK_STALE_SECONDS: float = 30.0
+
+# A run.lock dir older than this (bash-side flow_run) is presumed stale — the
+# bash holder cannot be kill -0'd from Python, so age vs. the flow's own wall-
+# clock ceiling is the only signal available.
+RUN_LOCK_STALE_SECONDS: float = MAX_FLOW_SECONDS + 300
+
 # Whitelisted forge subcommands.  Anything outside this set is rejected 400.
 ALLOWED_FORGE_COMMANDS: frozenset[str] = frozenset({
     "status", "souls", "rank", "dashboard", "insights",

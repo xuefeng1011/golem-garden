@@ -583,7 +583,7 @@ export function editorGraphFromFlow(flow: Flow): { nodes: GraphNode[]; edges: Gr
       stepId: step.id,
       soul: step.soul ?? '',
       task: step.task,
-      retry: 1,
+      retry: step.retry ?? 1,
       approval: step.approval,
       on_fail: step.on_fail,
       status: step.status,

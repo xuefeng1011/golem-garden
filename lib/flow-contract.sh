@@ -201,6 +201,55 @@ EOF
     errors=$((errors + 1))
   fi
 
+  # 파편 감지 프리패스 + on_fail goto 대상 존재 검사 (단일 루프, HIGH-3/MED-5)
+  # _fc_steps_lines 의 },{ 분리는 task 값 안에 리터럴 `},{` 가 있으면 오분할되고,
+  # flow_parse_steps 는 id/task 없는 파편을 조용히 버려(161행) 검증이 데이터
+  # 손상을 못 보고 지나칠 수 있다. 원시 블록 각각이 (a) { 로 시작 (b) } 로 끝
+  # (c) "id": 포함 — 셋 중 하나라도 어기면 파편으로 간주한다.
+  local raw_lines
+  raw_lines=$(printf '%s\n' "$json" | _fc_steps_lines 2>/dev/null)
+  if [ -n "$raw_lines" ]; then
+    # IFS 미지정 read: 기본 IFS(공백/탭/개행)가 선행/후행 공백을 트림한다.
+    # _fc_steps_lines 첫 블록에 남는 들여쓰기 공백이 '{' 시작 판정을 오탐시키던 버그 수정.
+    while read -r raw_block; do
+      [ -z "$(printf '%s' "$raw_block" | tr -d '[:space:]{}')" ] && continue
+
+      local frag_bad=0
+      case "$raw_block" in
+        \{*) : ;;
+        *) frag_bad=1 ;;
+      esac
+      case "$raw_block" in
+        *\}) : ;;
+        *) frag_bad=1 ;;
+      esac
+      case "$raw_block" in
+        *'"id":'*) : ;;
+        *) frag_bad=1 ;;
+      esac
+
+      if [ "$frag_bad" -eq 1 ]; then
+        echo "[ERROR] flow_validate_steps: step 객체 파편 감지 — task 값에 },{ 포함 의심 (1-depth 계약 위반)" >&2
+        errors=$((errors + 1))
+        continue
+      fi
+
+      local raw_on_fail raw_goto_target
+      raw_on_fail=$(_fc_get_field "on_fail" "$raw_block")
+      case "$raw_on_fail" in
+        goto:*)
+          raw_goto_target="${raw_on_fail#goto:}"
+          if ! printf ' %s ' "$valid_ids" | grep -q " ${raw_goto_target} "; then
+            echo "[ERROR] flow_validate_steps: on_fail goto 대상 '${raw_goto_target}' 이 존재하지 않는 step id" >&2
+            errors=$((errors + 1))
+          fi
+          ;;
+      esac
+    done <<EOF
+$raw_lines
+EOF
+  fi
+
   # 각 step 검증
   while IFS=$'\037' read -r id soul task deps; do
     # id 필수

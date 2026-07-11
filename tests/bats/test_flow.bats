@@ -392,6 +392,46 @@ EOF
   grep -q '"id":"retry_step"[^}]*"status":"failed"' "$state"
 }
 
+@test "flow: retry — 기본값 1(retry 필드 없음), 1회 실패 후 성공하면 done" {
+  _mk_steps <<'EOF'
+[
+  {
+    "id": "flaky_step",
+    "soul": "zen",
+    "task": "flaky_task",
+    "deps": []
+  }
+]
+EOF
+
+  run flow_create "default retry flow" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  printf '0' > "$TEST_PROJECT/.agent_call_count"
+  # 첫 호출은 실패, 두 번째(기본 1회 재시도) 호출은 성공하는 mock
+  agent_run() {
+    local count_file="$TEST_PROJECT/.agent_call_count"
+    local cnt
+    cnt=$(cat "$count_file")
+    cnt=$((cnt + 1))
+    printf '%d' "$cnt" > "$count_file"
+    if [ "$cnt" -eq 1 ]; then
+      echo "mock fail"
+      return 1
+    fi
+    echo "mock ok"
+    return 0
+  }
+
+  run flow_step_run "$flow_id" "flaky_step"
+  [ "$status" -eq 0 ]
+
+  # retry 필드가 없어도 기본 1회 재시도가 적용되어 2회 호출 후 성공
+  [ "$(cat "$TEST_PROJECT/.agent_call_count")" -eq 2 ]
+  grep -q '"id":"flaky_step"[^}]*"status":"done"' "$state"
+}
+
 @test "flow: _flow_retry_backoff_secs — 지수 백오프 + 30s 캡 + 비활성" {
   GOLEM_FLOW_RETRY_BASE_SEC=2
   [ "$(_flow_retry_backoff_secs 1)" -eq 2 ]   # 2 * 2^0
@@ -809,6 +849,27 @@ JSON
   [[ "$output" != *"[FLOW][STEP][s1] 완료"* ]]
 }
 
+@test "flow: 실패 사유 stderr 폴백 — stdout 비고 stderr에만 사유 있으면 마커에 포함 + 임시파일 미잔존" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"retry":0,"on_fail":"abort"}]
+JSON
+  run flow_create "stderr fallback" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+
+  # stdout은 비우고 stderr에만 실패 사유를 쓰는 mock — <usage> 라인도 없음
+  agent_run() { echo "boom: rate limited by upstream" >&2; return 1; }
+
+  run flow_step_run "$flow_id" "s1"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[FLOW][STEP][s1] 실패: boom: rate limited by upstream"* ]]
+
+  # 임시 stderr 캡처 파일이 flow 디렉토리 안에 남지 않음
+  local leftover
+  leftover=$(compgen -G "${flow_dir}/.step-stderr.*" 2>/dev/null) || leftover=""
+  [ -z "$leftover" ]
+}
+
 @test "flow: flow_run rc 계약 — failed→1, completed→0, 승인대기→0" {
   # 1) 실패 플로우(on_fail=abort) → rc 1 + 플로우 status=failed + RUN 실패 마커
   _mk_steps <<'JSON'
@@ -1019,6 +1080,248 @@ JSON
 # 교차 계약 — bash flow_validate_steps ↔ gateway Pydantic (tests/golden/flow-cases)
 # 같은 케이스 파일을 pytest(test_flow_validate_contract.py)도 검증한다.
 # ───────────────────────────────────────────────────────────────────────────────
+
+# ───────────────────────────────────────────────────────────────────────────────
+# flow 단위 실행 락 (HIGH-1) — 동시 러너가 같은 flow 를 실행하면 서로의 running
+# step 을 리셋하고 이중 소환이 발생하던 결함의 회귀 방지
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: run.lock 살아있는 보유자 — flow_run 즉시 실패, 락 디렉토리 보존" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "run lock live" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+
+  mkdir "${flow_dir}/run.lock"
+  printf '%s' "$$" > "${flow_dir}/run.lock/pid"
+
+  run flow_run "$flow_id"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"holder pid=$$"* ]]
+  [ -d "${flow_dir}/run.lock" ]
+  rm -rf "${flow_dir}/run.lock"
+}
+
+@test "flow: run.lock stale — 죽은 pid 또는 pid 기록 없음이면 회수 후 정상 실행" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  export MOCK_AGENT_RC=0
+
+  # 1) pid=999999 (죽은 프로세스로 간주)
+  run flow_create "run lock stale pid" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+  mkdir "${flow_dir}/run.lock"
+  printf '999999' > "${flow_dir}/run.lock/pid"
+
+  run flow_run "$flow_id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"stale run.lock 회수"* ]]
+  grep -q '"id":"s1"[^}]*"status":"done"' "${flow_dir}/state.json"
+
+  # 2) pid 파일 없음 (크래시 잔재)
+  run flow_create "run lock stale nopid" "$TEST_PROJECT/steps.json"
+  local flow_id2="$output"
+  local flow_dir2="${FLOW_DIR}/${flow_id2}"
+  mkdir "${flow_dir2}/run.lock"
+
+  run flow_run "$flow_id2"
+  [ "$status" -eq 0 ]
+  grep -q '"id":"s1"[^}]*"status":"done"' "${flow_dir2}/state.json"
+}
+
+@test "flow: run.lock — 정상 완료 후 락 디렉토리 존재하지 않음" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"type":"agent"}]
+JSON
+  run flow_create "run lock release ok" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+
+  export MOCK_AGENT_RC=0
+  run flow_run "$flow_id"
+  [ "$status" -eq 0 ]
+  [ ! -d "${flow_dir}/run.lock" ]
+}
+
+@test "flow: run.lock — 실패(abort) 완료 후에도 락 디렉토리 존재하지 않음" {
+  _mk_steps <<'JSON'
+[{"id":"s1","soul":"zen","task":"t1","deps":[],"retry":0,"on_fail":"abort"}]
+JSON
+  run flow_create "run lock release fail" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local flow_dir="${FLOW_DIR}/${flow_id}"
+
+  export MOCK_AGENT_RC=1
+  run flow_run "$flow_id"
+  [ "$status" -eq 1 ]
+  [ ! -d "${flow_dir}/run.lock" ]
+}
+
+# ───────────────────────────────────────────────────────────────────────────────
+# MED-7: _flow_unescape 순서 버그 — 리터럴 "\n"(역슬래시+n)이 실제 개행으로
+# 변질되지 않고 왕복(escape→unescape)해 원문을 그대로 복원해야 한다.
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: _flow_unescape — escape 왕복 프로퍼티 (리터럴 역슬래시+n 포함)" {
+  local cases=(
+    'a\nb'
+    'C:\path\to\file'
+    $'say "hi"\tthere'
+    'a\\\\nb'
+  )
+  local x esc got
+  for x in "${cases[@]}"; do
+    esc=$(_flow_json_escape "$x")
+    got=$(_flow_unescape "$esc")
+    [ "$got" = "$x" ]
+  done
+}
+
+@test "flow: _flow_unescape — 실제 개행(멀티라인 output)은 정상 복원" {
+  local raw esc got
+  raw=$'line1\nline2'
+  esc=$(_flow_json_escape "$raw")
+  got=$(_flow_unescape "$esc")
+  [ "$got" = "$raw" ]
+}
+
+# ───────────────────────────────────────────────────────────────────────────────
+# MED-6: flow_reject — 대상 skip 후 하류 cascade skip + flow status 확정
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow: reject 체인 — s2(approval) 거부 시 s2,s3 skipped + flow completed" {
+  _mk_steps <<'JSON'
+[
+  {"id": "s1", "soul": "zen", "task": "t1", "deps": []},
+  {"id": "s2", "soul": "zen", "task": "t2", "deps": ["s1"], "approval": true},
+  {"id": "s3", "soul": "zen", "task": "t3", "deps": ["s2"]}
+]
+JSON
+  run flow_create "reject chain" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  export MOCK_AGENT_RC=0
+  flow_run "$flow_id"   # s1 done, s2 waiting_approval 에서 중단
+
+  run flow_reject "$flow_id" "s2"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"거부: s2"* ]]
+
+  grep -q '"id":"s2"[^}]*"status":"skipped"' "$state"
+  grep -q '"id":"s3"[^}]*"status":"skipped"' "$state"
+
+  local head_status
+  head_status=$(sed 's/"steps".*//' "$state" | grep -o '"status":"[a-z]*"')
+  [ "$head_status" = '"status":"completed"' ]
+}
+
+@test "flow: reject 다이아몬드 — s2 skip 시 s3(deps=s1,s2)만 skip, s4(deps=s1)는 유지" {
+  _mk_steps <<'JSON'
+[
+  {"id": "s1", "soul": "zen", "task": "t1", "deps": []},
+  {"id": "s2", "soul": "zen", "task": "t2", "deps": ["s1"]},
+  {"id": "s3", "soul": "zen", "task": "t3", "deps": ["s1", "s2"]},
+  {"id": "s4", "soul": "zen", "task": "t4", "deps": ["s1"]}
+]
+JSON
+  run flow_create "reject diamond" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  flow_set_step_status "$state" "s1" "done"
+
+  run flow_reject "$flow_id" "s2"
+  [ "$status" -eq 0 ]
+
+  grep -q '"id":"s2"[^}]*"status":"skipped"' "$state"
+  grep -q '"id":"s3"[^}]*"status":"skipped"' "$state"
+  grep -q '"id":"s4"[^}]*"status":"pending"' "$state"
+  ! grep -q '"id":"s4"[^}]*"status":"skipped"' "$state"
+}
+
+@test "flow: reject 마감 — failed step 이미 존재하면 flow status failed" {
+  _mk_steps <<'JSON'
+[
+  {"id": "boom", "soul": "zen", "task": "t1", "deps": [], "retry": 0, "on_fail": "continue"},
+  {"id": "gate", "soul": "zen", "task": "t2", "deps": [], "approval": true}
+]
+JSON
+  run flow_create "reject with failed" "$TEST_PROJECT/steps.json"
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  export MOCK_AGENT_RC=1
+  flow_step_run "$flow_id" "boom"
+  grep -q '"id":"boom"[^}]*"status":"failed"' "$state"
+
+  # gate 는 deps 없어 approval 게이트로 waiting_approval 진입시켜둔다
+  flow_set_step_status "$state" "gate" "waiting_approval"
+
+  run flow_reject "$flow_id" "gate"
+  [ "$status" -eq 0 ]
+
+  local head_status
+  head_status=$(sed 's/"steps".*//' "$state" | grep -o '"status":"[a-z]*"')
+  [ "$head_status" = '"status":"failed"' ]
+}
+
+@test "flow: validate — task 리터럴 },{ 파편 감지 + pretty-print 오탐 없음" {
+  # 파편: task 값에 리터럴 },{ 포함 → 오분할 감지 후 거부 (HIGH-3)
+  _mk_steps <<'EOF'
+[
+  {"id": "s1", "soul": "zen", "task": "bad },{ inside", "deps": []}
+]
+EOF
+  run flow_validate_steps < "$TEST_PROJECT/steps.json"
+  [ "$status" -ne 0 ]
+  # 오분할 규모에 따라 파편 프리패스("파편 감지") 또는 조기 파싱 실패("파싱 실패")
+  # 어느 쪽이든 거부되면 방어 성립
+  [[ "$output" == *"파편 감지"* || "$output" == *"파싱 실패"* ]]
+
+  # 오탐 회귀 방지: 들여쓰기(선행 공백) pretty-print 정상 JSON 은 통과
+  _mk_steps <<'EOF'
+[
+  {
+    "id": "s1",
+    "soul": "zen",
+    "task": "ok task",
+    "deps": []
+  }
+]
+EOF
+  run flow_validate_steps < "$TEST_PROJECT/steps.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "flow: goto 런타임 — 존재하지 않는 target 이면 abort (침묵 continue 금지)" {
+  _mk_steps <<'EOF'
+[
+  {"id": "fail_step", "soul": "zen", "task": "failing", "deps": [], "retry": 0, "on_fail": "goto:recovery"},
+  {"id": "recovery", "soul": "zen", "task": "rec", "deps": []}
+]
+EOF
+  run flow_create "ghost goto" "$TEST_PROJECT/steps.json"
+  [ "$status" -eq 0 ]
+  local flow_id="$output"
+  local state="${FLOW_DIR}/${flow_id}/state.json"
+
+  # 검증 우회: goto 대상을 존재하지 않는 id 로 직접 치환 (MED-5 런타임 경로)
+  sed 's/goto:recovery/goto:ghost/' "$state" > "${state}.tmp" && mv "${state}.tmp" "$state"
+
+  export MOCK_AGENT_RC=1
+  run flow_step_run "$flow_id" "fail_step"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"goto 실패"* ]]
+
+  local head_status
+  head_status=$(sed 's/"steps".*//' "$state" | grep -o '"status":"[a-z]*"')
+  [ "$head_status" = '"status":"failed"' ]
+}
 
 @test "flow: 골든 케이스 — valid-* 전부 통과, invalid-* 전부 거부" {
   local f name rc

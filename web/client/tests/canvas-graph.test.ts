@@ -678,6 +678,26 @@ describe('stepsFromGraph', () => {
     expect(s2.deps).toEqual(['s1'])
     expect(s3.deps).toEqual(['s2'])
   })
+
+  it('round-trip: explicit retry value is preserved after editorGraphFromFlow → stepsFromGraph', () => {
+    const flow = makeFlow({
+      steps: [{ id: 's1', soul: 'ryn', task: 'Build', deps: [], status: 'done', approval: false, on_fail: 'abort', retry: 2 }],
+    })
+    const { nodes, edges } = editorGraphFromFlow(flow)
+    const steps = stepsFromGraph(nodes, edges)
+    const s1 = steps.find((s) => s.id === 's1')!
+    expect(s1.retry).toBe(2)
+  })
+
+  it('round-trip: missing retry defaults to 1 after editorGraphFromFlow → stepsFromGraph', () => {
+    const flow = makeFlow({
+      steps: [{ id: 's1', soul: 'ryn', task: 'Build', deps: [], status: 'done', approval: false, on_fail: 'abort' }],
+    })
+    const { nodes, edges } = editorGraphFromFlow(flow)
+    const steps = stepsFromGraph(nodes, edges)
+    const s1 = steps.find((s) => s.id === 's1')!
+    expect(s1.retry).toBe(1)
+  })
 })
 
 // ── editorGraphFromFlow ───────────────────────────────────────────────────────

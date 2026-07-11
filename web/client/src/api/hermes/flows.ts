@@ -11,6 +11,7 @@ export interface FlowStep {
   run_id?: string | null
   type?: 'input' | 'agent'
   output?: string | null
+  retry?: number
 }
 
 export interface Flow {
