@@ -38,6 +38,9 @@ insights_soul() {
   local total=$(echo "$all_entries" | grep -c '"result"' 2>/dev/null)
   local successes=$(echo "$all_entries" | grep -c '"result":"success"' 2>/dev/null)
   local fails=$(echo "$all_entries" | grep -c '"result":"fail"' 2>/dev/null)
+  local timeouts=$(echo "$all_entries" | grep -c '"result":"timeout"' 2>/dev/null)
+  local turn_caps=$(echo "$all_entries" | grep -c '"result":"turn_cap"' 2>/dev/null)
+  local others=$((total - successes - fails - timeouts - turn_caps))
   local rate=0
   [ "$total" -gt 0 ] && rate=$(( successes * 100 / total ))
 
@@ -111,6 +114,21 @@ insights_soul() {
   printf "  태스크: %d건 (성공 %d / 실패 %d)\n" "$total" "$successes" "$fails"
   printf "  성공률: %d%% %s (최근5건: %d%%)\n" "$rate" "$trend" "$recent_rate"
   printf "  연속성공: %d건\n" "$streak"
+  echo ""
+  echo "── 실패 유형 분해 ──"
+  local fail_count=$fails
+  local timeout_count=$timeouts
+  local turn_cap_count=$turn_caps
+  local other_count=$others
+  local non_success=$((fail_count + timeout_count + turn_cap_count + other_count))
+  if [ "$non_success" -gt 0 ]; then
+    [ "$fail_count" -gt 0 ] && printf "  실패(fail): %d건 (%.1f%%)\n" "$fail_count" "$(awk "BEGIN{printf \"%.1f\", $fail_count*100/$non_success}")"
+    [ "$timeout_count" -gt 0 ] && printf "  타임아웃: %d건 (%.1f%%)\n" "$timeout_count" "$(awk "BEGIN{printf \"%.1f\", $timeout_count*100/$non_success}")"
+    [ "$turn_cap_count" -gt 0 ] && printf "  턴캡: %d건 (%.1f%%)\n" "$turn_cap_count" "$(awk "BEGIN{printf \"%.1f\", $turn_cap_count*100/$non_success}")"
+    [ "$other_count" -gt 0 ] && printf "  기타: %d건 (%.1f%%)\n" "$other_count" "$(awk "BEGIN{printf \"%.1f\", $other_count*100/$non_success}")"
+  else
+    echo "  실패 없음 (모두 성공)"
+  fi
   echo ""
   echo "── 비용 분석 ──"
   printf "  총비용: \$%s | 평균: \$%s/태스크\n" "$total_cost" "$avg_cost"
@@ -231,6 +249,61 @@ insights_team() {
   local team_rate=0
   [ "$team_total" -gt 0 ] && team_rate=$(( team_success * 100 / team_total ))
   printf "  합계: %d건, 성공률 %d%%, 총비용 \$%s\n" "$team_total" "$team_rate" "$team_cost"
+
+  # ── 팀 전체 실패 분석 ──
+  echo ""
+  echo "── 실패 유형 분석 ──"
+  local team_fails=0
+  local team_timeouts=0
+  local team_turn_caps=0
+  local team_others=0
+  while IFS= read -r soul_file; do
+    [ -f "$soul_file" ] || continue
+    soul_parse "$soul_file"
+    [ "$SOUL_ROLE" = "director" ] && continue
+    local name="$SOUL_NAME"
+
+    local all_entries=""
+    local gl="${GOLEM_ROOT}/growth-log/${name}.jsonl"
+    local pl="${GOLEM_PROJECT:+${GOLEM_PROJECT}/.golem/growth-log/${name}.jsonl}"
+    [ -f "$gl" ] && all_entries="$(cat "$gl")"$'\n'
+    if [ -n "$pl" ] && [ -f "$pl" ] && [ "$pl" != "$gl" ]; then
+      all_entries="${all_entries}$(cat "$pl")"$'\n'
+    fi
+
+    local total=$(echo "$all_entries" | grep -c '"result"' 2>/dev/null)
+    [ "$total" -eq 0 ] && continue
+
+    local fails=$(echo "$all_entries" | grep -c '"result":"fail"' 2>/dev/null)
+    local timeouts=$(echo "$all_entries" | grep -c '"result":"timeout"' 2>/dev/null)
+    local turn_caps=$(echo "$all_entries" | grep -c '"result":"turn_cap"' 2>/dev/null)
+    local successes=$(echo "$all_entries" | grep -c '"result":"success"' 2>/dev/null)
+    local others=$((total - successes - fails - timeouts - turn_caps))
+
+    local non_success=$((fails + timeouts + turn_caps + others))
+    [ "$non_success" -gt 0 ] && printf "  %-10s: " "$name" && {
+      local parts=""
+      [ "$fails" -gt 0 ] && parts="${parts}fail=$fails "
+      [ "$timeouts" -gt 0 ] && parts="${parts}timeout=$timeouts "
+      [ "$turn_caps" -gt 0 ] && parts="${parts}turn_cap=$turn_caps "
+      [ "$others" -gt 0 ] && parts="${parts}기타=$others"
+      echo "$parts" | sed 's/[[:space:]]*$//'
+    }
+
+    team_fails=$((team_fails + fails))
+    team_timeouts=$((team_timeouts + timeouts))
+    team_turn_caps=$((team_turn_caps + turn_caps))
+    team_others=$((team_others + others))
+  done < <(_all_soul_files)
+
+  local team_non_success=$((team_fails + team_timeouts + team_turn_caps + team_others))
+  echo ""
+  printf "  팀 합계: "
+  [ "$team_fails" -gt 0 ] && printf "fail=%d " "$team_fails"
+  [ "$team_timeouts" -gt 0 ] && printf "timeout=%d " "$team_timeouts"
+  [ "$team_turn_caps" -gt 0 ] && printf "turn_cap=%d " "$team_turn_caps"
+  [ "$team_others" -gt 0 ] && printf "기타=%d" "$team_others"
+  echo ""
 
   # MVP (가장 많은 태스크 성공)
   echo ""
