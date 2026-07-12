@@ -232,3 +232,42 @@ _source_verify() {
   ! grep -q 'ITEM-1' "$TEST_PROJECT/.judge_prompt"
   grep -q 'VERDICT' "$TEST_PROJECT/.judge_prompt"
 }
+
+# ─────────────────────────────────────────────────────────
+# pytest 러너 폴백 체인 (P0-3) — uv > .venv > PATH python
+# ─────────────────────────────────────────────────────────
+
+@test "verify: pytest 러너 — uv 존재 시 uv run pytest" {
+  _source_verify
+  local fake_bin="$TEST_PROJECT/fakebin"
+  mkdir -p "$fake_bin"
+  printf '#!/bin/sh\nexit 0\n' > "$fake_bin/uv"; chmod +x "$fake_bin/uv"
+  # Windows 식 'C:/...' 경로는 콜론이 PATH 구분자로 오파싱됨 → POSIX 형태로 변환
+  local fake_posix; fake_posix=$(cd "$fake_bin" && pwd)
+  local out
+  out=$(PATH="$fake_posix:$PATH" _verify_pytest_runner "$TEST_PROJECT/gw")
+  [ "$out" = "uv run pytest" ]
+}
+
+@test "verify: pytest 러너 — uv 없음 + .venv 존재 시 venv python" {
+  _source_verify
+  local gw="$TEST_PROJECT/gw"
+  mkdir -p "$gw/.venv/Scripts"
+  printf '#!/bin/sh\nexit 0\n' > "$gw/.venv/Scripts/python.exe"
+  local fake_bin="$TEST_PROJECT/fakebin-nouv"
+  mkdir -p "$fake_bin"
+  local out
+  out=$(PATH="$fake_bin" _verify_pytest_runner "$gw")
+  [ "$out" = "$gw/.venv/Scripts/python.exe -m pytest" ]
+}
+
+@test "verify: pytest 러너 — uv/venv 없음 시 PATH python 폴백" {
+  _source_verify
+  local fake_bin="$TEST_PROJECT/fakebin-py"
+  mkdir -p "$fake_bin"
+  printf '#!/bin/sh\nexit 0\n' > "$fake_bin/python"; chmod +x "$fake_bin/python"
+  local fake_posix; fake_posix=$(cd "$fake_bin" && pwd)
+  local out
+  out=$(PATH="$fake_posix" _verify_pytest_runner "$TEST_PROJECT/no-such-gw")
+  [ "$out" = "python -m pytest" ]
+}

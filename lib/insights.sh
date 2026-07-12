@@ -35,12 +35,16 @@ insights_soul() {
     return 1
   fi
 
-  local total=$(echo "$all_entries" | grep -c '"result"' 2>/dev/null)
   local successes=$(echo "$all_entries" | grep -c '"result":"success"' 2>/dev/null)
   local fails=$(echo "$all_entries" | grep -c '"result":"fail"' 2>/dev/null)
   local timeouts=$(echo "$all_entries" | grep -c '"result":"timeout"' 2>/dev/null)
   local turn_caps=$(echo "$all_entries" | grep -c '"result":"turn_cap"' 2>/dev/null)
-  local others=$((total - successes - fails - timeouts - turn_caps))
+  # "result":"값" 형태의 라인만 집계 — 구 grep '"result"' 는 값 없는 유령 라인까지
+  # 세던 버그. 알려지지 않은 값(예: partial 도입 시)은 사라지지 않고 기타로 노출.
+  local with_result=$(echo "$all_entries" | grep -c '"result":"' 2>/dev/null)
+  local total=$with_result
+  local others=$((with_result - successes - fails - timeouts - turn_caps))
+  [ "$others" -lt 0 ] && others=0
   local rate=0
   [ "$total" -gt 0 ] && rate=$(( successes * 100 / total ))
 
@@ -178,10 +182,10 @@ insights_team() {
   echo ""
 
   # 헤더
-  printf "%-10s %-8s %-6s %-8s %-10s %-8s %s\n" \
-    "SOUL" "Tasks" "Rate" "Trend" "Cost" "Avg" "Streak"
-  printf "%-10s %-8s %-6s %-8s %-10s %-8s %s\n" \
-    "----" "-----" "----" "-----" "----" "---" "------"
+  printf "%-10s %-8s %-6s %-8s %-10s %-8s %-12s %s\n" \
+    "SOUL" "Tasks" "Rate" "Trend" "Cost" "Avg" "Failures" "Streak"
+  printf "%-10s %-8s %-6s %-8s %-10s %-8s %-12s %s\n" \
+    "----" "-----" "----" "-----" "----" "---" "--------" "------"
 
   local team_total=0
   local team_cost=0
@@ -203,10 +207,14 @@ insights_team() {
       all_entries="${all_entries}$(cat "$pl")"$'\n'
     fi
 
-    local total=$(echo "$all_entries" | grep -c '"result"' 2>/dev/null)
+    local successes=$(echo "$all_entries" | grep -c '"result":"success"' 2>/dev/null)
+    local fails=$(echo "$all_entries" | grep -c '"result":"fail"' 2>/dev/null)
+    local timeouts=$(echo "$all_entries" | grep -c '"result":"timeout"' 2>/dev/null)
+    local turn_caps=$(echo "$all_entries" | grep -c '"result":"turn_cap"' 2>/dev/null)
+    # soul 뷰와 동일 규칙: "result":"값" 라인만 총계 (미지 값도 총계에 포함)
+    local total=$(echo "$all_entries" | grep -c '"result":"' 2>/dev/null)
     [ "$total" -eq 0 ] && continue
 
-    local successes=$(echo "$all_entries" | grep -c '"result":"success"' 2>/dev/null)
     local rate=$(( successes * 100 / total ))
 
     # 비용
@@ -237,8 +245,15 @@ insights_team() {
     fi
     local streak=$(echo "$rev_entries" | awk '/"result":"success"/{c++; next}{exit}END{print c+0}')
 
-    printf "%-10s %-8s %-6s %-8s %-10s %-8s %s\n" \
-      "$name" "${total}건" "${rate}%" "$trend" "\$${cost}" "\$${avg}" "${streak}연속"
+    local failures=""
+    if [ "$fails" -gt 0 ] || [ "$timeouts" -gt 0 ] || [ "$turn_caps" -gt 0 ]; then
+      failures="${fails}f·${timeouts}t·${turn_caps}c"
+    else
+      failures="—"
+    fi
+
+    printf "%-10s %-8s %-6s %-8s %-10s %-8s %-12s %s\n" \
+      "$name" "${total}건" "${rate}%" "$trend" "\$${cost}" "\$${avg}" "$failures" "${streak}연속"
 
     team_total=$((team_total + total))
     team_success=$((team_success + successes))

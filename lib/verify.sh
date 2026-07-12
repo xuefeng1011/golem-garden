@@ -58,6 +58,58 @@ _verify_print_block() {
   echo ""
 }
 
+# pytest 러너 폴백 체인 결정 (P0-3 — uv 미설치 환경 대응)
+# _verify_pytest_runner <gateway_dir>
+# stdout: 실행 커맨드 문자열 ("uv run pytest" | "<python> -m pytest" | "python -m pytest" | "")
+# 우선순위: uv > .venv(Windows Scripts) > .venv(POSIX bin) > PATH python > (없음)
+_verify_pytest_runner() {
+  local gateway_dir="$1"
+
+  if command -v uv >/dev/null 2>&1; then
+    printf 'uv run pytest'
+    return 0
+  fi
+  if [ -f "${gateway_dir}/.venv/Scripts/python.exe" ]; then
+    printf '%s -m pytest' "${gateway_dir}/.venv/Scripts/python.exe"
+    return 0
+  fi
+  if [ -f "${gateway_dir}/.venv/bin/python" ]; then
+    printf '%s -m pytest' "${gateway_dir}/.venv/bin/python"
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    printf 'python -m pytest'
+    return 0
+  fi
+
+  printf ''
+  return 1
+}
+
+# _verify_pytest_runner_note <gateway_dir>
+# env.md 용 한 줄 요약 (P0-2 env-probe 재사용 목적 — 함수만 제공, env-probe.sh 는 건드리지 않음)
+# stdout: "- pytest: <설명>"
+_verify_pytest_runner_note() {
+  local gateway_dir="$1"
+
+  if command -v uv >/dev/null 2>&1; then
+    printf '%s' '- pytest: uv run pytest'
+    return 0
+  fi
+  if [ -f "${gateway_dir}/.venv/Scripts/python.exe" ] || [ -f "${gateway_dir}/.venv/bin/python" ]; then
+    printf '%s' '- pytest: .venv python 폴백 (uv 없음)'
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    printf '%s' '- pytest: python -m pytest 폴백 (uv/venv 없음)'
+    return 0
+  fi
+
+  printf '%s' '- pytest: 감지 불가 (uv/venv/python 없음)'
+  return 1
+}
+export -f _verify_pytest_runner _verify_pytest_runner_note 2>/dev/null
+
 # 테스트 러너 감지 및 실행
 # stdout: "PASS <counts>" | "FAIL <counts>" | "SKIP no-runner"
 # return: 0=pass, 1=fail, 2=skip(no runner)
@@ -128,10 +180,16 @@ _verify_run_tests() {
 
   # ③ pytest
   if [ -f "$pytest_ini" ] || ([ -f "$pyproject" ] && grep -q 'pytest' "$pyproject" 2>/dev/null); then
+    local runner
+    runner=$(_verify_pytest_runner "$proj")
+    if [ -z "$runner" ]; then
+      printf 'SKIP pytest 러너 감지 불가 (uv/venv/python 없음)'
+      return 2
+    fi
     local tmp_out
     tmp_out=$(mktemp 2>/dev/null || echo "/tmp/verify_pytest_$$")
     local pytest_rc=0
-    ( cd "$proj" && python -m pytest -q 2>&1 ) >"$tmp_out" || pytest_rc=$?
+    ( cd "$proj" && $runner -q 2>&1 ) >"$tmp_out" || pytest_rc=$?
     local summary
     summary=$(tail -3 "$tmp_out" 2>/dev/null | tr '\n' ' ')
     rm -f "$tmp_out"
