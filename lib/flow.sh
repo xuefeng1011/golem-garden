@@ -246,6 +246,10 @@ _flow_run_wave() {
   [ "${#ids[@]}" -eq 0 ] && return 0
 
   local flow_dir="${FLOW_DIR}/${flow_id}"
+  # wave.$$ 는 PID 로 네임스페이스 — 동일 PID 가 재사용되며 남긴 이전 잔해를
+  # 새 웨이브가 자기 것으로 오인하지 않도록 먼저 비운다. mkdir 실패는(디스크
+  # full/권한 등) 즉시 에러 반환해 이후 out/err/rc 캡처가 존재하지 않는
+  # 디렉터리에 조용히 쓰기 실패하는 것을 막는다.
   local wave_dir="${flow_dir}/wave.$$"
   rm -rf "$wave_dir" 2>/dev/null
   mkdir -p "$wave_dir" || { echo "[ERROR] _flow_run_wave: wave_dir 생성 실패" >&2; return 1; }

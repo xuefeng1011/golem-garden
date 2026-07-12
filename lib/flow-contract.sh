@@ -223,6 +223,11 @@ EOF
         *\}) : ;;
         *) frag_bad=1 ;;
       esac
+      # 부분문자열 검사라 극단적으로 손상된 JSON(예: id 키 자체가 잘려나간
+      # 파편)에서는 이론상 false negative 가 가능하다. 그래도 이 검사를
+      # 유지하는 이유: (1) tests/golden/flow-cases 가 실제 손상 패턴을
+      # 커버하고, (2) 이후 Pydantic 스키마 검증이 필수 필드 누락을 이중으로
+      # 잡아내는 방어선이라 여기서는 흔한 케이스만 저비용으로 걸러도 충분하다.
       case "$raw_block" in
         *'"id":'*) : ;;
         *) frag_bad=1 ;;

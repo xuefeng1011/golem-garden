@@ -407,6 +407,10 @@ def _state_write_lock(state_path: Path) -> Iterator[None]:
     (STATE_LOCK_STALE_SECONDS) rather than liveness.
     """
     lock_dir = state_path.parent / "state.json.lock"
+    # time.monotonic() below measures elapsed wait (immune to wall-clock jumps);
+    # time.time() is used only where a value is compared against st_mtime
+    # (also wall-clock), both here and in _flow_run_active above. Do not swap
+    # the two clocks between these uses.
     deadline = time.monotonic() + STATE_LOCK_TIMEOUT_SECONDS
     reclaimed = False
     while True:
@@ -431,7 +435,10 @@ def _state_write_lock(state_path: Path) -> Iterator[None]:
             time.sleep(0.1)
 
     try:
-        (lock_dir / "pid").write_text(str(os.getpid()), encoding="utf-8")
+        try:
+            (lock_dir / "pid").write_text(str(os.getpid()), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("flows: failed to write lock pid file %s: %s", lock_dir, exc)
         yield
     finally:
         shutil.rmtree(lock_dir, ignore_errors=True)
