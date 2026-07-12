@@ -110,12 +110,12 @@ env_probe_generate() {
     if _ep_is_windows; then
       echo "- Windows(Git Bash/MSYS) 감지됨"
       echo "  - claude.exe 를 띄우는 서브프로세스는 taskkill //T 로 종료 (timeout/SIGTERM 무효)"
-      echo "  - 파일 인플레이스 수정: sed -i 금지 → _sed_i() 래퍼 사용"
+      echo "  - 파일 인플레이스 수정: sed 의 -i 옵션 직접 사용 금지 → _sed_i() 래퍼 사용"
       if _ep_has_nonascii_tmp; then
         echo "  - TMPDIR/TEMP 경로에 비ASCII(한글 등) 포함 — bats symlink 실패 위험, C:/tmp 폴백 필요"
       fi
     else
-      echo "- Unix 계열 — sed -i 는 GNU/BSD 차이 있음, _sed_i() 래퍼 사용 권장"
+      echo "- Unix 계열 — sed 의 -i 옵션은 GNU/BSD 차이 있음, _sed_i() 래퍼 사용 권장"
     fi
   } > "$out"
 }
