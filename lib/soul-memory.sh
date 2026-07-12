@@ -53,29 +53,43 @@ memory_recall() {
   local matches=""
   local match_count=0
 
-  # 키워드별로 기억 검색
-  for keyword in $task_keywords; do
+  # 키워드 상한 — 태스크 "전문"이 넘어오면 워드 수 × 기억 줄 수 × fork 5개가
+  # 폭발해 MSYS(Windows)에서 사실상 행이 된다 (리뷰 프롬프트 60줄 × 기억 30건에서
+  # 실측 15분+ 동결). 앞 400단어에서 4자 이상 고유 단어 최대 8개만 사용.
+  local kw_list
+  kw_list=$(printf '%s' "$task_keywords" | tr '[:space:]' '\n' \
+    | awk 'NR>400{exit} length($0)>=4 && !seen[$0]++ {print}' | head -8)
+
+  # 키워드별로 기억 검색 — 파일 단위 awk 1회 (라인 루프 × tr fork 제거).
+  # index(tolower()): 고정 문자열 매칭이라 정규식 메타문자 태스크의 오매칭/폭주 차단.
+  # 주의: grep -iF 는 Git Bash GNU grep 3.0 에서 조합 자체가 0매칭 버그 — 사용 금지.
+  local keyword keyword_lower matched line lesson task date
+  while IFS= read -r keyword; do
     [ -z "$keyword" ] && continue
-    local keyword_lower=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
+    keyword_lower=$(printf '%s' "$keyword" | tr '[:upper:]' '[:lower:]')
+    matched=$(awk -v kw="$keyword_lower" 'index(tolower($0), kw){print; c++} c>=5{exit}' "$mem_file" 2>/dev/null)
+    [ -z "$matched" ] && continue
 
     while IFS= read -r line; do
       [ -z "$line" ] && continue
-      # task 또는 tags에서 키워드 매칭
-      local line_lower=$(echo "$line" | tr '[:upper:]' '[:lower:]')
-      if echo "$line_lower" | grep -q "$keyword_lower"; then
-        local lesson=$(echo "$line" | grep -o '"lesson":"[^"]*"' | sed 's/"lesson":"//;s/"//')
-        local task=$(echo "$line" | grep -o '"task":"[^"]*"' | sed 's/"task":"//;s/"//')
-        local date=$(echo "$line" | grep -o '"date":"[^"]*"' | sed 's/"date":"//;s/"//')
+      lesson=$(echo "$line" | grep -o '"lesson":"[^"]*"' | sed 's/"lesson":"//;s/"//')
+      task=$(echo "$line" | grep -o '"task":"[^"]*"' | sed 's/"task":"//;s/"//')
+      date=$(echo "$line" | grep -o '"date":"[^"]*"' | sed 's/"date":"//;s/"//')
 
-        # 중복 방지 (같은 lesson이 이미 있으면 건너뜀)
-        if ! echo "$matches" | grep -qF "$lesson"; then
-          matches="${matches}
+      # 중복 방지 (같은 lesson이 이미 있으면 건너뜀)
+      if ! echo "$matches" | grep -qF "$lesson"; then
+        matches="${matches}
 - [${date}] ${task}: ${lesson}"
-          match_count=$((match_count + 1))
-        fi
+        match_count=$((match_count + 1))
       fi
-    done < "$mem_file"
-  done
+      [ "$match_count" -ge 5 ] && break
+    done <<EOF
+$matched
+EOF
+    [ "$match_count" -ge 5 ] && break
+  done <<EOF
+$kw_list
+EOF
 
   # 최대 5개까지만 반환 (프롬프트 토큰 절약)
   if [ "$match_count" -gt 0 ]; then
