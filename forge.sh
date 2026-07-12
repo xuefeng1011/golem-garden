@@ -329,6 +329,7 @@ case "${1:-}" in
     # 엔진 헬스체크 (omc-doctor 대체) — lib/doctor.sh 의 doctor_run
     # forge doctor [--verbose]
     source "${GOLEM_ROOT}/lib/doctor.sh"
+    source "${GOLEM_ROOT}/lib/env-probe.sh" 2>/dev/null && env_probe_generate 2>/dev/null
     doctor_run "${2:-}"
     exit $?
     ;;

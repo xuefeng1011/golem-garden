@@ -528,7 +528,8 @@ FAKE
 
   [ "$rc" -eq 0 ]
   grep -q "FAST-OK" "$TEST_PROJECT/run.out"
-  grep -q "result=success" "$TEST_PROJECT/run.out"
+  # P0-4: 마커 없는 정상 완주는 partial 분류 (rc 0)
+  grep -qE "result=(success|partial)" "$TEST_PROJECT/run.out"
   grep -q "timeout=0 turn_cap=0 max_seconds=30" "$TEST_PROJECT/run.out"
   # 데드라인이 30초 남았어도 부모가 워치독을 kill+reap — 잔존 잡 없음
   [ -z "$(jobs -rp)" ]
@@ -682,7 +683,8 @@ FAKE
   GOLEM_TURN_CAP_ENFORCE=0 agent_run capy "캡 해제 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
 
   [ "$rc" -eq 0 ]
-  grep -q "result=success" "$TEST_PROJECT/run.out"
+  # P0-4: 마커 없는 정상 완주는 partial 분류 (rc 0)
+  grep -qE "result=(success|partial)" "$TEST_PROJECT/run.out"
   grep -q "turn_cap=0" "$TEST_PROJECT/run.out"
 }
 
@@ -712,7 +714,8 @@ SOUL
   agent_run unc "무캡 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
 
   [ "$rc" -eq 0 ]
-  grep -q "result=success" "$TEST_PROJECT/run.out"
+  # P0-4: 마커 없는 정상 완주는 partial 분류 (rc 0)
+  grep -qE "result=(success|partial)" "$TEST_PROJECT/run.out"
   # model haiku → effort low → max_seconds=180 (기존 effort 테이블)
   grep -q "turn_cap=0 max_seconds=180 max_turns=0" "$TEST_PROJECT/run.out"
 }
@@ -751,7 +754,8 @@ FAKE
   # 실제 assistant envelope 은 1개뿐(cap=3 이하) — 앵커 없으면 필러 4줄 + 실제
   # 1줄 = 5줄이 매칭돼 캡(3) 초과로 오판된다. 앵커가 있으면 정상 완주해야 한다.
   [ "$rc" -eq 0 ]
-  grep -q "result=success" "$TEST_PROJECT/run.out"
+  # P0-4: 마커 없는 정상 완주는 partial 분류 (rc 0)
+  grep -qE "result=(success|partial)" "$TEST_PROJECT/run.out"
   grep -q "turn_cap=0" "$TEST_PROJECT/run.out"
   ! grep -q "TURN CAP" "$TEST_PROJECT/run.out"
 }
@@ -779,6 +783,109 @@ FAKE
   ! grep -q "프로세스 강제 종료" "$TEST_PROJECT/run.out"
   # growth-log 도 turn_cap 으로 기록되어야 함
   assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "turn_cap"
+}
+
+# ─────────────────────────────────────────────────────────
+# P0-4 — [GOLEM_DONE] 완료 계약 + growth-log 실측 정산
+# ─────────────────────────────────────────────────────────
+
+@test "P0-4: GOLEM_DONE status=complete → result=success + growth-log files 실측(git) 기록" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+
+  # git 실측 대상 — 커밋 1개 후 파일 2개 스테이징 (마커는 일부러 잘못된 값 99 선언)
+  git -C "$TEST_PROJECT" init -q
+  git -C "$TEST_PROJECT" -c user.email=t@t -c user.name=t commit --allow-empty -q -m init
+  echo one > "$TEST_PROJECT/a.txt"
+  echo two > "$TEST_PROJECT/b.txt"
+  git -C "$TEST_PROJECT" add a.txt b.txt
+
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"작업 완료.\n[GOLEM_DONE] status=complete files=99 tests=3/0 note=ok"}]}}'
+echo '{"type":"result","is_error":false,"duration_ms":100,"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  run agent_run zen "완료 태스크"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"result=success"* ]]
+  [[ "$output" == *"done_marker=present"* ]]
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/zen.jsonl" "result" "success"
+  # 마커의 files=99 선언이 아니라 git 실측치(2)가 기록되어야 함
+  grep -q '"files_changed":2' "$TEST_PROJECT/.golem/growth-log/zen.jsonl"
+  grep -q '"tests_passed":3' "$TEST_PROJECT/.golem/growth-log/zen.jsonl"
+}
+
+@test "P0-4: 마커 없이 정상 종료 → result=partial" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"작업을 완료했습니다 (마커 없음)."}]}}'
+echo '{"type":"result","is_error":false,"duration_ms":100,"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  run agent_run zen "마커없음 태스크"
+  # P0-4 rc 계약: partial 은 분류이지 실패가 아니다 — rc 0 (flow/mission rc 소비 경로 무변경)
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"result=partial"* ]]
+  [[ "$output" == *"done_marker=absent"* ]]
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/zen.jsonl" "result" "partial"
+}
+
+@test "P0-4: GOLEM_DONE status=partial → result=partial" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"일부만 완료.\n[GOLEM_DONE] status=partial files=1 tests=0/1 note=blocked-by-x"}]}}'
+echo '{"type":"result","is_error":false,"duration_ms":100,"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  run agent_run zen "부분완료 태스크"
+  # P0-4 rc 계약: partial 은 분류이지 실패가 아니다 — rc 0 (flow/mission rc 소비 경로 무변경)
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"result=partial"* ]]
+  [[ "$output" == *"done_marker=present"* ]]
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/zen.jsonl" "result" "partial"
+}
+
+@test "P0-4: 턴캡 경로는 GOLEM_DONE 마커가 있어도 result=turn_cap 유지 (기존 result 우선)" {
+  _make_capped_soul   # maxTurns: 3
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<FAKE
+#!/usr/bin/env bash
+exec 3>&-
+echo \$\$ > "$TEST_PROJECT/.claude_pid"
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"[GOLEM_DONE] status=complete files=9 tests=9/0 note=fake-early-claim"}]}}'
+i=0
+while [ \$i -lt 40 ]; do
+  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"turn"}]}}'
+  sleep 1
+  i=\$((i+1))
+done
+echo '{"type":"result","is_error":false,"duration_ms":100,"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  local rc=0
+  AGENT_MAX_SECONDS=120 agent_run capy "마커+턴캡 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+
+  [ "$rc" -eq 1 ]
+  grep -q "result=turn_cap" "$TEST_PROJECT/run.out"
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "turn_cap"
+  [ -z "$(jobs -rp)" ]
 }
 
 @test "agent-runner: fresh 소환 실패는 폴백 재시도 없음 (1회만)" {

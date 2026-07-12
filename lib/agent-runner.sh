@@ -323,6 +323,36 @@ _parse_stream() {
   fi
 }
 
+# ─────────────────────────────────────────────────────────
+# P0-4 — [GOLEM_DONE] 완료 계약 파싱 + git 실측 정산
+# ─────────────────────────────────────────────────────────
+# 계약(prompt-builder.sh prompt_build_task_block): 최종 출력 마지막 줄에
+#   [GOLEM_DONE] status={complete|partial|blocked} files={n} tests={p}/{f} note={...}
+# 마커가 없거나(SOUL이 죽거나 계약을 무시) status!=complete 면 partial 로 강등한다.
+# _AR_DONE_PRESENT/_AR_DONE_STATUS/_AR_DONE_TESTS 를 전역에 설정.
+_agent_parse_done_marker() {
+  local text="$1"
+  _AR_DONE_PRESENT=0
+  _AR_DONE_STATUS=""
+  _AR_DONE_TESTS=""
+  local marker
+  marker=$(printf '%s' "$text" | grep -oE '\[GOLEM_DONE\].*' | tail -1)
+  [ -z "$marker" ] && return 0
+  _AR_DONE_PRESENT=1
+  _AR_DONE_STATUS=$(printf '%s' "$marker" | grep -oE 'status=[a-z]+' | head -1 | cut -d= -f2)
+  _AR_DONE_TESTS=$(printf '%s' "$marker" | grep -oE 'tests=[0-9]+/[0-9]+' | head -1 | cut -d= -f2)
+}
+
+# git diff --shortstat 로 실측 변경 파일 수를 구한다. 마커의 files= 선언값은
+# 신뢰하지 않는다(SOUL의 자기 신고) — git 이 유일한 검증 소스.
+# git 리포가 아니거나(GOLEM_PROJECT 미설정 포함) diff 실패 시 0.
+_agent_git_files_changed() {
+  local proj="${GOLEM_PROJECT:-$(pwd)}"
+  local n
+  n=$(git -C "$proj" diff --shortstat HEAD -- 2>/dev/null | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' \r')
+  printf '%s' "${n:-0}"
+}
+
 # assistant 텍스트 블록 누적 (stream 전체에서 별도 추출)
 # stream-json 의 assistant 메시지 content[].text 를 이어붙인다.
 #
@@ -687,6 +717,12 @@ ${_ar_body}"
 
   # 어시스턴트 텍스트 + result usage 파싱
   _AR_RESULT_TEXT=$(_extract_assistant_text "$stream_file")
+
+  # P0-4 — GOLEM_DONE 마커는 어시스턴트 원문 기준으로 파싱한다.
+  # 반드시 _parse_stream 앞에서 — _parse_stream 이 result 이벤트의 result 필드로
+  # _AR_RESULT_TEXT 를 덮어써 마커가 유실된다 (버그 이력: done_marker 상시 absent).
+  _agent_parse_done_marker "$_AR_RESULT_TEXT"
+
   _parse_stream < "$stream_file"
 
   # P2-2 폴백 — --resume 즉사 복구. 포인터 세션이 다른 작업 디렉토리에서
@@ -741,6 +777,13 @@ ${_ar_body}"
   [ "$rc" -ne 0 ] && result="fail"
   [ "$_ar_turn_capped" -eq 1 ] && result="turn_cap"   # P1-1 — 구분 기록
 
+  # P0-4 — GOLEM_DONE 완료 계약 정산. fail/turn_cap 이 이미 확정된 경우는 그대로 둔다
+  # (마커 유무와 무관하게 크래시/턴캡이 더 강한 신호). 그 외에는 마커 부재 또는
+  # status != complete 면 partial 로 강등 — "마커 없이 조용히 죽는" 케이스를 없앤다.
+  if [ "$result" = "success" ] && { [ "${_AR_DONE_PRESENT:-0}" -eq 0 ] || [ "${_AR_DONE_STATUS:-}" != "complete" ]; }; then
+    result="partial"
+  fi
+
   # 세션 마커 기록 — 성공 소환 후 .claude 마커를 써서 후속 호출이 --resume 을 타게 함
   # (_agent_session_has_turns 가 읽는 파일. 지금까지 아무도 쓰지 않아 --resume 갭 존재)
   if [ "$result" = "success" ]; then
@@ -751,6 +794,17 @@ ${_ar_body}"
     # per-SOUL 세션 포인터 갱신 — 후속 동일-SOUL 소환이 윈도 내면 --resume 으로
     # 캐시 재사용 (명시적 UUID 가 외부에서 주입된 경우는 포인터를 건드리지 않음)
     _agent_ptr_update "$soul_name" "$session_id" "$_ar_sess_mode"
+  fi
+
+  # P0-4 — growth-log files/tests 실측 정산. files 는 마커 값과 무관하게 git
+  # diff 실측(선언은 신뢰하지 않는다). tests 는 실측 불가라 마커 선언값(통과 수)을
+  # 그대로 기록 — 신뢰도가 낮은 값임을 유의(주석).
+  local _ar_files_changed _ar_tests_passed
+  _ar_files_changed=$(_agent_git_files_changed)
+  _ar_tests_passed=0
+  if [ -n "${_AR_DONE_TESTS:-}" ]; then
+    _ar_tests_passed=$(printf '%s' "$_AR_DONE_TESTS" | cut -d/ -f1)
+    printf '%s' "$_ar_tests_passed" | grep -qE '^[0-9]+$' || _ar_tests_passed=0
   fi
 
   local total_tokens=$(( _AR_TOKENS_IN + _AR_TOKENS_OUT ))
@@ -764,7 +818,7 @@ ${_ar_body}"
     cost_data=$(budget_estimate_cost "$model_arg" "$total_tokens" "$_AR_DURATION_MS" \
       "${_AR_TOKENS_CACHE_READ:-0}" "${_AR_TOKENS_CACHE_CREATE:-0}")
     cost=$(printf '%s' "$cost_data" | awk '{print $3}')
-    growth_log_append "$soul_name" "$task_text" "$result" 0 0 "" "" \
+    growth_log_append "$soul_name" "$task_text" "$result" "$_ar_files_changed" "$_ar_tests_passed" "" "" \
       "$_AR_TOKENS_IN" "$_AR_TOKENS_OUT" "$_AR_TOKENS_CACHE" "$cost" "$model_arg" "$_AR_DURATION_MS" >&2
 
     # D2 — 단일 run 비용 상한 트립와이어 (사후 경고, 사전 차단 아님).
@@ -784,7 +838,7 @@ ${_ar_body}"
       fi
     fi
   else
-    growth_log_append "$soul_name" "$task_text" "$result" 0 0 >&2
+    growth_log_append "$soul_name" "$task_text" "$result" "$_ar_files_changed" "$_ar_tests_passed" >&2
   fi
 
   # 런 트래젝토리 영속화 (Phase A) — result/cost 확정 후 1회.
@@ -801,10 +855,16 @@ ${_ar_body}"
   fi
 
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} turn_cap=${_ar_turn_capped} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
+  local _ar_done_marker_state="absent"
+  [ "${_AR_DONE_PRESENT:-0}" -eq 1 ] && _ar_done_marker_state="present"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} turn_cap=${_ar_turn_capped} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled} done_marker=${_ar_done_marker_state}"
 
-  [ "$result" = "success" ] || return 1
-  return 0
+  # P0-4 — partial 은 분류(완료 계약 미확인)이지 실패가 아니다. rc 계약 유지:
+  # 실패 신호는 fail/timeout/turn_cap 만 (flow/mission 의 rc 소비 경로 무변경).
+  case "$result" in
+    success|partial) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # ─────────────────────────────────────────────────────────

@@ -105,6 +105,19 @@ PROMPT
     local st_block=$(skill_tree_prompt_block "$soul_name" 2>/dev/null)
     [ -n "$st_block" ] && echo "$st_block"
   fi
+
+  # 실행 환경 계약 블록 (준정적 — 환경 변경 시에만 바뀜, P0-2)
+  # env.md 부재 시 1회 자동 생성 (source 가드로 순환 없이 env-probe.sh만 로드)
+  local env_md="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/env.md"
+  if [ ! -f "$env_md" ] && [ -f "${GOLEM_ROOT}/lib/env-probe.sh" ]; then
+    source "${GOLEM_ROOT}/lib/env-probe.sh" 2>/dev/null
+    env_probe_generate 2>/dev/null
+  fi
+  if [ -f "$env_md" ]; then
+    echo ""
+    echo "## 실행 환경 계약 (자동 생성 — 이 명령을 그대로 사용하라)"
+    cat "$env_md"
+  fi
 }
 
 # 휘발 블록 (이력 + SOUL 메모리 + 태스크) — 유저 메시지로 전달.
@@ -130,6 +143,11 @@ prompt_build_task_block() {
 
 이 컨텍스트와 행동 원칙을 준수하여 다음 태스크를 수행하라:
 ${task}
+
+완료 시 최종 출력의 마지막에 반드시 아래 두 가지를 포함하라:
+(a) "자가 반박" 섹션 — 이 산출물이 틀릴 수 있는 방식 3가지와 각각을 확인한 결과
+(b) 출력의 맨 마지막 줄에 다른 텍스트 없이 정확히 아래 형식 그대로:
+[GOLEM_DONE] status={complete|partial|blocked} files={수정한 파일 수} tests={통과}/{실패} note={한줄 요약}
 PROMPT
 }
 
