@@ -13,18 +13,33 @@ set -euo pipefail
 _setup_windows_tmpdir() {
   # 사용자가 명시적으로 Windows native path를 설정한 경우 그대로 사용.
   # Unix-style(/tmp)은 bats symlink 문제를 일으키므로 override 대상으로 간주.
+  # 단, 비ASCII(한글 등) 경로는 bats symlink 생성이 실패하므로 이 경우도 폴백 대상.
   local existing="${TMPDIR:-}"
   if [[ -n "$existing" && "$existing" != /tmp* ]]; then
-    export BATS_TMPDIR="$existing"
-    return
+    case "$existing" in
+      *[!\ -~]*)
+        echo "[bats] TMPDIR='$existing' 에 비ASCII 문자 포함 — bats symlink 실패 위험, C:/tmp/golem-bats 로 폴백" >&2
+        ;;
+      *)
+        export BATS_TMPDIR="$existing"
+        return
+        ;;
+    esac
   fi
 
-  # TEMP/TMP가 Windows native path(드라이브 문자 또는 backslash 포함)인 경우만 사용.
-  # Git Bash에서 /tmp로 변환된 값은 무시한다.
+  # TEMP/TMP가 Windows native path(드라이브 문자 또는 backslash 포함)이고
+  # ASCII-only인 경우만 채택. 비ASCII(한글 등) 경로는 bats symlink 생성이
+  # 실패하므로 건너뛴다. Git Bash에서 /tmp로 변환된 값도 무시한다.
   local win_tmp=""
   for candidate in "${TEMP:-}" "${TMP:-}"; do
     # Windows path: C:\ 또는 C:/ 형태로 시작
     if [[ "$candidate" =~ ^[A-Za-z]: ]]; then
+      case "$candidate" in
+        *[!\ -~]*)
+          echo "[bats] TEMP/TMP 후보 '$candidate' 에 비ASCII 문자 포함 — 건너뛰고 C:/tmp/golem-bats 로 폴백" >&2
+          continue
+          ;;
+      esac
       win_tmp="$candidate"
       break
     fi
@@ -35,7 +50,7 @@ _setup_windows_tmpdir() {
     # backslash → forward slash (bash 친화)
     bats_tmp="${win_tmp//\\//}/golem-bats"
   else
-    # ASCII-safe fallback: 한글 등 비ASCII 경로는 환경변수 처리 시 깨질 수 있으므로 사용 금지
+    # Windows 형식 ASCII 경로 후보가 없는 경우(비ASCII 거부 포함) ASCII-safe 고정 경로 사용
     bats_tmp="C:/tmp/golem-bats"
   fi
 

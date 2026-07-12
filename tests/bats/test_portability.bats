@@ -112,3 +112,26 @@ _grep_scope() {
     false
   fi
 }
+
+# ─────────────────────────────────────────────────────────
+# 8. run.sh Windows TMPDIR 선택 — 비ASCII(한글 username) TEMP 는
+#    bats symlink 생성을 조용히 전멸시키므로 반드시 C:/tmp 폴백 (P0-1 회귀)
+#    run.sh 는 set -euo pipefail + 실행부가 있어 통째 source 금지 → 함수만 추출
+# ─────────────────────────────────────────────────────────
+@test "portability: run.sh 비ASCII TEMP 거부 — C:/tmp/golem-bats 폴백" {
+  RUN_SH="$REPO/tests/bats/run.sh"
+  eval "$(sed -n '/^_setup_windows_tmpdir()/,/^}/p' "$RUN_SH")"
+  TMPDIR= TEMP='C:\Users\한글테스트\AppData\Local\Temp' TMP= _setup_windows_tmpdir 2>/dev/null
+  [ "$TMPDIR" = "C:/tmp/golem-bats" ]
+  [ "$BATS_TMPDIR" = "C:/tmp/golem-bats" ]
+}
+
+@test "portability: run.sh ASCII TEMP 채택 — golem-bats 하위 디렉토리 사용" {
+  RUN_SH="$REPO/tests/bats/run.sh"
+  eval "$(sed -n '/^_setup_windows_tmpdir()/,/^}/p' "$RUN_SH")"
+  local ascii_temp="C:/tmp/pt-ascii.$$"
+  mkdir -p "$ascii_temp"
+  TMPDIR= TEMP="$ascii_temp" TMP= _setup_windows_tmpdir 2>/dev/null
+  [ "$TMPDIR" = "${ascii_temp}/golem-bats" ]
+  rm -rf "$ascii_temp"
+}

@@ -10,6 +10,10 @@ setup() {
   # BSD (macOS) mktemp: -t prefix (suffix는 자동)
   # 두 형식 모두 지원하는 호환 방식: -t 없이 전체 패턴 지정
   TEST_PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/golem-bats-XXXXXX")"
+  # Windows Git Bash: TMPDIR 이 'C:/...' 형태면 TEST_PROJECT 도 콜론을 포함해
+  # PATH="$TEST_PROJECT/bin:$PATH" 프리펜드가 오파싱된다(fake claude 미발견 → 행).
+  # cd+pwd 로 POSIX 형태(/c/...)로 정규화 — 다른 용도에는 양쪽 형태 모두 무해.
+  TEST_PROJECT="$(cd "$TEST_PROJECT" && pwd)"
   export GOLEM_PROJECT="$TEST_PROJECT"
   # GOLEM_ROOT는 tests/bats/ 기준 두 단계 위 (프로젝트 루트)
   export GOLEM_ROOT
