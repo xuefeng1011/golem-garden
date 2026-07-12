@@ -9,3 +9,5 @@
 {"date":"2026-06-12","soul":"zen","learning":"채점기 리뷰의 핵심은 반례 구성 — 각 검사 항목을 개별 통과하는 최소 꼼수 오답을 만들어 보면 false positive 구멍이 드러난다","verdict":"hold","reason":"구체 수치·절차 없는 메타 원칙 — 반례 예시 보강 후 재제출"}
 {"date":"2026-06-12","soul":"ryn","learning":"리팩터링 채점기는 출력 동등성만으론 부족 — 중복 패턴별(포맷 지시자, 조건 로직) 등장 횟수를 각각 grep -c ≤1로 검사해야 부분 함수화 꼼수를 차단","verdict":"promote","reason":"Sage 심사 통과 — 구체 검사 절차 포함, 보편 적용"}
 {"date":"2026-06-12","soul":"ryn","learning":"LLM eval에서 tokens_out=0 이면서 1초 미만 fail은 능력 실패가 아니라 스폰/API 일시 오류 — 점수에서 제외하고 1회 자동 재시도가 맞다","verdict":"promote","reason":"Sage 심사 통과 — 판별 조건·재시도 정책 구체적"}
+{"date":"2026-07-12","soul":"ryn","learning":"다중 패스 sed/문자열 치환으로 JSON unescape 구현 시 역슬래시(\\)를 충돌 불가 센티널 바이트로 먼저 추출하고 마지막에 복원해야 \\n 계열 오변환(escaped-backslash+n → 개행)을 막는다","verdict":"promote","reason":"이식 가능·구체적 실패 모드 포착 (Sage)"}
+{"date":"2026-07-12","soul":"ryn","learning":"크로스 언어(bash↔Python) 파일 락은 mkdir 원자성 + pid 기록으로 통일하되 stale 회수는 같은 런타임이면 kill -0, 교차 런타임이면 mtime 나이 기반으로 — Windows에서 Python이 Git Bash pid를 probe할 수 없기 때문","verdict":"promote","reason":"크로스 런타임 락 분기 원칙, 이식 가능 (Sage)"}
