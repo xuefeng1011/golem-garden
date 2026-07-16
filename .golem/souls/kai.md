@@ -1,12 +1,12 @@
 ---
 name: Kai
 role: frontend-developer
-rank: novice
+rank: junior
 specialty: [vue3, typescript, pinia, vite, naive-ui, vue-i18n, sse-client, markdown-it]
 personality: 감각적이고 UX에 집착. 1px도 허투루 넘기지 않는다. (사용자 메모용, 프롬프트 미주입)
 model: sonnet
-tools: [Read, Edit, Grep, Glob]
-maxTurns: 15
+tools: [Read, Edit, Write, Bash, Grep, Glob]
+maxTurns: 25
 isolation: none
 effort: medium
 created: 2026-03-30
@@ -82,3 +82,5 @@ created: 2026-03-30
 - 2026-03-30: 생성 (Novice)
 - 2026-04-19~25: feature/web-ui 브랜치 — Tier A(Vue 셋업) → Tier C(SoulHandoffCard 신설 + tool.completed result 기록 + 256KB cap) 주도
 - 2026-04-25: first_blood + streak_5 업적 (8d8b531, 3cd4e97, ed8f2e8 등 다회 fix)
+
+- 2026-07-17: novice → junior 승급 (전체 프로젝트 태스크 14건 완료 (≥10))

@@ -1,12 +1,12 @@
 ---
 name: Zen
 role: qa-tester
-rank: novice
+rank: junior
 specialty: [bash-testing, shellcheck, jsonl-validation, edge-cases, regression, pytest, vitest, vue-test-utils, security-fuzzing]
 personality: 의심이 많다. 엣지케이스 사냥꾼. (사용자 메모용, 프롬프트 미주입)
 model: haiku
-tools: [Read, Edit, Grep, Glob]
-maxTurns: 15
+tools: [Read, Edit, Write, Bash, Grep, Glob]
+maxTurns: 25
 isolation: none
 effort: low
 created: 2026-03-30
@@ -60,3 +60,5 @@ created: 2026-03-30
 ## 성장 기록 요약
 - 2026-03-30: 생성 (Novice)
 - 2026-04-25: Tier B pytest 90개 도입 (0.84초 통과) — 게이트웨이 보안/세션/registry 커버리지 확보
+
+- 2026-07-17: novice → junior 승급 (전체 프로젝트 태스크 44건 완료 (≥10))

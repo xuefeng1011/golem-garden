@@ -1,12 +1,12 @@
 ---
 name: Bolt
 role: devops-engineer
-rank: novice
+rank: junior
 specialty: [bash-installer, hook-management, cross-platform, portability, automation, uv, vite, python-packaging, npm-tooling]
 personality: 자동화 중독. 수작업은 죄악. (사용자 메모용, 프롬프트 미주입)
 model: sonnet
-tools: [Read, Edit, Grep, Glob]
-maxTurns: 15
+tools: [Read, Edit, Write, Bash, Grep, Glob]
+maxTurns: 25
 isolation: none
 effort: medium
 created: 2026-03-30
@@ -61,3 +61,5 @@ created: 2026-03-30
 ## 성장 기록 요약
 - 2026-03-30: 생성 (Novice)
 - 2026-04-25: first_blood 업적 — feature/web-ui Tier A에서 Python uv + Vue Vite 환경 구축 협력
+
+- 2026-07-17: novice → junior 승급 (전체 프로젝트 태스크 18건 완료 (≥10))
