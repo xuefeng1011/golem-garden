@@ -63,14 +63,21 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
 
    {.golem/analysis.md 아키텍처 소견이 있으면 여기에 주입}
 
-   다음 형식으로 분배 결과만 반환하라 (각 줄: SOUL: 서브태스크):
-   {soul}: {subtask}"
+   ## 출력 계약 (FLOW_CONTRACT v1 — 유일한 형식)
+   분석과 근거는 자유롭게 서술하라. 단, 출력의 맨 마지막 줄은 다른 텍스트·코드펜스 없이
+   아래 형식의 컴팩트 JSON 한 줄이어야 한다. 파서는 마지막 { 로 시작하는 줄만 취한다.
+   {\"steps\":[{\"id\":\"s1\",\"soul\":\"{soul}\",\"task\":\"{subtask}\",\"deps\":[],\"retry\":1,\"approval\":false,\"on_fail\":\"abort\"}]}
+   - id: 고유 문자열 / soul: 가용 SOUL 이름(소문자) / deps: 선행 step id 배열(없으면 [])
+   - 마지막 줄이 위 형식의 JSON 이 아니면 파싱 오류로 태스크 전체가 실패 처리된다."
    ```
    - `forge run`은 SOUL frontmatter의 model(opus 등)/tools를 자동 적용하므로 Agent 매핑이 불필요하다
    - **비용/성장 기록은 `forge run`이 자동 수행**한다 (내부 growth_log_append). 별도 `log-add` / `log-add-usage` 호출 금지 — 중복 기록됨
    - Nex의 stdout 마지막 `<usage> ...` 라인은 표시용이며 별도 기록 불필요
 4. **호스트가 인라인 분배해도 무방**: 태스크가 단순해 분배가 자명하면 위 `forge run nex` 단계를 생략하고 호스트가 직접 SOUL 배정을 결정해도 된다 (불필요한 Nex 소환 비용 절감). 분배가 복잡하거나 아키텍처 판단이 필요하면 반드시 `forge run nex`로 위임한다
-5. 분배 결과에 따라 각 SOUL에 태스크 배정
+5. **분배 결과 파싱 (v1 JSON)**: Nex 응답을 `flow_extract_json`(코드펜스 우선, 없으면 마지막 `{` 줄 폴백) → `flow_parse_steps`로 `id␟soul␟task␟deps` 레코드로 변환한다. 각 레코드의 soul/task 가 Step 3의 SOUL 배정값이 된다.
+   ```bash
+   GOLEM_PROJECT="$(pwd)" bash -c 'source ~/.claude/golem-garden/lib/flow-contract.sh && flow_extract_json <<< "{nex 응답 전문}" | flow_parse_steps'
+   ```
 6. **메일박스 통지**: Director가 각 SOUL에게 task_assign 메시지 전송
    ```bash
    GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh mailbox send nex {soul} task_assign "{subtask}"
@@ -78,7 +85,7 @@ GOLEM_PROJECT="$(pwd)" bash ~/.claude/golem-garden/forge.sh session create "{tas
 
 **에러 처리:**
 - `forge run nex` 실패 시: 실패 원인을 프롬프트에 명시해 `forge run nex` 1회 재시도
-- Director 응답이 SOUL 이름을 포함하지 않을 시: 가용 SOUL 목록 보여주고 사용자에게 선택 요청
+- `flow_extract_json`/`flow_parse_steps` 파싱 실패 시(마지막 줄이 유효 JSON 이 아님): 실패 원인을 프롬프트에 명시해 `forge run nex` 1회 재시도. 재시도도 실패하면 가용 SOUL 목록 보여주고 사용자에게 선택 요청
 - `forge run` 실행 실패(명령 없음/경로 오류) 시: "GolemGarden 미설치 또는 경로 오류. `forge status`로 확인하세요" 안내
 
 #### 수동 지정 (forge assign)

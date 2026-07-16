@@ -75,7 +75,7 @@ _ep_tool_line() {
   local name="$1"
   local fallback_note="$2"
   if command -v "$name" >/dev/null 2>&1; then
-    echo "- ${name}: 있음 ($(command -v "$name"))"
+    echo "- ${name}: 있음"
   else
     echo "- ${name}: 없음 — 폴백: ${fallback_note}"
   fi

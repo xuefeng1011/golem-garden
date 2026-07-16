@@ -57,6 +57,27 @@ _source_env_probe() {
   assert_file_contains "$TEST_PROJECT/.golem/env.md" "uv 없음"
 }
 
+@test "env-probe: 도구 가용성 라인 — 절대경로 노출 안 함 (정적 텍스트 계약)" {
+  _source_env_probe
+  env_probe_generate
+  run grep -E '^- (uv|jq|npm|python): 있음 \(' "$TEST_PROJECT/.golem/env.md"
+  [ "$status" -ne 0 ]
+}
+
+@test "env-probe: PATH 탐색 순서가 바뀌어도 env.md 는 byte-stable (경로 미노출)" {
+  _source_env_probe
+  env_probe_generate
+  local first
+  first=$(cat "$TEST_PROJECT/.golem/env.md")
+
+  local extra_dir="$TEST_PROJECT/empty_path_dir"
+  mkdir -p "$extra_dir"
+  PATH="$extra_dir:$PATH" env_probe_generate
+  local second
+  second=$(cat "$TEST_PROJECT/.golem/env.md")
+  [ "$first" = "$second" ]
+}
+
 @test "env-probe: env.md 내용 — 환경 불변 시 재생성해도 byte-stable" {
   _source_env_probe
   env_probe_generate

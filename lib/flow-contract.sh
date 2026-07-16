@@ -56,8 +56,11 @@ _fc_get_deps() {
 
 # ── 공개 API ──────────────────────────────────────────────────────────────
 
-# flow_extract_json — stdin 또는 파일에서 ```json 코드펜스 내용 추출
-# 출력: JSON 텍스트 (stdout), 코드펜스 없으면 비-0 종료 + stderr
+# flow_extract_json — stdin 또는 파일에서 JSON 추출 (FLOW_CONTRACT v1)
+# 추출 우선순위(B-4 설계 1-B): ① ```json 코드펜스 블록(첫 번째, 레거시/멀티라인 호환)
+# → ② 코드펜스 없으면 마지막 `{` 로 시작하는 줄(v1 앵커 — Director가 분석/서술
+# 뒤 컴팩트 JSON 한 줄만 남기는 출력 계약, FLOW_CONTRACT.md §1/§3)
+# 출력: JSON 텍스트 (stdout), 둘 다 없으면 비-0 종료 + stderr
 flow_extract_json() {
   local input
   if [ -n "$1" ] && [ -f "$1" ]; then
@@ -66,7 +69,7 @@ flow_extract_json() {
     input=$(cat)
   fi
 
-  # ```json ... ``` 블록 추출 (awk, 첫 번째 블록만)
+  # ① ```json ... ``` 블록 추출 (awk, 첫 번째 블록만)
   local json
   json=$(printf '%s\n' "$input" | awk '
     /^```json[[:space:]]*$/ { in_block=1; next }
@@ -74,12 +77,70 @@ flow_extract_json() {
     in_block { print }
   ')
 
-  if [ -z "$json" ]; then
-    echo "[ERROR] flow_extract_json: JSON 코드펜스를 찾을 수 없습니다" >&2
-    return 1
+  if [ -n "$json" ]; then
+    printf '%s\n' "$json"
+    return 0
   fi
 
-  printf '%s\n' "$json"
+  # ② 폴백: 마지막 `{` 또는 `[` 로 시작하는 줄 1줄 채택 (선행 공백 무시)
+  # `[` 허용은 triage.sh T2 추출과의 정합 — Director 가 규격 외 배열로 응답해도
+  # 두 경로가 같은 줄을 뽑는다 (Zen P1 리뷰 정합성 지적)
+  local last_line
+  last_line=$(printf '%s\n' "$input" | awk '
+    { line = $0; sub(/^[ \t]+/, "", line); if (line ~ /^\{/ || line ~ /^\[/) last = line }
+    END { if (last != "") print last }
+  ')
+
+  if [ -n "$last_line" ]; then
+    printf '%s\n' "$last_line"
+    return 0
+  fi
+
+  echo "[ERROR] flow_extract_json: JSON 코드펜스 또는 마지막 줄 JSON을 찾을 수 없습니다" >&2
+  return 1
+}
+
+# flow_steps_array — {"steps":[...]} 텍스트를 배열([...])로 언랩 (B-4 설계 1-B ③-mission)
+# mission_set_tasks_json 은 배열만 수용하므로 flow_extract_json 출력을 여기 통과시켜
+# `forge mission set-tasks-json {id} -` 로 직결한다.
+# 입력: stdin (컴팩트 단일 줄 전제 — flow_extract_json 출력, 멀티라인이 와도 개행 제거 후 처리)
+# 출력: JSON 배열 (stdout) — 이미 배열([...]) 형태로 오면 그대로 통과
+flow_steps_array() {
+  local json
+  json=$(cat | tr -d '\n\r')
+
+  case "$json" in
+    [[:space:]]*) json="${json#"${json%%[![:space:]]*}"}" ;;
+  esac
+
+  case "$json" in
+    '{'*'"steps"'*)
+      printf '%s\n' "$json" | awk '
+        {
+          pos = index($0, "\"steps\"")
+          if (pos == 0) exit 1
+          rest = substr($0, pos)
+          open = index(rest, "[")
+          if (open == 0) exit 1
+          depth = 0; out = ""
+          for (i = open; i <= length(rest); i++) {
+            c = substr(rest, i, 1)
+            out = out c
+            if (c == "[") depth++
+            else if (c == "]") { depth--; if (depth == 0) break }
+          }
+          print out
+        }
+      ' || { echo "[ERROR] flow_steps_array: steps 배열 추출 실패" >&2; return 1; }
+      ;;
+    '['*)
+      printf '%s\n' "$json"
+      ;;
+    *)
+      echo "[ERROR] flow_steps_array: {\"steps\":[...]} 또는 배열([...]) 형식이 아닙니다" >&2
+      return 1
+      ;;
+  esac
 }
 
 # _fc_steps_lines — steps 배열을 step 객체 1개=1줄로 정규화해 출력

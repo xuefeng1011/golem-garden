@@ -18,6 +18,90 @@ _extract_section() {
   ' "$file" | tr -d '\r'
 }
 
+# ─────────────────────────────────────────────────────────
+# B-1 — role family 전문가 프로토콜 블록 (byte-stable, 문안 변경 금지)
+# 설계 정본: nex-b4b1.out "(2) B-1" — 3 family × 랭크 2변형.
+# ─────────────────────────────────────────────────────────
+
+# role → family (명시 매핑만 — 매핑에 없으면 빈 문자열, 블록 생략)
+_protocol_family() {
+  case "$1" in
+    backend-developer|frontend-developer|devops-engineer|embedded-developer|robotics-engineer|edge-ai-engineer|game-logic-developer)
+      printf '구현직' ;;
+    director|knowledge-auditor|data-analyst|game-designer)
+      printf '판단직' ;;
+    qa-tester|security-auditor)
+      printf 'QA직' ;;
+  esac
+}
+
+# rank → tier (novice/junior=필수, 그 외=권고)
+_protocol_tier() {
+  case "$1" in
+    novice|junior) printf 'required' ;;
+    *)             printf 'advisory' ;;
+  esac
+}
+
+# _protocol_block <role> <rank> — (family, tier) 별 정적 블록. 매핑 없는 role → 빈 출력.
+_protocol_block() {
+  local role="$1" rank="$2"
+  local family tier
+  family=$(_protocol_family "$role")
+  [ -z "$family" ] && return 0
+  tier=$(_protocol_tier "$rank")
+
+  case "${family}:${tier}" in
+    "구현직:required")
+      cat <<'BLOCK'
+[전문가 프로토콜 — 구현직 (필수 출력)]
+아래 3단계를 순서대로 수행하고 각 단계의 증거를 산출물에 그대로 남겨라. 누락 시 리뷰에서 반려된다.
+1. 착수 전: 수정할 파일 목록을 먼저 선언하라 (경로 나열).
+2. 착수 전: 기존 패턴을 grep 으로 확인하고 확인한 패턴 1줄을 인용하라.
+3. 구현 후: 테스트를 실행하고 결과 원문(통과/실패 수 포함)을 붙여라. 실행 불가면 사유를 명시하라.
+BLOCK
+      ;;
+    "구현직:advisory")
+      cat <<'BLOCK'
+[전문가 프로토콜 — 구현직 (권고)]
+착수 전 영향 파일 목록 선언과 기존 패턴 grep 확인, 구현 후 테스트 실행 결과 원문 포함을 권고한다.
+판단에 따라 축약할 수 있으나, 테스트 결과 원문은 가능한 한 남겨라.
+BLOCK
+      ;;
+    "판단직:required")
+      cat <<'BLOCK'
+[전문가 프로토콜 — 판단직 (필수 출력)]
+아래 3항을 산출물에 명시적 섹션으로 남겨라. 누락 시 반려된다.
+1. 가정: 판단의 전제가 되는 가정을 모두 나열하라.
+2. 대안: 채택안 외 대안 2개와 각각의 기각 사유를 적어라.
+3. 리스크: 이 판단이 틀렸을 때의 리스크 상위 3개를 적어라.
+BLOCK
+      ;;
+    "판단직:advisory")
+      cat <<'BLOCK'
+[전문가 프로토콜 — 판단직 (권고)]
+가정 명시, 대안 2개와 기각 사유, 리스크 상위 3개 포함을 권고한다.
+자명한 판단이면 축약 가능하나, 가정만은 반드시 명시하라.
+BLOCK
+      ;;
+    "QA직:required")
+      cat <<'BLOCK'
+[전문가 프로토콜 — QA직 (필수 출력)]
+아래 2단계를 순서대로 수행하고 증거를 산출물에 남겨라. 누락 시 반려된다.
+1. 재현 먼저: 대상 동작/버그를 먼저 재현하고 재현 명령과 출력 원문을 붙여라. 재현 불가면 그 사실이 1차 결과다.
+2. 체크리스트: 경계값(빈 입력/최대치/특수문자)과 에러 경로를 항목별 OK/NG 로 기록하라.
+BLOCK
+      ;;
+    "QA직:advisory")
+      cat <<'BLOCK'
+[전문가 프로토콜 — QA직 (권고)]
+재현 우선(재현 명령·출력 원문 포함)과 경계값·에러 경로 체크리스트 작성을 권고한다.
+재현 없는 판정은 근거를 별도로 명시하라.
+BLOCK
+      ;;
+  esac
+}
+
 # SOUL 기반 프롬프트 — 정적 블록 (byte-stable: 같은 SOUL이면 런마다 동일)
 # 시스템 프롬프트로 들어가 API 프롬프트 캐시의 크로스-런 히트를 만든다.
 # 휘발 값(이력/메모리/태스크)은 prompt_build_task_block 으로 분리 (유저 메시지행).
@@ -41,6 +125,10 @@ prompt_build_static() {
   local tools="${SOUL_TOOLS:-Read, Edit, Grep, Glob}"
   local max_turns="${SOUL_MAX_TURNS:-15}"
   local isolation="${SOUL_ISOLATION:-none}"
+
+  # B-1 — role family 전문가 프로토콜 블록 (byte-stable)
+  local protocol_block
+  protocol_block=$(_protocol_block "$SOUL_ROLE" "$SOUL_RANK")
 
   # 랭크 기반 권한 제약
   local rank_constraint=""
@@ -92,6 +180,7 @@ ${principles}
 
 ${rank_constraint}
 
+${protocol_block}
 현재 랭크: ${SOUL_RANK}
 허용 도구: [${tools}]
 최대 턴: ${max_turns}
@@ -276,14 +365,16 @@ ${task}
 다음 기준으로 최적의 SOUL 조합을 선택하고 서브태스크를 분배하라:
 1. SOUL의 specialty와 태스크 키워드 매칭
 2. SOUL의 rank에 따른 도구 권한(tools) 확인
-3. 병렬 실행 가능한 서브태스크 식별
-4. 격리(isolation) 필요 여부 판단
+3. 병렬 실행 가능한 서브태스크 식별 — deps 가 같은 step 은 병렬 가능
 
-출력 형식:
-- 서브태스크 1 → {SOUL_NAME}: {설명} [isolation={mode}, model={model}]
-- 서브태스크 2 → {SOUL_NAME}: {설명} [isolation={mode}, model={model}]
-- 실행 모드: {ultrapilot|autopilot|pipeline}
-- 예상 비용: {model별 대략 비용}
+## 출력 계약 (FLOW_CONTRACT v1 — 유일한 형식)
+분석과 근거는 자유롭게 서술하라. 단, **출력의 맨 마지막 줄은 다른 텍스트·코드펜스 없이
+아래 형식의 컴팩트 JSON 한 줄**이어야 한다. 파서는 마지막 `{` 로 시작하는 줄만 취한다.
+{"steps":[{"id":"s1","soul":"ryn","task":"작업 내용","deps":[],"retry":1,"approval":false,"on_fail":"abort"}]}
+- id: "s1","s2"… 고유 문자열 / soul: 가용 SOUL 이름(소문자), ""=호스트 직접 처리
+- deps: 선행 step id 배열(없으면 []) / retry: 0~3 정수(기본 1) / approval: true|false / on_fail: "abort"|"continue"|"goto:<step_id>"
+- step 객체는 1-depth — task 값에 중첩 객체 금지, 리터럴 `},{` 문자열 금지(파서가 step 경계로 오인해 전체 거부)
+- 마지막 줄이 위 형식의 JSON 이 아니면 파싱 오류로 태스크 전체가 실패 처리된다.
 PROMPT
 }
 

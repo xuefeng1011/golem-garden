@@ -721,6 +721,42 @@ SOUL
 }
 
 # ─────────────────────────────────────────────────────────
+# C-2 — AGENT_MAX_TURNS_OVERRIDE (AGENT_MODEL_OVERRIDE 패턴 미러)
+# 우선순위: override(양의 정수) > frontmatter maxTurns > rank 기본값
+# ─────────────────────────────────────────────────────────
+
+@test "C-2: AGENT_MAX_TURNS_OVERRIDE=7 이 frontmatter maxTurns=3 보다 우선 — 5턴은 캡 미발동" {
+  _make_capped_soul   # maxTurns: 3
+  _source_agent_runner
+  _setup_fast_chatty_claude   # 5턴 즉시 방출
+
+  local rc=0
+  AGENT_MAX_TURNS_OVERRIDE=7 agent_run capy "override 우선순위 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
+
+  [ "$rc" -eq 0 ]
+  grep -q "turn_cap=0" "$TEST_PROJECT/run.out"
+  grep -q "max_turns=7" "$TEST_PROJECT/run.out"
+}
+
+@test "C-2: AGENT_MAX_TURNS_OVERRIDE 비정수/0 → 무시하고 frontmatter maxTurns 적용" {
+  _make_capped_soul   # maxTurns: 3
+  _source_agent_runner
+  _setup_fast_chatty_claude   # 5턴 즉시 방출 — 캡 3 초과
+
+  local rc=0
+  AGENT_MAX_TURNS_OVERRIDE=abc agent_run capy "override 무효값 테스트1" > "$TEST_PROJECT/run1.out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ]
+  grep -q "max_turns=3" "$TEST_PROJECT/run1.out"
+  grep -q "result=turn_cap" "$TEST_PROJECT/run1.out"
+
+  rc=0
+  AGENT_MAX_TURNS_OVERRIDE=0 agent_run capy "override 무효값 테스트2" > "$TEST_PROJECT/run2.out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ]
+  grep -q "max_turns=3" "$TEST_PROJECT/run2.out"
+  grep -q "result=turn_cap" "$TEST_PROJECT/run2.out"
+}
+
+# ─────────────────────────────────────────────────────────
 # 앵커 — assistant 카운트는 envelope 라인만, 본문 텍스트 내 리터럴
 # "type":"assistant" 문자열 등장은 무시해야 한다 (오카운트 방지)
 # ─────────────────────────────────────────────────────────
@@ -837,6 +873,34 @@ FAKE
   [[ "$output" == *"result=partial"* ]]
   [[ "$output" == *"done_marker=absent"* ]]
   assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/zen.jsonl" "result" "partial"
+}
+
+@test "P0-4: partial 재시도 시 fresh 세션 (포인터 미갱신)" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"마커 없이 종료 (partial 유도)."}]}}'
+echo '{"type":"result","is_error":false,"duration_ms":100,"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  run agent_run zen "1차 태스크 (마커 없음)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"result=partial"* ]]
+
+  # partial 은 세션 마커 기록 대상이 아니다 — 포인터 파일이 생성되지 않아야 함
+  [ ! -f "$TEST_PROJECT/.golem/sessions/soul-zen.ptr" ]
+
+  # 포인터가 없으니 다음 소환도 여전히 fresh (따뜻한 세션 없음)
+  result=$(_agent_pick_session "zen")
+  [[ "$result" =~ fresh$ ]]
+
+  run agent_run zen "2차 태스크 (재소환)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"session=fresh"* ]]
 }
 
 @test "P0-4: GOLEM_DONE status=partial → result=partial" {

@@ -1,0 +1,1 @@
+{"goal":"director v1 example","steps":[{"id":"s1","soul":"ryn","task":"작업 내용","deps":[],"retry":1,"approval":false,"on_fail":"abort"}]}

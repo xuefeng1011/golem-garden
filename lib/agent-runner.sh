@@ -475,8 +475,13 @@ agent_run() {
   fi
 
   # P1-1 SOUL_MAX_TURNS — 양의 정수면 advisory 주입 + 하드 집행 카운터로 파싱.
+  # C-2 AGENT_MAX_TURNS_OVERRIDE — AGENT_MODEL_OVERRIDE 패턴 미러, 최우선 훅.
+  # 우선순위: override(양의 정수일 때만) > frontmatter maxTurns > rank 기본값
+  # (뒤 둘은 soul-parser.sh 가 이미 SOUL_MAX_TURNS 하나로 접어서 넘겨준다).
   local _ar_max_turns=0
-  if printf '%s' "${SOUL_MAX_TURNS:-}" | grep -qE '^[1-9][0-9]*$'; then
+  if printf '%s' "${AGENT_MAX_TURNS_OVERRIDE:-}" | grep -qE '^[1-9][0-9]*$'; then
+    _ar_max_turns="$AGENT_MAX_TURNS_OVERRIDE"
+  elif printf '%s' "${SOUL_MAX_TURNS:-}" | grep -qE '^[1-9][0-9]*$'; then
     _ar_max_turns="$SOUL_MAX_TURNS"
   fi
   # P1-1 턴 캡 — SOUL_MAX_TURNS>0 이면 기본 활성.
@@ -522,6 +527,16 @@ ${_ar_body}"
 [실행 가이드] 이 작업은 최대 ${_ar_max_turns} 턴(도구 호출 왕복) 내에 완료하는 것을 목표로 하라. 불필요한 탐색을 줄이고 핵심 변경에 집중하라."
   fi
 
+  # B-3 — effort CLI 플래그 미지원 폴백. claude --help 실측(2026-07-16): --effort
+  # 지원 확인됨 → 기본은 argv 직접 전달(아래 argv 조립부). CLI 가 향후 플래그를
+  # 제거하면 AGENT_EFFORT_CLI_UNSUPPORTED=1 로 프롬프트 텍스트 폴백 전환
+  # (model-routing 의 "미지원 시 텍스트 지시로 대체" 폴백 철학 미러).
+  if [ "${AGENT_EFFORT_CLI_UNSUPPORTED:-0}" = "1" ] && [ "$_ar_effort" != "none" ]; then
+    _ar_user_msg="${_ar_user_msg}
+
+사고 깊이: ${_ar_effort}"
+  fi
+
   # (c) 모델 매핑 + (d 일부) 도구 CSV
   # P2-1 라우팅 — SOUL_MODEL 이 CLI 인자가 되는 유일한 심(seam).
   # route_model: frontmatter 명시(비어있지 않고 auto 아님)는 그대로, 빈/auto 는
@@ -532,6 +547,13 @@ ${_ar_body}"
   _ar_routed_model=$(route_model "$SOUL_MODEL" "$SOUL_ROLE" "$SOUL_RANK" "$SOUL_IS_COORDINATOR")
   model_arg=$(_map_model "${AGENT_MODEL_OVERRIDE:-$_ar_routed_model}")
   tools_csv=$(_tools_csv "$SOUL_TOOLS")
+
+  # B-3 — effort 라우팅. frontmatter 원본(soul_get_field 직접 재조회)을 넘긴다:
+  # soul_parse 는 이미 모델 기반 기본값으로 SOUL_EFFORT 를 채워버려서 그 값만으로는
+  # "frontmatter 미지정" 여부를 구분할 수 없다 (route_effort 의 "미지정" 판정 전제).
+  local _ar_fm_effort _ar_effort
+  _ar_fm_effort=$(soul_get_field "$soul_file" "effort")
+  _ar_effort=$(route_effort "$_ar_fm_effort" "$SOUL_ROLE")
 
   # 런 식별자 + 시작 시각 (Phase A 트래젝토리 meta 용 — 세션 uuid 와 별개)
   local run_id
@@ -607,6 +629,12 @@ ${_ar_body}"
   if [ -n "$tools_csv" ]; then
     argv+=(--allowedTools "$tools_csv")
   fi
+
+  # B-3 — effort CLI 전달 (지원 확인됨 — 위 AGENT_EFFORT_CLI_UNSUPPORTED 폴백 참조)
+  if [ "${AGENT_EFFORT_CLI_UNSUPPORTED:-0}" != "1" ] && [ "$_ar_effort" != "none" ]; then
+    argv+=(--effort "$_ar_effort")
+  fi
+
   argv+=(-- "$_ar_user_msg")
 
   # 가드 가시성 (D1/D3) — 실제 벽시계 가드는 아래 소환 지점의 bash 워치독이며,
@@ -627,7 +655,7 @@ ${_ar_body}"
     for a in "${argv[@]}"; do
       printf '  %q\n' "$a"
     done
-    echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled}"
+    echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled} effort=${_ar_effort:-none}"
     return 0
   fi
 
@@ -857,7 +885,7 @@ ${_ar_body}"
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
   local _ar_done_marker_state="absent"
   [ "${_AR_DONE_PRESENT:-0}" -eq 1 ] && _ar_done_marker_state="present"
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} turn_cap=${_ar_turn_capped} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled} done_marker=${_ar_done_marker_state}"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} turn_cap=${_ar_turn_capped} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled} done_marker=${_ar_done_marker_state} effort=${_ar_effort:-none}"
 
   # P0-4 — partial 은 분류(완료 계약 미확인)이지 실패가 아니다. rc 계약 유지:
   # 실패 신호는 fail/timeout/turn_cap 만 (flow/mission 의 rc 소비 경로 무변경).

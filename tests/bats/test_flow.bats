@@ -1323,6 +1323,96 @@ EOF
   [ "$head_status" = '"status":"failed"' ]
 }
 
+# ───────────────────────────────────────────────────────────────────────────────
+# B-4: flow_extract_json 추출 우선순위 — 코드펜스(레거시) → 마지막 { 줄(v1 앵커)
+# run은 bats 프로세스 내에서 직접 함수를 호출한다 (bash -c 서브셸은 flow-contract.sh
+# 함수가 export 되지 않아 127로 죽는다 — heredoc/here-string으로 stdin만 넘긴다)
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow_extract_json: 코드펜스로 감싼 JSON — 1차 경로 그대로 추출" {
+  run flow_extract_json <<'EOF'
+분석 내용...
+```json
+{"steps":[{"id":"s1","soul":"ryn","task":"t1","deps":[]}]}
+```
+EOF
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"steps"'* ]]
+  [[ "$output" == *'"id":"s1"'* ]]
+}
+
+@test "flow_extract_json: 마지막 줄 컴팩트 JSON (코드펜스 없음) — v1 폴백" {
+  run flow_extract_json <<'EOF'
+분석: 이 태스크는 두 SOUL 로 분배한다.
+{"steps":[{"id":"s1","soul":"ryn","task":"t1","deps":[]}]}
+EOF
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"steps":[{"id":"s1","soul":"ryn","task":"t1","deps":[]}]}' ]
+}
+
+@test "flow_extract_json: 마지막 줄 배열 JSON — triage T2 추출과 정합 (Zen P1 리뷰)" {
+  run flow_extract_json <<'EOF'
+Director 가 규격 외로 배열만 반환한 경우.
+[{"id":"s1","soul":"ryn","task":"t1","deps":[]}]
+EOF
+  [ "$status" -eq 0 ]
+  [ "$output" = '[{"id":"s1","soul":"ryn","task":"t1","deps":[]}]' ]
+}
+
+@test "flow_extract_json: 잡문 뒤 JSON — 서술 여러 줄 뒤 마지막 줄만 채택" {
+  run flow_extract_json <<'EOF'
+1. 태스크 이해
+2. SOUL 선택
+일부 예시: {"foo":1} 이런 것도 언급
+{"steps":[{"id":"s1","soul":"","task":"t1","deps":[]}]}
+EOF
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"steps":[{"id":"s1","soul":"","task":"t1","deps":[]}]}' ]
+}
+
+@test "flow_extract_json: JSON 없음 — 코드펜스도 마지막 { 줄도 없으면 실패" {
+  run flow_extract_json <<'EOF'
+그냥 설명 텍스트만 있고 JSON 은 전혀 없습니다.
+둘째 줄도 마찬가지.
+EOF
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"찾을 수 없습니다"* ]]
+}
+
+# ───────────────────────────────────────────────────────────────────────────────
+# B-4: flow_steps_array — {"steps":[...]} → mission set-tasks-json 직결용 언랩
+# ───────────────────────────────────────────────────────────────────────────────
+
+@test "flow_steps_array: {\"steps\":[...]} 언랩 — 배열만 stdout" {
+  run flow_steps_array <<< '{"steps":[{"id":"s1","soul":"ryn","task":"t1","deps":[]},{"id":"s2","soul":"","task":"t2","deps":["s1"]}]}'
+  [ "$status" -eq 0 ]
+  [ "$output" = '[{"id":"s1","soul":"ryn","task":"t1","deps":[]},{"id":"s2","soul":"","task":"t2","deps":["s1"]}]' ]
+}
+
+@test "flow_steps_array: 이미 배열([...])이면 그대로 통과" {
+  run flow_steps_array <<< '[{"id":"s1","soul":"ryn","task":"t1","deps":[]}]'
+  [ "$status" -eq 0 ]
+  [ "$output" = '[{"id":"s1","soul":"ryn","task":"t1","deps":[]}]' ]
+}
+
+@test "flow_steps_array: steps/배열 어느 쪽도 아니면 실패" {
+  run flow_steps_array <<< '{"goal":"no steps here"}'
+  [ "$status" -ne 0 ]
+}
+
+_fc_extract_then_array() {
+  flow_extract_json | flow_steps_array
+}
+
+@test "flow_extract_json | flow_steps_array 배선 — mission set-tasks-json 직결 형태 산출" {
+  run _fc_extract_then_array <<'EOF'
+분석...
+{"steps":[{"id":"s1","soul":"ryn","task":"lib 구현","deps":[]},{"id":"s2","soul":"zen","task":"테스트 작성","deps":["s1"]}]}
+EOF
+  [ "$status" -eq 0 ]
+  [ "$output" = '[{"id":"s1","soul":"ryn","task":"lib 구현","deps":[]},{"id":"s2","soul":"zen","task":"테스트 작성","deps":["s1"]}]' ]
+}
+
 @test "flow: 골든 케이스 — valid-* 전부 통과, invalid-* 전부 거부" {
   local f name rc
   for f in "${GOLEM_ROOT}"/tests/golden/flow-cases/*.json; do

@@ -88,3 +88,33 @@ route_model() {
 
   printf '%s\n' "$model"
 }
+
+# ─────────────────────────────────────────────────────────
+# B-3 — effort 라우팅 테이블 (route_model 과 동일 계층, 별도 축)
+#
+# 정책 (route_effort):
+#   0) frontmatter effort 명시(비어있지 않음) → 그대로 사용
+#   1) 미지정 + 판단직 role(director|knowledge-auditor|security-auditor) → high
+#   2) 미지정 + 그 외 → "none" (CLI 플래그/프롬프트 폴백 모두 생략 — 소비처가 판단)
+#
+# 소비처(agent-runner.sh)는 frontmatter 원본을 soul_get_field 로 직접
+# 재조회해 넘긴다 — soul_parse 가 이미 모델 기반 기본값(SOUL_EFFORT)을
+# 채워버려서 "미지정" 여부를 그 값만으로는 구분할 수 없기 때문.
+# ─────────────────────────────────────────────────────────
+
+# route_effort <frontmatter_effort_raw> <role> → 유효 effort 값 또는 "none"
+route_effort() {
+  local fm="$1" role="$2"
+
+  if [ -n "$fm" ]; then
+    printf '%s\n' "$fm"
+    return 0
+  fi
+
+  case "$role" in
+    director|knowledge-auditor|security-auditor)
+      printf 'high\n' ;;
+    *)
+      printf 'none\n' ;;
+  esac
+}
