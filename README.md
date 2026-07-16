@@ -224,6 +224,8 @@ GolemGarden SOUL → OMC 에이전트 매핑:
 | `forge build` | Director 분배 → SOUL별 `forge run` 병렬 |
 | `forge quick` | 최적 SOUL 1개 `forge run` 단독 |
 | `forge mission` | 단일 목표 자율 루프 (execute↔verify) |
+| `forge triage` | 태스크 복잡도 판정 (결정론 점수기, tier=T0/T1/T2) |
+| `forge do` | 자동 기어 — T0: SOUL 직행 / T1: build 권고 / T2: mission 생성 |
 | `forge save` | haiku 모델 비용 절약 실행 |
 | `forge review` | 작업 → 리뷰 순차 (author≠verifier) |
 | `forge eval` | 골든 태스크 스위트 (모델 회귀 측정) |

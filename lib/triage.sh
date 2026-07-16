@@ -95,9 +95,20 @@ _triage_explicit_paths() {
   local tok
   local seen=$'\n'
 
+  # URL 은 통째로 선제 제거 — grep 토큰화가 스킴(://)을 떼어내
+  # example.com/x.md 가 경로로 오인되는 것을 차단
+  task_text=$(printf '%s' "$task_text" | sed 's|[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]*| |g')
+
   while IFS= read -r tok; do
     [ -n "$tok" ] || continue
-    case "$tok" in */*) : ;; *) continue ;; esac
+    case "$tok" in
+      *://*) continue ;;   # URL 제외
+      */*) : ;;            # 슬래시 포함 경로
+      # 슬래시 없는 순수 파일명(README.md 등)은 코드/문서 확장자 화이트리스트만 허용
+      # — .com 등 도메인 토큰 오탐 차단 (실사용 실측: README.md 태스크가 T2 과대 판정)
+      *.sh|*.bash|*.py|*.md|*.ts|*.tsx|*.js|*.vue|*.json|*.yml|*.yaml|*.bats|*.toml|*.txt|*.ps1) : ;;
+      *) continue ;;
+    esac
     case "$seen" in *$'\n'"$tok"$'\n'*) continue ;; esac
     seen="${seen}${tok}"$'\n'
     printf '%s\n' "$tok"

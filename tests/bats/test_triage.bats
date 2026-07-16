@@ -51,9 +51,9 @@ load "test_helper"
   _triage_explore_files() {
     printf '%s\n' "lib/mission.sh" "lib/verify.sh" "lib/budget.sh" "lib/insights.sh"
   }
-  # 슬래시+확장자 명시 경로가 없어야 explore(mock) 경로를 탄다 — 명시 경로가
-  # 있으면 files/domains 가 그 경로만으로 결정론 계산돼 mock 이 무시된다.
-  run triage_run "mission.sh 와 verify.sh 를 함께 수정해 스텝별 rubric 필드를 추가하라"
+  # 파일명 토큰이 없어야 explore(mock) 경로를 탄다 — 순수 파일명(확장자 화이트
+  # 리스트)도 이제 명시 경로로 취급되므로 픽스처 문구에서 확장자를 뺐다.
+  run triage_run "미션 스펙과 검증 레인을 함께 수정해 스텝별 rubric 필드를 추가하라"
   [ "$status" -eq 0 ]
   [[ "$output" == *"tier=T1"* ]]
 }
@@ -63,7 +63,7 @@ load "test_helper"
   _triage_explore_files() {
     printf '%s\n' "lib/triage.sh" "lib/explore.sh" "tests/bats/test_triage.bats"
   }
-  run triage_run "triage.sh 신설 + test_triage.bats 작성"
+  run triage_run "트리아지 점수기 신설 + 해당 bats 테스트 작성"
   [ "$status" -eq 0 ]
   [[ "$output" == *"tier=T1"* ]]
 }
@@ -179,11 +179,27 @@ load "test_helper"
   [[ "$output" == *"domains=2"* ]]
 }
 
-@test "triage: _triage_explicit_paths — 슬래시 없는 파일명은 명시 경로로 취급 안 함" {
+@test "triage: _triage_explicit_paths — 슬래시 없는 파일명도 확장자 화이트리스트면 명시 경로 (README.md T2 과대 판정 회귀)" {
   golem_load_lib triage
   run _triage_explicit_paths "mission.sh 와 verify.sh 를 수정하라"
   [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c '[^[:space:]]')" -eq 2 ]
+  [[ "$output" == *"mission.sh"* ]]
+}
+
+@test "triage: _triage_explicit_paths — URL/도메인 토큰은 명시 경로 아님" {
+  golem_load_lib triage
+  run _triage_explicit_paths "https://example.com/x.md 를 참고해 example.com 정책을 조사"
+  [ "$status" -eq 0 ]
+  # URL(://) 제외, .com 은 화이트리스트 외 — 남는 명시 경로 없음
   [ -z "$output" ]
+}
+
+@test "triage: 슬래시 없는 README.md 태스크 — files=1 tier=T0 (실사용 회귀)" {
+  golem_load_lib triage
+  run triage_run "README.md 의 forge 명령 소개 섹션에 forge do 와 forge triage 두 줄을 추가"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier=T0"* ]]
 }
 
 @test "triage: _triage_explicit_paths — 슬래시+확장자 경로만 중복 제거해 추출" {
@@ -344,7 +360,7 @@ EOF
   }
   agent_run() { echo "$1" >> "$TEST_PROJECT/.agent_calls"; return 0; }
 
-  run forge_do "mission.sh 와 verify.sh 를 함께 수정해 스텝별 rubric 필드를 추가하라"
+  run forge_do "미션 스펙과 검증 레인을 함께 수정해 스텝별 rubric 필드를 추가하라"
   [ "$status" -eq 0 ]
   [[ "$output" == *"[TRIAGE] T1 판정"* ]]
   [[ "$output" == *"forge build:"* ]]
