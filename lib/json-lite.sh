@@ -9,6 +9,7 @@
 #   _json_get_string <json_line> <key>  — RAW(이스케이프된) 문자열 값 추출
 #   _json_unescape  <raw_string>        — 표시용 디코드 (\n \t \" \\ …)
 #   _json_scalar    <json_line> <key>   — 이스케이프 없는 scalar (id/status 등)
+#   _json_get_string_array <json_line> <key> — 문자열 배열 추출(항목 1개=1줄, unescape 완료)
 
 # JSON 문자열 값 추출 (escape-aware) — `\([^"\\]\|\\.\)*` 와 동등한 문자 워커.
 # 출력은 RAW(이스케이프된) JSON 문자열 — 표시용으로는 _json_unescape 를 거친다.
@@ -106,4 +107,29 @@ _json_array_items() {
       if (depth >= 1) buf = buf c
     }
   }'
+}
+
+# JSON 문자열 배열 값 추출 (escape-aware, 공용) — B-5 신설.
+# "key":[...] 부분 문자열을 찾아 _json_array_items(따옴표/이스케이프/깊이 인식
+# 워커)로 원소를 분리한 뒤 각 원소를 unescape 해 평문으로 낸다. 원소 내부의
+# 일반 쉼표·괄호는 _json_array_items 가 문자 단위로 안전 처리하므로 깨지지 않는다.
+# 출력: 항목 1개=1줄(unescape 완료). key 부재 시 빈 출력 + return 0.
+# _json_get_string_array <json_line> <key>
+_json_get_string_array() {
+  local json="$1" key="$2"
+  local sub
+  sub=$(printf '%s' "$json" | awk -v k="\"${key}\":[" '
+    { idx = index($0, k); if (idx > 0) print substr($0, idx) }
+  ')
+  [ -z "$sub" ] && return 0
+
+  local raw
+  while IFS= read -r raw; do
+    [ -z "$raw" ] && continue
+    case "$raw" in
+      \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
+    esac
+    _json_unescape "$raw"
+    printf '\n'
+  done < <(printf '%s' "$sub" | _json_array_items)
 }

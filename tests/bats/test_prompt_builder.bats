@@ -93,18 +93,37 @@ SOUL
   [[ "$output" == *"1. 재현 먼저:"* ]]
 }
 
-@test "protocol-block: QA직(security-auditor) + lead → 권고 변형" {
+@test "protocol-block: 판단직(security-auditor) + lead → 권고 변형" {
+  # security-auditor는 QA직이 아니라 판단직이다 — model-routing.sh route_effort,
+  # docs/PERF-HARNESS-PLAN.md(판단직 SOUL: nex/sage/sentinel/atlas), souls/sentinel.md
+  # (role=security-auditor, model=opus, effort=high)와 일치시킨다.
   _write_soul "qal" "security-auditor" "lead"
   _source_prompt_builder
   run prompt_build_static "qal"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[전문가 프로토콜 — QA직 (권고)]"* ]]
+  [[ "$output" == *"[전문가 프로토콜 — 판단직 (권고)]"* ]]
   [[ "$output" != *"(필수 출력)"* ]]
 }
 
 # ─────────────────────────────────────────────────────────
 # 미지 role → 블록 생략
 # ─────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────
+# B-5 ① — prompt_build_director 출력 계약에 rubric 산출 지시 존재
+# ─────────────────────────────────────────────────────────
+
+@test "B-5 director: 출력 계약에 rubric 필드 예시 + 산출 지시 존재" {
+  _write_soul "ryn" "backend-developer" "junior"
+  _source_prompt_builder
+  run prompt_build_director "테스트 목표"
+  [ "$status" -eq 0 ]
+  # FLOW_CONTRACT §1.2 예시 JSON 라인에 rubric 키 포함
+  [[ "$output" == *'"rubric":['* ]]
+  # 산출 지시 문안 존재 (스텝당 2~4항, 측정 가능성 요구)
+  [[ "$output" == *"rubric: (선택, 강력 권장) 완료 판정 기준 문자열 배열 2~4개"* ]]
+  [[ "$output" == *"verify 가 같은 항목으로 채점한다"* ]]
+}
 
 @test "protocol-block: 매핑에 없는 role → 블록 전체 생략" {
   _write_soul "unmapped" "flowsmith-architect" "junior"

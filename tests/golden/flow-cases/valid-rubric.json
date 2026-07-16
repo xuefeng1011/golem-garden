@@ -1,0 +1,1 @@
+{"goal":"rubric 사전 계약 예시","steps":[{"id":"s1","soul":"ryn","task":"lib/flow-contract.sh 에 rubric 추출기 추가","deps":[],"retry":1,"approval":false,"on_fail":"abort","rubric":["tests/bats/test_x.bats 에 신규 케이스 2개 이상, 그리고 회귀 없음","bash tests/bats/run.sh 가 exit 0"]}]}

@@ -12,6 +12,7 @@ export interface FlowStep {
   type?: 'input' | 'agent'
   output?: string | null
   retry?: number
+  rubric?: string[]
 }
 
 export interface Flow {

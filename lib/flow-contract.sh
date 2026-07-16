@@ -54,6 +54,35 @@ _fc_get_deps() {
     | tr -d '"' | tr ',' ' ' | tr -s ' '
 }
 
+# rubric 배열 추출 (B-5) — _json_get_string_array 의 얇은 래퍼.
+# FLOW_CONTRACT §1.1 파서 제약(대괄호 [ ], 리터럴 "," 금지) 위반 항목이
+# 하나라도 있으면 필드 전체를 폐기(WARN, step 은 생존) — 관대 소비 원칙.
+# 출력: 항목 1개=1줄(unescape 완료). 부재/위반 시 빈 출력 + return 0.
+# _fc_get_rubric <step_json_line>
+_fc_get_rubric() {
+  local json="$1"
+  local items
+  items=$(_json_get_string_array "$json" "rubric")
+  [ -z "$items" ] && return 0
+
+  local item
+  while IFS= read -r item; do
+    [ -z "$item" ] && continue
+    case "$item" in
+      *'['*|*']'*|*'","'*|*'},{'*)
+        # `},{` 는 _fc_steps_lines 파편 감지가 상류에서 잡아주지만, 여기서도
+        # 명시 거부해 Pydantic(_BRACE_SPLIT_RE)과 계약을 코드로 미러한다 (Zen P2 B5-1)
+        echo "[WARN] _fc_get_rubric: rubric 항목이 파서 제약(FLOW_CONTRACT §1.1) 위반 — 필드 전체 폐기: ${item}" >&2
+        return 0
+        ;;
+    esac
+  done <<EOF
+$items
+EOF
+
+  printf '%s\n' "$items"
+}
+
 # ── 공개 API ──────────────────────────────────────────────────────────────
 
 # flow_extract_json — stdin 또는 파일에서 JSON 추출 (FLOW_CONTRACT v1)
@@ -299,6 +328,10 @@ EOF
         errors=$((errors + 1))
         continue
       fi
+
+      # rubric 제약 위반은 WARN + 필드 폐기(step 생존) — errors 에 가산하지 않는다.
+      # _fc_get_rubric 자체가 위반 시 WARN 을 stderr 로 내고 빈 출력만 낸다.
+      _fc_get_rubric "$raw_block" >/dev/null
 
       local raw_on_fail raw_goto_target
       raw_on_fail=$(_fc_get_field "on_fail" "$raw_block")

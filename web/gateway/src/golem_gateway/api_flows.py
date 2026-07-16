@@ -57,6 +57,13 @@ _STEP_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 # this regex; it must stay an exact mirror of the bash-side separator.
 _BRACE_SPLIT_RE = re.compile(r"\},\s*\{")
 
+# rubric item-split boundary in the bash extractor (_fc_get_rubric): items are
+# split on a literal `","` (quote-comma-quote) sequence, so that sequence is
+# forbidden inside an item. `[`/`]` are forbidden separately because the bash
+# array-extraction regex `"rubric":\[[^]]*\]` terminates early on the first `]`.
+_RUBRIC_ITEM_MAX_LEN = 200
+_RUBRIC_MAX_ITEMS = 4
+
 
 # ---------------------------------------------------------------------------
 # Models — read (response)
@@ -72,6 +79,7 @@ class FlowStep(BaseModel):
     retry: int = 1
     approval: bool = False
     on_fail: str = "abort"
+    rubric: list[str] = []
     # 단계 실행 트래젝토리 링크 (단계별 결과 보기) — 미실행 단계는 None
     run_id: str | None = None
     type: str = "agent"
@@ -102,6 +110,7 @@ class FlowStepInput(BaseModel):
     retry: int = 1
     approval: bool = False
     on_fail: str = "abort"
+    rubric: list[str] = []
     type: str = "agent"
 
     @field_validator("id")
@@ -139,6 +148,37 @@ class FlowStepInput(BaseModel):
             raise ValueError(
                 f"on_fail {v!r} must be abort|continue|goto:<id>"
             )
+        return v
+
+    @field_validator("rubric")
+    @classmethod
+    def validate_rubric(cls, v: list[str]) -> list[str]:
+        if len(v) > _RUBRIC_MAX_ITEMS:
+            raise ValueError(
+                f"rubric must contain at most {_RUBRIC_MAX_ITEMS} items"
+            )
+        for item in v:
+            if not item.strip():
+                raise ValueError("rubric items must not be empty")
+            if len(item) > _RUBRIC_ITEM_MAX_LEN:
+                raise ValueError(
+                    f"rubric item exceeds {_RUBRIC_ITEM_MAX_LEN} characters"
+                )
+            if _BRACE_SPLIT_RE.search(item):
+                raise ValueError(
+                    "rubric item must not contain a literal '},{' sequence "
+                    "(1-depth flow contract — breaks the bash steps parser)"
+                )
+            if "[" in item or "]" in item:
+                raise ValueError(
+                    "rubric item must not contain '[' or ']' "
+                    "(breaks the bash rubric array extractor)"
+                )
+            if '","' in item:
+                raise ValueError(
+                    'rubric item must not contain a literal \'","\' sequence '
+                    "(bash rubric item-split boundary)"
+                )
         return v
 
     @field_validator("type")
@@ -241,6 +281,7 @@ def _load_flow(
                 "retry": s.get("retry", 1),
                 "approval": bool(s.get("approval", False)),
                 "on_fail": s.get("on_fail", "abort"),
+                "rubric": s.get("rubric", []),
                 "run_id": s.get("run_id"),
                 "type": s.get("type", "agent"),
                 "output": s.get("output") if include_output else None,
@@ -260,19 +301,24 @@ def _load_flow(
 
 
 def _step_def_unchanged(prev: dict[str, Any], s: FlowStepInput) -> bool:
-    """True if a step's definition (task/soul/deps/type) is identical to the prior one.
+    """True if a step's definition (task/soul/deps/type/rubric) is identical to the prior one.
 
     deps are compared as sets — the editor derives deps from edges, so order may
     differ without a semantic change. retry/on_fail/approval are not compared —
     they don't affect a step's produced output, so cache preservation ignores
     them. type IS compared: switching agent<->input changes execution semantics,
-    so a cached result under the old type is invalid.
+    so a cached result under the old type is invalid. rubric IS compared (order
+    matters — item order is the verify [ITEM-k] numbering): it changes the
+    executing SOUL's injected grading contract (B-5), so a cached result graded
+    under a different rubric is invalid. Absent key normalizes to `[]` so old
+    records (pre-B-5, no rubric key) compare equal to an explicit empty list.
     """
     return (
         prev.get("task") == s.task
         and prev.get("soul", "") == s.soul
         and set(prev.get("deps", [])) == set(s.deps)
         and prev.get("type", "agent") == s.type
+        and prev.get("rubric", []) == s.rubric
     )
 
 
@@ -337,6 +383,7 @@ def _build_state_json(
             "retry": s.retry,
             "approval": s.approval,
             "on_fail": s.on_fail,
+            "rubric": s.rubric,
             "type": s.type,
             "status": "pending",
         }

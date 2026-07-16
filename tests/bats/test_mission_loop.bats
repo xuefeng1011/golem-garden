@@ -193,6 +193,78 @@ _mk_mission() {
   [ "$(sed -n '2p' "$TEST_PROJECT/.override_calls")" = "20" ]
 }
 
+# ─────────────────────────────────────────────────────────
+# B-5 — rubric 사전 계약 배선 (③ 프롬프트 주입 / ④ verify 합집합)
+# ─────────────────────────────────────────────────────────
+
+_mk_mission_rubric() {
+  local id
+  id=$(mission_init "테스트 목표" "모든 태스크 done + 검증 PASS" "" "")
+  mission_set_tasks_json "$id" '[{"task":"태스크 A","rubric":["a.sh 존재","bash tests/bats/run.sh 가 exit 0"]},{"task":"태스크 B"}]' >/dev/null
+  echo "$id"
+}
+
+@test "mission-loop: rubric 있는 스텝 → 실행 프롬프트에 채점 계약 블록 주입" {
+  local id; id=$(_mk_mission_rubric)
+  agent_run() {
+    _bump "$TEST_PROJECT/.agent_calls"
+    printf '%s\n' "$2" >> "$TEST_PROJECT/.prompts"
+    echo "tokens_out=1000"
+    return 0
+  }
+
+  run mission_run "$id" ryn zen
+  [ "$status" -eq 0 ]
+  grep -q "채점 계약" "$TEST_PROJECT/.prompts"
+  grep -q "a.sh 존재" "$TEST_PROJECT/.prompts"
+  grep -q "bash tests/bats/run.sh 가 exit 0" "$TEST_PROJECT/.prompts"
+}
+
+@test "mission-loop: rubric 없는 스텝 → 프롬프트에 채점 계약 블록 없음 (회귀)" {
+  local id; id=$(_mk_mission)
+  agent_run() {
+    _bump "$TEST_PROJECT/.agent_calls"
+    printf '%s\n' "$2" >> "$TEST_PROJECT/.prompts"
+    echo "tokens_out=1000"
+    return 0
+  }
+
+  run mission_run "$id" ryn zen
+  [ "$status" -eq 0 ]
+  ! grep -q "채점 계약" "$TEST_PROJECT/.prompts"
+}
+
+@test "mission-loop: verify 호출에 VERIFY_RUBRIC_ITEMS 합집합 주입 — (task N) 접미" {
+  local id; id=$(_mk_mission_rubric)
+  verify_run() {
+    _bump "$TEST_PROJECT/.verify_calls"
+    printf '%s' "$VERIFY_RUBRIC_ITEMS" > "$TEST_PROJECT/.rubric_env"
+    echo "verify author=${VERIFY_AUTHOR_SOUL:-none}"
+    return 0
+  }
+
+  run mission_run "$id" ryn zen
+  [ "$status" -eq 0 ]
+  grep -q "a.sh 존재 (task 0)" "$TEST_PROJECT/.rubric_env"
+  grep -q "bash tests/bats/run.sh 가 exit 0 (task 0)" "$TEST_PROJECT/.rubric_env"
+  # 태스크 B(idx 1)는 rubric 이 없으므로 (task 1) 접미가 없어야 한다
+  ! grep -q "(task 1)" "$TEST_PROJECT/.rubric_env"
+}
+
+@test "mission-loop: rubric 없는 미션 → VERIFY_RUBRIC_ITEMS 빈 문자열 (자체 생성 폴백 회귀)" {
+  local id; id=$(_mk_mission)
+  verify_run() {
+    _bump "$TEST_PROJECT/.verify_calls"
+    printf '%s' "$VERIFY_RUBRIC_ITEMS" > "$TEST_PROJECT/.rubric_env"
+    echo "verify author=${VERIFY_AUTHOR_SOUL:-none}"
+    return 0
+  }
+
+  run mission_run "$id" ryn zen
+  [ "$status" -eq 0 ]
+  [ ! -s "$TEST_PROJECT/.rubric_env" ]
+}
+
 @test "mission-loop: C-2 GOLEM_TURN_BUDGET=0 → 산정 비활성, override 미전달(기존 동작)" {
   local id; id=$(_mk_mission)
   source "${GOLEM_ROOT}/lib/triage.sh"

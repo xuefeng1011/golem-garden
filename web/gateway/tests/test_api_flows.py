@@ -638,6 +638,145 @@ async def test_put_flow_retry_roundtrip(registered_project) -> None:
 
 
 @pytest.mark.asyncio
+async def test_put_flow_rubric_roundtrip(registered_project) -> None:
+    """PUT with rubric items must persist and be readable back via GET."""
+    project_id, project_path = registered_project
+    post_resp = await _post(project_id, _SIMPLE_BODY)
+    assert post_resp.status_code == 201, post_resp.text
+    flow_id = post_resp.json()["flow_id"]
+
+    body = {
+        "goal": "rubric roundtrip",
+        "steps": [{
+            "id": "s1", "task": "t1", "soul": "ryn",
+            "rubric": ["tests/bats/test_x.bats 에 신규 케이스 2개 이상", "bash tests/bats/run.sh 가 exit 0"],
+        }],
+    }
+    put_resp = await _put(project_id, flow_id, body)
+    assert put_resp.status_code == 200, put_resp.text
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        get_resp = await client.get(f"/v1/projects/{project_id}/flows/{flow_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["steps"][0]["rubric"] == [
+        "tests/bats/test_x.bats 에 신규 케이스 2개 이상", "bash tests/bats/run.sh 가 exit 0",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_flow_rubric_defaults_to_empty_when_missing(registered_project) -> None:
+    """A bash-written state.json with no 'rubric' key on a step defaults to []."""
+    project_id, project_path = registered_project
+    _write_flow(
+        project_path,
+        "flow_rubric_default",
+        steps=[{"id": "s1", "soul": "ryn", "task": "t1", "deps": [], "status": "pending"}],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/v1/projects/{project_id}/flows/flow_rubric_default")
+    assert resp.status_code == 200
+    assert resp.json()["steps"][0]["rubric"] == []
+
+
+@pytest.mark.asyncio
+async def test_post_flow_rubric_too_many_items_422(registered_project) -> None:
+    """rubric with more than 4 items must return 422."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "bad rubric count",
+        "steps": [{
+            "id": "s1", "task": "t", "soul": "ryn",
+            "rubric": ["item1", "item2", "item3", "item4", "item5"],
+        }],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_flow_rubric_empty_item_422(registered_project) -> None:
+    """rubric containing an empty/whitespace-only item must return 422."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "bad rubric item",
+        "steps": [{"id": "s1", "task": "t", "soul": "ryn", "rubric": ["ok item", "   "]}],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_flow_rubric_brace_split_422(registered_project) -> None:
+    """rubric item containing a literal '},{' sequence must return 422."""
+    project_id, _ = registered_project
+    body = {
+        "goal": "bad rubric brace",
+        "steps": [{"id": "s1", "task": "t", "soul": "ryn", "rubric": ["broken},{ 주입 시도"]}],
+    }
+    resp = await _post(project_id, body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_put_flow_rubric_change_invalidates_cache(registered_project) -> None:
+    """Changing only a step's rubric invalidates its cached run result.
+
+    rubric changes the executing SOUL's injected grading contract (B-5), so a
+    result graded under the old rubric is no longer valid for the new one.
+    """
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "s1", "soul": "ryn", "task": "t1", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent", "rubric": ["old criterion"],
+         "status": "done", "run_id": "run-1", "output": "stale"},
+    ]
+    _write_flow(project_path, "flow_rubric_invalidate", status="completed", steps=seeded)
+
+    body = {
+        "goal": "g",
+        "steps": [{"id": "s1", "task": "t1", "soul": "ryn", "rubric": ["new criterion"]}],
+    }
+    resp = await _put(project_id, "flow_rubric_invalidate", body)
+    assert resp.status_code == 200, resp.text
+
+    step = json.loads(
+        (project_path / ".golem" / "flows" / "flow_rubric_invalidate" / "state.json")
+        .read_text(encoding="utf-8")
+    )["steps"][0]
+    assert step["status"] == "pending"
+    assert "run_id" not in step
+    assert "output" not in step
+
+
+@pytest.mark.asyncio
+async def test_put_flow_preserves_when_rubric_unchanged(registered_project) -> None:
+    """An absent rubric key (pre-B-5 record) normalizes to [] — matching an
+    explicit empty rubric on PUT must still preserve the cached result."""
+    project_id, project_path = registered_project
+    seeded = [
+        {"id": "s1", "soul": "ryn", "task": "t1", "deps": [], "retry": 1,
+         "approval": False, "on_fail": "abort", "type": "agent",
+         "status": "done", "run_id": "run-1", "output": "result one"},
+    ]
+    _write_flow(project_path, "flow_rubric_preserve", status="completed", steps=seeded)
+
+    body = {"goal": "g", "steps": [{"id": "s1", "task": "t1", "soul": "ryn"}]}
+    resp = await _put(project_id, "flow_rubric_preserve", body)
+    assert resp.status_code == 200, resp.text
+
+    step = json.loads(
+        (project_path / ".golem" / "flows" / "flow_rubric_preserve" / "state.json")
+        .read_text(encoding="utf-8")
+    )["steps"][0]
+    assert step["status"] == "done"
+    assert step["run_id"] == "run-1"
+    assert step["output"] == "result one"
+
+
+@pytest.mark.asyncio
 async def test_get_flow_retry_defaults_to_1_when_missing(registered_project) -> None:
     """A bash-written state.json with no 'retry' key on a step defaults to 1."""
     project_id, project_path = registered_project

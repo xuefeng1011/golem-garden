@@ -28,9 +28,9 @@ _protocol_family() {
   case "$1" in
     backend-developer|frontend-developer|devops-engineer|embedded-developer|robotics-engineer|edge-ai-engineer|game-logic-developer)
       printf '구현직' ;;
-    director|knowledge-auditor|data-analyst|game-designer)
+    director|knowledge-auditor|data-analyst|game-designer|security-auditor)
       printf '판단직' ;;
-    qa-tester|security-auditor)
+    qa-tester)
       printf 'QA직' ;;
   esac
 }
@@ -370,9 +370,13 @@ ${task}
 ## 출력 계약 (FLOW_CONTRACT v1 — 유일한 형식)
 분석과 근거는 자유롭게 서술하라. 단, **출력의 맨 마지막 줄은 다른 텍스트·코드펜스 없이
 아래 형식의 컴팩트 JSON 한 줄**이어야 한다. 파서는 마지막 `{` 로 시작하는 줄만 취한다.
-{"steps":[{"id":"s1","soul":"ryn","task":"작업 내용","deps":[],"retry":1,"approval":false,"on_fail":"abort"}]}
+{"steps":[{"id":"s1","soul":"ryn","task":"작업 내용","deps":[],"retry":1,"approval":false,"on_fail":"abort","rubric":["tests/bats/test_x.bats 에 신규 케이스 2개 이상","bash tests/bats/run.sh 가 exit 0"]}]}
 - id: "s1","s2"… 고유 문자열 / soul: 가용 SOUL 이름(소문자), ""=호스트 직접 처리
 - deps: 선행 step id 배열(없으면 []) / retry: 0~3 정수(기본 1) / approval: true|false / on_fail: "abort"|"continue"|"goto:<step_id>"
+- rubric: (선택, 강력 권장) 완료 판정 기준 문자열 배열 2~4개. 각 항목은 측정
+  가능해야 한다 — 파일 경로, 실행 명령, 기대 출력/수치, 마커 중 최소 하나를 포함.
+  항목 문자열에 대괄호([ ])와 리터럴 },{ 및 "," 시퀀스 금지 (파서 제약).
+  이 항목이 실행 SOUL 에게 사전 공지되고 verify 가 같은 항목으로 채점한다.
 - step 객체는 1-depth — task 값에 중첩 객체 금지, 리터럴 `},{` 문자열 금지(파서가 step 경계로 오인해 전체 거부)
 - 마지막 줄이 위 형식의 JSON 이 아니면 파싱 오류로 태스크 전체가 실패 처리된다.
 PROMPT

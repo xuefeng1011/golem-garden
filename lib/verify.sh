@@ -291,6 +291,41 @@ _verify_aggregate_items() {
 }
 
 # ─────────────────────────────────────────────────────────
+# B-5 — 사전 계약 rubric 누락 채점 가드
+# ─────────────────────────────────────────────────────────
+# _verify_rubric_missing_guard <soul_output> <expected_count> <agg_result>
+# VERIFY_RUBRIC_ITEMS 로 주입한 항목 수(expected)보다 실제 [ITEM-k] 채점 건수가
+# 적으면, 누락 번호를 "ITEM-k: NG (채점 누락)"으로 합성해 FAIL 로 강제한다 —
+# "약한 모델도 항목별 채점은 안정적, 판정은 스크립트가"라는 기존 원칙의 연장.
+# stdout: 병합된 agg 결과 (누락 없으면 원본 agg 그대로).
+_verify_rubric_missing_guard() {
+  local soul_output="$1" expected="$2" agg="$3"
+  [ "$expected" -le 0 ] && { printf '%s' "$agg"; return 0; }
+
+  local seen
+  seen=$(printf '%s\n' "$soul_output" | grep -oE '\[ITEM-[0-9]+:' | grep -oE '[0-9]+' | sort -un)
+
+  local missing="" k=1
+  while [ "$k" -le "$expected" ]; do
+    if ! printf '%s\n' "$seen" | grep -qx "$k"; then
+      if [ -z "$missing" ]; then
+        missing="ITEM-${k}: NG (채점 누락)"
+      else
+        missing="${missing} | ITEM-${k}: NG (채점 누락)"
+      fi
+    fi
+    k=$((k + 1))
+  done
+
+  [ -z "$missing" ] && { printf '%s' "$agg"; return 0; }
+
+  case "$agg" in
+    FAIL*) printf 'FAIL %s | %s' "${agg#FAIL }" "$missing" ;;
+    *)     printf 'FAIL %s' "$missing" ;;
+  esac
+}
+
+# ─────────────────────────────────────────────────────────
 # 공개 함수: verify_run
 # ─────────────────────────────────────────────────────────
 # verify_run <target_description> [verifier_soul]
@@ -395,6 +430,19 @@ verify_run() {
       # 루브릭 모드 (P1-3, 기본 on) — GOLEM_VERIFY_RUBRIC=0 이면 구 총평 프롬프트
       local rubric_on="${GOLEM_VERIFY_RUBRIC:-1}"
       local verifier_prompt
+      # B-5 — 사전 계약 항목(VERIFY_RUBRIC_ITEMS, \n join 평문) 존재 시 채점
+      # 절차 1을 "자체 분해"에서 "주어진 항목 그대로 채점"으로 교체한다.
+      # 미설정 시 기존 동작과 바이트 동일(킬스위치 별도 불요 — env 부재가 곧 off).
+      local _vr_expected_count=0 _vr_step1
+      if [ -n "${VERIFY_RUBRIC_ITEMS:-}" ]; then
+        _vr_expected_count=$(printf '%s\n' "$VERIFY_RUBRIC_ITEMS" | grep -c '[^[:space:]]')
+        _vr_step1="1. 아래는 분해 시점에 합의된 채점 항목이다. 항목을 추가·삭제·재해석하지 말고, 주어진
+   순서 그대로 각 항목만 채점하라 (번호는 아래 목록의 번호와 정확히 일치시켜라):
+$(printf '%s\n' "$VERIFY_RUBRIC_ITEMS" | nl -ba -s'. ' | sed 's/^[[:space:]]*//')"
+      else
+        _vr_step1="1. 검증 대상의 성공 기준을 검증 가능한 구체 항목 2~6개로 분해하세요"
+      fi
+
       if [ "$rubric_on" != "0" ]; then
         verifier_prompt="당신은 독립적인 검증자입니다. 저자와 다른 SOUL로서 아래 작업 결과를 공정하게 심판하세요.
 
@@ -404,7 +452,7 @@ verify_run() {
   ${test_detail}
 
 채점 절차 (루브릭 — 종합 판정 금지, 항목별 채점만):
-1. 검증 대상의 성공 기준을 검증 가능한 구체 항목 2~6개로 분해하세요
+${_vr_step1}
 2. 각 항목을 한 줄에 하나씩, 정확히 아래 대괄호 형식으로 채점하세요 (번호는 1부터
    시작하는 실제 항목 순번 숫자를 넣으세요 — 아래 형식 예시의 '번호' 를 그대로
    출력하지 마세요):
@@ -447,6 +495,10 @@ verify_run() {
         local _vr_agg="NONE"
         if [ "$rubric_on" != "0" ]; then
           _vr_agg=$(_verify_aggregate_items "$soul_output")
+          # B-5 — 사전 계약 모드에서는 누락 항목을 NG(채점 누락)으로 강제 반영
+          if [ "$_vr_expected_count" -gt 0 ]; then
+            _vr_agg=$(_verify_rubric_missing_guard "$soul_output" "$_vr_expected_count" "$_vr_agg")
+          fi
         fi
 
         case "$_vr_agg" in

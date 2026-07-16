@@ -148,10 +148,18 @@ mission_run() {
       # C-2 턴 예산 산정 — 스텝 규모 기반 캡 (킬스위치 GOLEM_TURN_BUDGET=0)
       step_turns=$(_mission_step_budget "$soul" "$task")
 
-      # 초기 프롬프트 — 직전 검증 실패 피드백이 있으면 주입
+      # 초기 프롬프트 — B-5 사전 계약 rubric 주입 후, 직전 검증 실패 피드백을 그 위에 연장
+      local rubric_items
+      rubric_items=$(mission_task_rubric "$id" "$idx")
       prompt="$task"
-      if [ -n "$last_failure" ]; then
+      if [ -n "$rubric_items" ]; then
         prompt="${task}
+
+[채점 계약 — 완료 시 아래 항목 그대로 검증된다. 제출 전 각 항목 충족을 스스로 확인하고 산출물에 근거를 남겨라]
+$(printf '%s\n' "$rubric_items" | nl -ba -s'. ' | sed 's/^[[:space:]]*//')"
+      fi
+      if [ -n "$last_failure" ]; then
+        prompt="${prompt}
 
 [직전 검증 실패 피드백 — 이 사유를 해소하라]
 ${last_failure}"
@@ -192,9 +200,30 @@ ${last_failure}"
     done
 
     # ── verify 게이트: author≠verifier 코드 가드는 verify.sh 가 강제 ──────
+    # B-5 ④ — verify 는 스텝 단위가 아니라 사이클당 1회(미션 단위)라, 전 스텝의
+    # rubric 을 idx 순서로 합집합해 (task N) 접미로 귀속 표시 후 주입한다.
+    local rubric_union="" _t_idx=0 _r_items _r_item
+    while [ "$_t_idx" -lt "$total" ]; do
+      _r_items=$(mission_task_rubric "$id" "$_t_idx")
+      if [ -n "$_r_items" ]; then
+        while IFS= read -r _r_item; do
+          [ -z "$_r_item" ] && continue
+          if [ -z "$rubric_union" ]; then
+            rubric_union="${_r_item} (task ${_t_idx})"
+          else
+            rubric_union="${rubric_union}
+${_r_item} (task ${_t_idx})"
+          fi
+        done <<EOF
+$_r_items
+EOF
+      fi
+      _t_idx=$((_t_idx + 1))
+    done
+
     echo "[mission] ── verify (author=${last_soul:-?}, verifier=${verifier_soul})"
     local v_rc=0 v_out=""
-    if v_out=$(VERIFY_AUTHOR_SOUL="$last_soul" verify_run "미션 '${goal}' — 성공 기준: ${criteria}" "$verifier_soul"); then
+    if v_out=$(VERIFY_AUTHOR_SOUL="$last_soul" VERIFY_RUBRIC_ITEMS="$rubric_union" verify_run "미션 '${goal}' — 성공 기준: ${criteria}" "$verifier_soul"); then
       v_rc=0
     else
       v_rc=$?

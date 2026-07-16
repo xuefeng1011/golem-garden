@@ -222,14 +222,22 @@ mission_set_tasks_json() {
   local json
   if [ -f "$src" ]; then json=$(cat "$src"); else json="$src"; fi
 
-  local line task_raw task t_esc
+  local line task_raw task t_esc rubric_items rubric_field
   local tasks_json="[" first=true idx=0 checklist=""
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
+    rubric_field=""
     case "$line" in
-      '{'*) task_raw=$(_json_get_string "$line" task) ;;
+      '{'*)
+        task_raw=$(_json_get_string "$line" task)
+        # B-5: step 객체에 rubric 배열이 있으면 함께 보존 (없으면 키 자체 생략)
+        rubric_items=$(_json_get_string_array "$line" rubric)
+        if [ -n "$rubric_items" ]; then
+          rubric_field=",\"rubric\":\"$(_json_escape "$rubric_items")\""
+        fi
+        ;;
       '"'*) task_raw="${line#\"}"; task_raw="${task_raw%\"}" ;;
       *) continue ;;
     esac
@@ -238,7 +246,7 @@ mission_set_tasks_json() {
     task=$(_json_unescape "$task_raw")
     t_esc=$(_json_escape "$task")
     if [ "$first" = true ]; then first=false; else tasks_json="${tasks_json},"; fi
-    tasks_json="${tasks_json}{\"idx\":${idx},\"task\":\"${t_esc}\",\"soul\":\"\",\"status\":\"pending\"}"
+    tasks_json="${tasks_json}{\"idx\":${idx},\"task\":\"${t_esc}\",\"soul\":\"\",\"status\":\"pending\"${rubric_field}}"
     checklist="${checklist}- [ ] $(printf '%s' "$task" | tr '\n' ' ')
 "
     idx=$((idx + 1))
@@ -293,11 +301,14 @@ mission_task() {
   local checklist=""
   while IFS= read -r obj; do
     [ -z "$obj" ] && continue
-    local o_idx o_task_raw o_soul_raw o_status o_task_plain o_status_out o_soul_out
+    local o_idx o_task_raw o_soul_raw o_status o_task_plain o_status_out o_soul_out o_rubric_raw
     o_idx=$(grep -o '"idx":[0-9]*' <<<"$obj" | sed 's/"idx"://')
     o_task_raw=$(_json_get_string "$obj" task)
     o_soul_raw=$(_json_get_string "$obj" soul)
     o_status=$(_json_scalar "$obj" status)
+    # B-5: rubric 은 idx/status 대상이 아니어도 그대로 보존해야 한다 —
+    # 빼먹으면 status 갱신 1회마다 rubric 이 증발한다 (원본 설계 §2 경고).
+    o_rubric_raw=$(_json_get_string "$obj" rubric)
     o_task_plain=$(_json_unescape "$o_task_raw")
     if [ "$o_idx" = "$idx" ]; then
       o_status_out="$status"
@@ -309,11 +320,14 @@ mission_task() {
     if [ "$first" = true ]; then first=false; else tasks_json="${tasks_json},"; fi
     # task/soul 은 이미 RAW(이스케이프된) 값 — _json_escape 재적용 시 이중
     # 이스케이프되므로 디코드한 plain 값을 다시 _json_escape 한다.
-    local task_re soul_re
+    local task_re soul_re rubric_field=""
     task_re=$(_json_escape "$o_task_plain")
     soul_re=$(_json_escape "$(_json_unescape "$o_soul_out")")
-    tasks_json="${tasks_json}{\"idx\":${o_idx},\"task\":\"${task_re}\",\"soul\":\"${soul_re}\",\"status\":\"${o_status_out}\"}"
-  done < <(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' <<<"$line")
+    if [ -n "$o_rubric_raw" ]; then
+      rubric_field=",\"rubric\":\"$(_json_escape "$(_json_unescape "$o_rubric_raw")")\""
+    fi
+    tasks_json="${tasks_json}{\"idx\":${o_idx},\"task\":\"${task_re}\",\"soul\":\"${soul_re}\",\"status\":\"${o_status_out}\"${rubric_field}}"
+  done < <(grep -oE '\{"idx":[0-9]+,"task":"([^"\\]|\\.)*","soul":"([^"\\]|\\.)*","status":"[^"]*"(,"rubric":"([^"\\]|\\.)*")?\}' <<<"$line")
   tasks_json="${tasks_json}]"
 
   _mission_rewrite_tasks "$mdir" "$tasks_json"
@@ -331,8 +345,35 @@ mission_task() {
     mark="[ ]"
     [ "$o_status" = "done" ] && mark="[x]"
     printf -- '- %s %s\n' "$mark" "$o_task_plain" >> "$tmp"
-  done < <(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' "$state")
+  done < <(grep -oE '\{"idx":[0-9]+,"task":"([^"\\]|\\.)*","soul":"([^"\\]|\\.)*","status":"[^"]*"(,"rubric":"([^"\\]|\\.)*")?\}' "$state")
   mv "$tmp" "$spec"
+}
+
+# mission_task_rubric <id> <idx> — B-5 사전 계약 rubric 조회.
+# state.json 에서 해당 idx 객체를 찾아 rubric 항목을 항목 1개=1줄로 낸다.
+# 부재(레거시 태스크 포함) 시 빈 출력 + return 0.
+mission_task_rubric() {
+  local id="$1" idx="$2"
+  local mdir
+  mdir=$(_mission_resolve "$id")
+  [ -z "$mdir" ] && return 0
+  case "$idx" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+
+  local state="${mdir}/state.json"
+  [ -f "$state" ] || return 0
+  local line obj
+  line=$(head -1 "$state")
+
+  obj=$(grep -oE '\{"idx":'"${idx}"',"task":"([^"\\]|\\.)*","soul":"([^"\\]|\\.)*","status":"[^"]*"(,"rubric":"([^"\\]|\\.)*")?\}' <<<"$line" | head -1)
+  [ -z "$obj" ] && return 0
+
+  local o_rubric_raw
+  o_rubric_raw=$(_json_get_string "$obj" rubric)
+  [ -z "$o_rubric_raw" ] && return 0
+
+  _json_unescape "$o_rubric_raw"
 }
 
 # 태스크 진행도 n/m 계산 → stdout "done total"
@@ -367,7 +408,7 @@ mission_status() {
     st=$(_json_scalar "$obj" status)
     [ -z "$sl" ] && sl="-"
     printf "  [%s] %-10s %-12s %s\n" "$i" "$st" "$sl" "$tk"
-  done < <(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' "$state")
+  done < <(grep -oE '\{"idx":[0-9]+,"task":"([^"\\]|\\.)*","soul":"([^"\\]|\\.)*","status":"[^"]*"(,"rubric":"([^"\\]|\\.)*")?\}' "$state")
   local prog
   prog=$(_mission_progress "$state")
   echo "  진행도: ${prog% *}/${prog#* }"
@@ -432,7 +473,7 @@ mission_next() {
       break
     fi
   done <<EOF
-$(grep -o '{"idx":[0-9]*,"task":"\([^"\\]\|\\.\)*","soul":"\([^"\\]\|\\.\)*","status":"[^"]*"}' "$state")
+$(grep -oE '\{"idx":[0-9]+,"task":"([^"\\]|\\.)*","soul":"([^"\\]|\\.)*","status":"[^"]*"(,"rubric":"([^"\\]|\\.)*")?\}' "$state")
 EOF
 
   if [ "$found" = false ]; then echo "none"; fi

@@ -1298,6 +1298,69 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+# ─────────────────────────────────────────────────────────
+# B-5 — rubric 배열 파싱/검증 (_fc_get_rubric, flow_validate_steps 관대 소비)
+# ─────────────────────────────────────────────────────────
+
+@test "B-5 flow: _fc_get_rubric — 정상 항목 2개, 쉼표 보존" {
+  run _fc_get_rubric '{"id":"s1","rubric":["a.sh 존재, 확인","bash tests/bats/run.sh 가 exit 0"]}'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"a.sh 존재, 확인"* ]]
+  [[ "$output" == *"bash tests/bats/run.sh 가 exit 0"* ]]
+}
+
+@test "B-5 flow: _fc_get_rubric — 항목에 대괄호 포함 시 필드 전체 폐기 + WARN" {
+  # WARN 은 stderr — run 기본 병합이면 output 이 비지 않으므로 분리 캡처
+  run --separate-stderr _fc_get_rubric '{"id":"s1","rubric":["foo[bar] 확인"]}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"[WARN]"* ]]
+}
+
+@test "B-5 flow: _fc_get_rubric — 항목에 리터럴 },{ 포함 시 직접 거부 (Pydantic 미러, 파편감지 비의존)" {
+  run --separate-stderr _fc_get_rubric '{"id":"s1","rubric":["x},{y 확인"]}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"[WARN]"* ]]
+}
+
+@test "B-5 flow: _fc_get_rubric — rubric 부재 시 빈 출력" {
+  run _fc_get_rubric '{"id":"s1","task":"t"}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "B-5 flow: rubric 대괄호 위반 — step 은 생존(관대 소비), flow_validate_steps 는 여전히 통과" {
+  _mk_steps <<'EOF'
+[
+  {"id": "s1", "soul": "zen", "task": "ok task", "deps": [], "rubric": ["foo[bar] 위반"]}
+]
+EOF
+  run flow_validate_steps < "$TEST_PROJECT/steps.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "B-5 flow: rubric 항목에 리터럴 },{ 포함 — 기존 파편 감지로 전체 거부(WARN 과 별개)" {
+  _mk_steps <<'EOF'
+[
+  {"id": "s1", "soul": "zen", "task": "t1", "deps": [], "rubric": ["broken},{ 주입"]},
+  {"id": "s2", "soul": "zen", "task": "t2", "deps": []}
+]
+EOF
+  run flow_validate_steps < "$TEST_PROJECT/steps.json"
+  [ "$status" -ne 0 ]
+}
+
+@test "B-5 flow: 골든 케이스 — valid-rubric/invalid-rubric-brace 도 기존 게이트로 커버" {
+  local rc
+  rc=0
+  flow_validate_steps < "${GOLEM_ROOT}/tests/golden/flow-cases/valid-rubric.json" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ]
+  rc=0
+  flow_validate_steps < "${GOLEM_ROOT}/tests/golden/flow-cases/invalid-rubric-brace.json" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ]
+}
+
 @test "flow: goto 런타임 — 존재하지 않는 target 이면 abort (침묵 continue 금지)" {
   _mk_steps <<'EOF'
 [

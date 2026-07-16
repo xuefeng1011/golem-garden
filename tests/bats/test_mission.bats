@@ -736,3 +736,55 @@ _source_mission() {
   run mission_set_tasks_json "$id" 'not-json'
   [ "$status" -eq 1 ]
 }
+
+# ─────────────────────────────────────────────────────────
+# B-5 — rubric 사전 계약 저장·왕복(set-tasks-json → state → 조회)
+# ─────────────────────────────────────────────────────────
+
+@test "mission: set-tasks-json — rubric 배열 저장 + mission_task_rubric 조회" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal7" "" "" "")
+  run mission_set_tasks_json "$id" '[{"task":"API 구현","rubric":["tests/bats/test_x.bats 에 케이스 2개, 이상","bash tests/bats/run.sh 가 exit 0"]},{"task":"rubric 없는 태스크"}]'
+  [ "$status" -eq 0 ]
+
+  run mission_task_rubric "$id" 0
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tests/bats/test_x.bats 에 케이스 2개, 이상"* ]]
+  [[ "$output" == *"bash tests/bats/run.sh 가 exit 0"* ]]
+
+  run mission_task_rubric "$id" 1
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "mission: mission_task 로 status 갱신 1회 후에도 rubric 이 증발하지 않는다 (핵심 회귀)" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal8" "" "" "")
+  mission_set_tasks_json "$id" '[{"task":"API 구현","rubric":["파일 존재 확인","테스트 통과"]}]' >/dev/null
+
+  mission_task "$id" 0 in_progress ryn >/dev/null
+  run mission_task_rubric "$id" 0
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"파일 존재 확인"* ]]
+  [[ "$output" == *"테스트 통과"* ]]
+
+  # 두 번째 갱신(done) 이후에도 유지되어야 한다
+  mission_task "$id" 0 done ryn >/dev/null
+  run mission_task_rubric "$id" 0
+  [[ "$output" == *"파일 존재 확인"* ]]
+  [[ "$output" == *"테스트 통과"* ]]
+  grep -q '"status":"done"' "${MISSION_DIR}/${id}/state.json"
+}
+
+@test "mission: rubric 없는 레거시 태스크 — mission_task_rubric 빈 출력 (회귀)" {
+  _source_mission
+  local id
+  id=$(mission_init "json goal9" "" "" "")
+  mission_set_tasks "$id" "레거시 태스크 A" >/dev/null
+  mission_task "$id" 0 done ryn >/dev/null
+  run mission_task_rubric "$id" 0
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}

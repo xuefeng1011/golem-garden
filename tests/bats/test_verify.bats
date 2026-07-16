@@ -152,6 +152,57 @@ _source_verify() {
   [[ "$output" == *"경계값 테스트 누락"* ]]
 }
 
+# ─────────────────────────────────────────────────────────
+# B-5 — VERIFY_RUBRIC_ITEMS 사전 계약 채점 (분해 시점 확정 항목)
+# ─────────────────────────────────────────────────────────
+
+@test "B-5 verify: VERIFY_RUBRIC_ITEMS 설정 — 프롬프트에 사전 계약 항목 그대로 주입" {
+  _source_verify
+  agent_run() {
+    printf '%s\n' "$2" > "$TEST_PROJECT/.judge_prompt"
+    printf '[ITEM-1: OK]\n[ITEM-2: OK]\n'
+    return 0
+  }
+  VERIFY_RUBRIC_ITEMS="a.sh 존재 확인
+bash tests/bats/run.sh 가 exit 0" run verify_run "대상" "zen"
+  [ "$status" -eq 0 ]
+  grep -q "분해 시점에 합의된 채점 항목" "$TEST_PROJECT/.judge_prompt"
+  grep -q "a.sh 존재 확인" "$TEST_PROJECT/.judge_prompt"
+  grep -q "bash tests/bats/run.sh 가 exit 0" "$TEST_PROJECT/.judge_prompt"
+}
+
+@test "B-5 verify: 사전 계약 항목 전부 채점 — PASS" {
+  _source_verify
+  agent_run() { printf '[ITEM-1: OK]\n[ITEM-2: OK]\n'; return 0; }
+  VERIFY_RUBRIC_ITEMS="항목1
+항목2" run verify_run "대상" "zen"
+  [ "$status" -eq 0 ]
+}
+
+@test "B-5 verify: 사전 계약 항목 수 < 실제 채점 건수 — 누락 항목 NG 로 합성해 FAIL" {
+  _source_verify
+  # 항목 2개를 주입했는데 SOUL 이 1개만 채점 — ITEM-2 누락
+  agent_run() { printf '[ITEM-1: OK]\n'; return 0; }
+  VERIFY_RUBRIC_ITEMS="항목1
+항목2" run verify_run "대상" "zen"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ITEM-2"* ]]
+  [[ "$output" == *"채점 누락"* ]]
+}
+
+@test "B-5 verify: VERIFY_RUBRIC_ITEMS 미설정 — 기존 자체 분해 프롬프트 그대로 (회귀)" {
+  _source_verify
+  agent_run() {
+    printf '%s\n' "$2" > "$TEST_PROJECT/.judge_prompt"
+    printf '[ITEM-1: OK]\n[ITEM-2: OK]\n'
+    return 0
+  }
+  run verify_run "대상" "zen"
+  [ "$status" -eq 0 ]
+  grep -q "검증 대상의 성공 기준을 검증 가능한 구체 항목 2~6개로 분해하세요" "$TEST_PROJECT/.judge_prompt"
+  ! grep -q "분해 시점에 합의된 채점 항목" "$TEST_PROJECT/.judge_prompt"
+}
+
 @test "verify: 항목 0건 + 레거시 [VERDICT: PASS] — 폴백으로 PASS" {
   _source_verify
   agent_run() { printf '판단 요약입니다.\n[VERDICT: PASS]\n이유: 기준 충족\n'; return 0; }
