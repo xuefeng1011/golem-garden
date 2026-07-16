@@ -186,6 +186,111 @@ EOF
 }
 
 # ─────────────────────────────────────────────────────────
+# f) P2 rubric 확장 — 프로토콜 준수 / 자가 반박 (SOUL 원문 채점, verify.sh와 별개)
+# ─────────────────────────────────────────────────────────
+
+@test "eval: _eval_rubric_protocol — 파일 선언 + 테스트 결과 원문 모두 있으면 pass" {
+  _source_eval
+  local out
+  out=$(cat <<'EOF'
+수정할 파일: lib/foo.sh
+테스트 실행 결과: 3/3 통과
+EOF
+)
+  run _eval_rubric_protocol "$out"
+  [ "$status" -eq 0 ]
+  [ "$output" = "pass" ]
+}
+
+@test "eval: _eval_rubric_protocol — 파일 선언만 있고 테스트 결과 없으면 fail" {
+  _source_eval
+  run _eval_rubric_protocol "수정할 파일: lib/foo.sh 만 고쳤습니다."
+  [ "$status" -eq 0 ]
+  [ "$output" = "fail" ]
+}
+
+@test "eval: _eval_rubric_protocol — 둘 다 없으면 fail" {
+  _source_eval
+  run _eval_rubric_protocol "그냥 했습니다."
+  [ "$status" -eq 0 ]
+  [ "$output" = "fail" ]
+}
+
+@test "eval: _eval_rubric_selfcheck — 자가 반박 + 번호 항목 3개 이상이면 pass" {
+  _source_eval
+  local out
+  out=$(cat <<'EOF'
+자가 반박
+1. 파일 누락 가능성 — grep으로 확인, 없음
+2. 테스트 오탐 가능성 — 재실행으로 확인, 없음
+3. 회귀 가능성 — 전체 스위트 재실행으로 확인, 없음
+EOF
+)
+  run _eval_rubric_selfcheck "$out"
+  [ "$status" -eq 0 ]
+  [ "$output" = "pass" ]
+}
+
+@test "eval: _eval_rubric_selfcheck — 자가 반박 섹션은 있으나 항목 2개뿐이면 fail" {
+  _source_eval
+  local out
+  out=$(cat <<'EOF'
+자가 반박
+1. 파일 누락 가능성
+2. 테스트 오탐 가능성
+EOF
+)
+  run _eval_rubric_selfcheck "$out"
+  [ "$status" -eq 0 ]
+  [ "$output" = "fail" ]
+}
+
+@test "eval: _eval_rubric_selfcheck — 섹션 자체가 없으면 fail" {
+  _source_eval
+  run _eval_rubric_selfcheck "1. 아무거나 2. 아무거나 3. 아무거나"
+  [ "$status" -eq 0 ]
+  [ "$output" = "fail" ]
+}
+
+@test "eval: eval_run — protocol/selfcheck 모두 충족하는 agent → results.jsonl에 pass 기록" {
+  _source_eval
+  agent_run() {
+    printf '{"task":"eval","result":"success","files_changed":0}\n' > log.jsonl
+    cat <<'EOF'
+수정할 파일: log.jsonl
+테스트 실행 결과: 1/1 통과
+
+자가 반박
+1. 확인1 — grep으로 확인, 문제없음
+2. 확인2 — 재실행으로 확인, 문제없음
+3. 확인3 — 스키마 검증으로 확인, 문제없음
+EOF
+    echo "<usage> soul=mock model=mock result=success tokens_in=1 tokens_out=2 tokens_cache=0 duration_ms=10 timeout=0 max_seconds=300 cost_cap=disabled"
+  }
+  run eval_run --task jsonl-append --soul mock --model mocked
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "protocol=pass" ]]
+  [[ "$output" =~ "selfcheck=pass" ]]
+  local rf="$TEST_PROJECT/.golem/eval/results.jsonl"
+  grep -q '"protocol":"pass"' "$rf"
+  grep -q '"selfcheck":"pass"' "$rf"
+}
+
+@test "eval: eval_run — protocol/selfcheck 미충족 agent → results.jsonl에 fail 기록" {
+  _source_eval
+  agent_run() {
+    printf '{"task":"eval","result":"success","files_changed":0}\n' > log.jsonl
+    echo "그냥 했습니다."
+    echo "<usage> soul=mock model=mock result=success tokens_in=1 tokens_out=2 tokens_cache=0 duration_ms=10 timeout=0 max_seconds=300 cost_cap=disabled"
+  }
+  run eval_run --task jsonl-append --soul mock --model mocked
+  [ "$status" -eq 0 ]
+  local rf="$TEST_PROJECT/.golem/eval/results.jsonl"
+  grep -q '"protocol":"fail"' "$rf"
+  grep -q '"selfcheck":"fail"' "$rf"
+}
+
+# ─────────────────────────────────────────────────────────
 # e) 채점기 CRLF / 경계 강화 회귀 테스트
 # ─────────────────────────────────────────────────────────
 

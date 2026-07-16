@@ -12,25 +12,96 @@ source "${GOLEM_ROOT}/lib/mission.sh"
 
 # ═══════════════════════════════════════════════════════
 # _triage_explore_files <task_text>
-# 태스크에서 4자+ 고유 단어 최대 5개를 뽑아 explore_files 로 히트 파일을
-# 조회한다. explore/grep을 건드리는 유일한 지점 — bats에서는 이 함수 하나만
+# 한글 태스크 보정: 한글 조사가 붙은 단어는 explore 매칭이 안 되므로,
+# 경로/파일명 패턴(lib/flow.sh 등)과 영문 식별자(4자+)를 우선 키워드로 뽑는다.
+# 태스크에 실존하는 파일 경로가 직접 등장하면 그 파일을 최소 히트로 강제 포함한다.
+# explore_files 의 grep 폴백 백엔드는 BRE라 "|" 가 리터럴 취급되어 OR 조회가
+# 깨지므로(alternation 미지원), 키워드별로 개별 조회 후 병합한다.
+# explore/grep을 건드리는 유일한 지점 — bats에서는 이 함수 하나만
 # 오버라이드하면 결정론 격리가 된다.
-# stdout: 히트 파일 경로, 줄당 1개 (explore_files가 이미 파일 단위로 dedup).
+# stdout: 히트 파일 경로, 줄당 1개, 중복 제거.
 # 호출부가 라인 수를 세어 고유 파일 수로 사용한다.
 # ═══════════════════════════════════════════════════════
 _triage_explore_files() {
   local task_text="$1"
-  local keywords query
+  local project_root="${GOLEM_PROJECT:-${GOLEM_ROOT}}"
+  local tok
+  local -a path_kw=() ident_kw=() keywords=()
 
-  keywords=$(printf '%s' "$task_text" | tr '[:space:]' '\n' \
-    | awk 'length($0)>=4 && !seen[$0]++ {print}' | head -5)
+  while IFS= read -r tok; do
+    [ -n "$tok" ] && path_kw+=("$tok")
+  done < <(printf '%s' "$task_text" | grep -oE '[A-Za-z0-9_./-]+\.[A-Za-z]{2,5}')
 
-  [ -z "$keywords" ] && return 0
+  while IFS= read -r tok; do
+    [ -n "$tok" ] && ident_kw+=("$tok")
+  done < <(printf '%s' "$task_text" | grep -oE '[A-Za-z_][A-Za-z0-9_]{3,}')
 
-  query=$(printf '%s' "$keywords" | awk 'BEGIN{ORS="|"} {print}' | sed 's/|$//')
+  local seen_kw=$'\n'
+  for tok in "${path_kw[@]}" "${ident_kw[@]}"; do
+    case "$seen_kw" in *$'\n'"$tok"$'\n'*) continue ;; esac
+    seen_kw="${seen_kw}${tok}"$'\n'
+    keywords+=("$tok")
+    [ "${#keywords[@]}" -ge 5 ] && break
+  done
 
-  explore_files "$query" "${GOLEM_PROJECT:-${GOLEM_ROOT}}" 2>/dev/null \
-    | awk '/matches/ { sub(/^ *[0-9]+ matches +/, ""); print }'
+  # 영문 토큰이 전혀 없으면 기존 방식(공백 분리 4자+)으로 폴백
+  if [ "${#keywords[@]}" -eq 0 ]; then
+    while IFS= read -r tok; do
+      keywords+=("$tok")
+    done < <(printf '%s' "$task_text" | tr '[:space:]' '\n' \
+      | awk 'length($0)>=4 && !seen[$0]++ {print}' | head -5)
+  fi
+
+  [ "${#keywords[@]}" -eq 0 ] && return 0
+
+  local merged=$'\n' hit
+  for tok in "${path_kw[@]}"; do
+    [ -f "${project_root}/${tok}" ] || continue
+    hit="${project_root}/${tok}"
+    case "$merged" in *$'\n'"$hit"$'\n'*) continue ;; esac
+    merged="${merged}${hit}"$'\n'
+    printf '%s\n' "$hit"
+  done
+
+  for tok in "${keywords[@]}"; do
+    while IFS= read -r hit; do
+      [ -z "$hit" ] && continue
+      # 런타임 로그/벤더 산출물 노이즈 제외 — grep 폴백은 이런 경로를
+      # 배제하지 않아 "retry" 류 흔한 단어가 .golem/runs, .venv 등에서
+      # 대량 오탐되어 files 임계를 왜곡한다.
+      case "$hit" in
+        */.golem/runs/*|*/.venv/*|*/node_modules/*|*/.git/*|*/dist/*|*/__pycache__/*)
+          continue ;;
+      esac
+      case "$merged" in *$'\n'"$hit"$'\n'*) continue ;; esac
+      merged="${merged}${hit}"$'\n'
+      printf '%s\n' "$hit"
+    done < <(explore_files "$tok" "$project_root" 2>/dev/null \
+      | awk '/matches/ { sub(/^ *[0-9]+ matches +/, ""); print }')
+  done
+}
+
+# ═══════════════════════════════════════════════════════
+# _triage_explicit_paths <task_text>
+# 태스크에 슬래시+확장자로 명시된 경로(예: lib/flow.sh, web/gateway/x.py)만
+# 추출한다. explore 히트는 "식별자가 언급된 파일 수"(중심성)를 재는 것이지
+# 변경 범위가 아니어서, 단일/소수 파일을 명시한 사소 태스크가 문서/테스트
+# 전반의 언급 때문에 과대 판정(T2)되는 부작용이 있었다. 명시 경로가 있으면
+# 이 목록만이 files/domains 산정의 근거가 된다(explore 미사용, 결정론).
+# stdout: 고유 경로 원문, 줄당 1개. 명시 경로가 없으면 빈 출력.
+# ═══════════════════════════════════════════════════════
+_triage_explicit_paths() {
+  local task_text="$1"
+  local tok
+  local seen=$'\n'
+
+  while IFS= read -r tok; do
+    [ -n "$tok" ] || continue
+    case "$tok" in */*) : ;; *) continue ;; esac
+    case "$seen" in *$'\n'"$tok"$'\n'*) continue ;; esac
+    seen="${seen}${tok}"$'\n'
+    printf '%s\n' "$tok"
+  done < <(printf '%s' "$task_text" | grep -oE '[A-Za-z0-9_./-]+\.[A-Za-z]{2,5}')
 }
 
 # ═══════════════════════════════════════════════════════
@@ -122,11 +193,21 @@ _triage_ambiguity() {
 # ═══════════════════════════════════════════════════════
 triage_run() {
   local task_text="$1"
-  local file_list files domains enum ambiguity tier
+  local file_list files domains enum ambiguity tier explicit_list
 
-  file_list=$(_triage_explore_files "$task_text")
-  files=$(printf '%s\n' "$file_list" | grep -c '[^[:space:]]')
-  domains=$(_triage_domain_count "$file_list")
+  explicit_list=$(_triage_explicit_paths "$task_text")
+
+  if [ -n "$(printf '%s' "$explicit_list" | tr -d '[:space:]')" ]; then
+    # 명시 경로 우선 — explore 히트(중심성)는 쓰지 않는다.
+    files=$(printf '%s\n' "$explicit_list" | grep -c '[^[:space:]]')
+    _triage_has_keyword "$task_text" "테스트" && files=$((files + 1))
+    domains=$(_triage_domain_count "$explicit_list")
+  else
+    file_list=$(_triage_explore_files "$task_text")
+    files=$(printf '%s\n' "$file_list" | grep -c '[^[:space:]]')
+    domains=$(_triage_domain_count "$file_list")
+  fi
+
   enum=$(_triage_enum_score "$task_text")
   ambiguity=$(_triage_ambiguity "$task_text")
 

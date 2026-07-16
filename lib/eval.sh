@@ -49,9 +49,52 @@ eval_list() {
   echo "총 ${found}개"
 }
 
+# ─────────────────────────────────────────────────────────
+# P2 rubric 확장 — verify.sh(결정론 정답 채점)와 별개로 SOUL 원문 출력(raw stdout)을
+# 채점하는 2개 항목. 채점 대상은 태스크 정답 여부가 아니라 산출물 "형식" 준수다.
+# ─────────────────────────────────────────────────────────
+
+# _eval_rubric_protocol <agent_out> → pass|fail
+# 프로토콜 준수: 영향 파일 목록 선언 + 테스트 실행 결과 원문(통과/실패 수치)이 있는가.
+_eval_rubric_protocol() {
+  local out="$1"
+  local files_ok=0 tests_ok=0
+
+  printf '%s' "$out" | grep -qE '(수정할 파일|영향 파일|파일 목록)' && files_ok=1
+  printf '%s' "$out" | grep -qE '([0-9]+[[:space:]]*/[[:space:]]*[0-9]+|tests=[0-9]+/[0-9]+|(통과|실패)[[:space:]]*[0-9]+)' && tests_ok=1
+
+  if [ "$files_ok" -eq 1 ] && [ "$tests_ok" -eq 1 ]; then
+    echo pass
+  else
+    echo fail
+  fi
+}
+
+# _eval_rubric_selfcheck <agent_out> → pass|fail
+# 자가 반박: "자가 반박" 섹션 아래 번호 매긴 항목(확인한 방식/결과) 3개 이상.
+_eval_rubric_selfcheck() {
+  local out="$1"
+
+  printf '%s' "$out" | grep -q '자가 반박' || { echo fail; return 0; }
+
+  local count
+  count=$(printf '%s\n' "$out" | awk '
+    /자가 반박/ { flag=1; next }
+    flag && /^## / { flag=0 }
+    flag && /^[0-9]+[.)]/ { n++ }
+    END { print n+0 }
+  ')
+
+  if [ "$count" -ge 3 ]; then
+    echo pass
+  else
+    echo fail
+  fi
+}
+
 # 단일 태스크 실행 — 내부 헬퍼
 # _eval_run_task <task_dir> <soul> <model>
-# stdout: "result=pass|fail duration_ms=N tokens_out=N"
+# stdout: "result=pass|fail duration_ms=N tokens_out=N protocol=pass|fail selfcheck=pass|fail"
 _eval_run_task() {
   local task_dir="$1"
   local soul="$2"
@@ -88,8 +131,13 @@ _eval_run_task() {
     result="pass"
   fi
 
+  # P2 rubric 확장 — 프로토콜 준수 / 자가 반박 (정답 여부와 별개 채점)
+  local protocol selfcheck
+  protocol=$(_eval_rubric_protocol "$out")
+  selfcheck=$(_eval_rubric_selfcheck "$out")
+
   rm -rf "$ws"
-  echo "result=${result} duration_ms=${duration_ms:-0} tokens_out=${tokens_out:-0}"
+  echo "result=${result} duration_ms=${duration_ms:-0} tokens_out=${tokens_out:-0} protocol=${protocol} selfcheck=${selfcheck}"
 }
 
 # 배치 러너
@@ -121,7 +169,7 @@ eval_run() {
   echo "=== forge eval — soul=${soul} model=${model_label} ==="
   echo ""
 
-  local d task_id line result duration tokens
+  local d task_id line result duration tokens protocol selfcheck
   local total=0 passed=0
   local date_str
   date_str=$(date +%Y-%m-%d)
@@ -139,16 +187,19 @@ eval_run() {
     result=$(printf '%s' "$line" | grep -o 'result=[a-z]*' | cut -d= -f2)
     duration=$(printf '%s' "$line" | grep -o 'duration_ms=[0-9]*' | cut -d= -f2)
     tokens=$(printf '%s' "$line" | grep -o 'tokens_out=[0-9]*' | cut -d= -f2)
+    protocol=$(printf '%s' "$line" | grep -o 'protocol=[a-z]*' | cut -d= -f2)
+    selfcheck=$(printf '%s' "$line" | grep -o 'selfcheck=[a-z]*' | cut -d= -f2)
 
     if [ "$result" = "pass" ]; then
       passed=$((passed + 1))
-      printf 'PASS (%sms)\n' "${duration:-0}"
+      printf 'PASS (%sms) protocol=%s selfcheck=%s\n' "${duration:-0}" "${protocol:-fail}" "${selfcheck:-fail}"
     else
-      printf 'FAIL (%sms)\n' "${duration:-0}"
+      printf 'FAIL (%sms) protocol=%s selfcheck=%s\n' "${duration:-0}" "${protocol:-fail}" "${selfcheck:-fail}"
     fi
 
-    printf '{"date":"%s","task":"%s","soul":"%s","model":"%s","result":"%s","duration_ms":%s,"tokens_out":%s}\n' \
+    printf '{"date":"%s","task":"%s","soul":"%s","model":"%s","result":"%s","duration_ms":%s,"tokens_out":%s,"protocol":"%s","selfcheck":"%s"}\n' \
       "$date_str" "$task_id" "$soul" "$model_label" "$result" "${duration:-0}" "${tokens:-0}" \
+      "${protocol:-fail}" "${selfcheck:-fail}" \
       >> "$results_file"
   done
 

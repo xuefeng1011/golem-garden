@@ -51,7 +51,9 @@ load "test_helper"
   _triage_explore_files() {
     printf '%s\n' "lib/mission.sh" "lib/verify.sh" "lib/budget.sh" "lib/insights.sh"
   }
-  run triage_run "lib/mission.sh 와 lib/verify.sh 를 함께 수정해 스텝별 rubric 필드를 추가하라"
+  # 슬래시+확장자 명시 경로가 없어야 explore(mock) 경로를 탄다 — 명시 경로가
+  # 있으면 files/domains 가 그 경로만으로 결정론 계산돼 mock 이 무시된다.
+  run triage_run "mission.sh 와 verify.sh 를 함께 수정해 스텝별 rubric 필드를 추가하라"
   [ "$status" -eq 0 ]
   [[ "$output" == *"tier=T1"* ]]
 }
@@ -61,7 +63,7 @@ load "test_helper"
   _triage_explore_files() {
     printf '%s\n' "lib/triage.sh" "lib/explore.sh" "tests/bats/test_triage.bats"
   }
-  run triage_run "lib/triage.sh 신설 + tests/bats/test_triage.bats 작성"
+  run triage_run "triage.sh 신설 + test_triage.bats 작성"
   [ "$status" -eq 0 ]
   [[ "$output" == *"tier=T1"* ]]
 }
@@ -82,7 +84,7 @@ load "test_helper"
     printf '%s\n' "lib/skill-tree.sh" "lib/rank-system.sh" "lib/chemistry.sh" \
       "lib/achievement.sh" "tests/bats/test_skill_tree.bats" "forge.sh"
   }
-  run triage_run "lib/skill-tree.sh 에 함수 5개 추가하고 tests/bats/test_skill_tree.bats 갱신, forge.sh dispatch 도 연결"
+  run triage_run "skill-tree.sh 에 함수 5개 추가하고 test_skill_tree.bats 갱신, forge.sh dispatch 도 연결"
   [ "$status" -eq 0 ]
   [[ "$output" == *"tier=T1"* ]]
 }
@@ -127,6 +129,72 @@ load "test_helper"
   [ "$status" -eq 0 ]
   [[ "$output" == *"tier=T2"* ]]
   [[ "$output" == *"domains=3"* ]]
+}
+
+# ─────────────────────────────────────────────────────────
+# _triage_explore_files — 실전(mock 없음): 한글 조사 + 실존 파일명 보정
+# ─────────────────────────────────────────────────────────
+
+@test "triage: _triage_explore_files 실전 — 한글 조사 붙은 태스크에서 실존 파일명 히트 ≥1" {
+  golem_load_lib triage
+  mkdir -p "$TEST_PROJECT/lib"
+  printf '_flow_retry_backoff_secs() { :; }\n' > "$TEST_PROJECT/lib/flow.sh"
+
+  run _triage_explore_files "lib/flow.sh 의 retry 기본값을 1로 바꿔라"
+  [ "$status" -eq 0 ]
+  local n
+  n=$(printf '%s\n' "$output" | grep -c '[^[:space:]]')
+  [ "$n" -ge 1 ]
+  [[ "$output" == *"lib/flow.sh"* ]]
+}
+
+@test "triage: _triage_explore_files 실전 — 태스크에 없는 파일도 실존하면 직접 포함" {
+  golem_load_lib triage
+  mkdir -p "$TEST_PROJECT/lib"
+  printf 'echo hi\n' > "$TEST_PROJECT/lib/foo.sh"
+
+  run _triage_explore_files "lib/foo.sh 를 정리해줘"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"lib/foo.sh"* ]]
+}
+
+@test "triage: 명시 경로 1개 + bats 테스트 언급 → files=2 domains=1 tier=T0 (mock 없이, 결정론)" {
+  # 과보정 회귀 테스트: lib/flow.sh 명시 태스크가 explore 중심성(문서/테스트 전반
+  # 언급) 때문에 T2로 과대 판정되던 문제. 명시 경로 우선 정책은 mock 을 타지
+  # 않으므로 golem_load_lib 만으로 결정론 검증이 가능하다.
+  golem_load_lib triage
+  run triage_run "lib/flow.sh 의 retry 기본값을 1로 바꾸고 bats 테스트 추가"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier=T0"* ]]
+  [[ "$output" == *"files=2"* ]]
+  [[ "$output" == *"domains=1"* ]]
+}
+
+@test "triage: 명시 경로 3개 + 2도메인 → tier=T1 (mock 없이, 결정론)" {
+  golem_load_lib triage
+  run triage_run "lib/mission.sh 수정과 lib/verify.sh 수정, web/gateway/src/golem_gateway/main.py 확인"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier=T1"* ]]
+  [[ "$output" == *"files=3"* ]]
+  [[ "$output" == *"domains=2"* ]]
+}
+
+@test "triage: _triage_explicit_paths — 슬래시 없는 파일명은 명시 경로로 취급 안 함" {
+  golem_load_lib triage
+  run _triage_explicit_paths "mission.sh 와 verify.sh 를 수정하라"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "triage: _triage_explicit_paths — 슬래시+확장자 경로만 중복 제거해 추출" {
+  golem_load_lib triage
+  run _triage_explicit_paths "lib/flow.sh 와 lib/flow.sh 를 보고 web/gateway/src/golem_gateway/main.py 도 봐라"
+  [ "$status" -eq 0 ]
+  local n
+  n=$(printf '%s\n' "$output" | grep -c '[^[:space:]]')
+  [ "$n" -eq 2 ]
+  [[ "$output" == *"lib/flow.sh"* ]]
+  [[ "$output" == *"web/gateway/src/golem_gateway/main.py"* ]]
 }
 
 # ─────────────────────────────────────────────────────────
@@ -276,7 +344,7 @@ EOF
   }
   agent_run() { echo "$1" >> "$TEST_PROJECT/.agent_calls"; return 0; }
 
-  run forge_do "lib/mission.sh 와 lib/verify.sh 를 함께 수정해 스텝별 rubric 필드를 추가하라"
+  run forge_do "mission.sh 와 verify.sh 를 함께 수정해 스텝별 rubric 필드를 추가하라"
   [ "$status" -eq 0 ]
   [[ "$output" == *"[TRIAGE] T1 판정"* ]]
   [[ "$output" == *"forge build:"* ]]
