@@ -132,6 +132,7 @@ web/            — 3-tier 웹 스택 (Tier B/C 도입)
 forge overview (ov)     통합 대시보드 — 팀/성과/비용/활동 한눈에
 forge-init              프로젝트 초기화 (프로젝트 분석 → SOUL 팀 구성) ※스킬
 forge run {soul} "{task}" [uuid]  엔진 네이티브 SOUL 소환 (모든 실행의 기본 단위)
+forge run --continue {run_id}  사살(타임아웃/턴캡)된 런을 체크포인트에서 이어달리기 (R-1, 슬라이스 상한 3)
 forge triage "{task}"   태스크 복잡도 판정 (결정론 점수기 — TRIAGE tier=T0/T1/T2 라인 출력)
 forge do "{task}"       자동 기어 — T0: 단일 SOUL 직행 / T1: build 권고 / T2: Nex 분해→mission 생성
 forge build: {task}     팀 빌드 (Director 분배 → 병렬 실행) ※스킬

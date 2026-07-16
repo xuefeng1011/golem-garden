@@ -318,6 +318,16 @@ case "${1:-}" in
   run)
     # 엔진 네이티브 SOUL 소환 (OMC 비의존) — lib/agent-runner.sh 의 agent_run
     # forge run <soul> <task> [session_id]
+    # R-1 — forge run --continue <run_id>: 체크포인트 승계 재소환 (사살 슬라이스 이어달리기)
+    if [ "${2:-}" = "--continue" ]; then
+      if [ -z "${3:-}" ]; then
+        echo "Usage: forge run --continue <run_id>"
+        exit 1
+      fi
+      source "${GOLEM_ROOT}/lib/agent-runner.sh"
+      agent_run_continue "$3"
+      exit $?
+    fi
     if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
       echo "Usage: forge run <soul_name> <task> [session_id]"
       exit 1

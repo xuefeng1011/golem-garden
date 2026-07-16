@@ -26,6 +26,7 @@ growth_log_append() {
   local cost_usd="${11:-0.000}"
   local model="${12:-}"
   local duration_ms="${13:-0}"
+  local slice="${14:-0}"       # R-1 — 체크포인트 슬라이스 번호 (0=해당없음, result=checkpoint/exhausted 전용)
 
   local log_file="${GROWTH_DIR}/${soul_name}.jsonl"
   local date=$(date +%Y-%m-%d)
@@ -37,6 +38,10 @@ growth_log_append() {
   model=$(_json_escape "$model")
 
   local entry="{\"date\":\"${date}\",\"task\":\"${task}\",\"result\":\"${result}\",\"files_changed\":${files_changed},\"tests_passed\":${tests_passed}"
+
+  if [ -n "$slice" ] && [ "$slice" -gt 0 ] 2>/dev/null; then
+    entry="${entry},\"slice\":${slice}"
+  fi
 
   if [ -n "$reviewer" ]; then
     entry="${entry},\"reviewer\":\"${reviewer}\",\"review_result\":\"${review_result}\""

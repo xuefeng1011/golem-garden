@@ -16,6 +16,8 @@
 
 ### R-1. 런 연속체 (Run Continuum) — "사살의 폐지"
 
+**구현됨** (2026-07-17, Ryn): `forge run --continue {run_id}` — lib/agent-runner.sh 체크포인트 기록(`_agent_checkpoint_write`/`_agent_checkpoint_read`) + growth-log `result=checkpoint/exhausted, slice={n}` 필드. bats 회귀는 후속(Zen) 예정.
+
 - **(a) 정의**: timeout/turn_cap 사살을 "실패"가 아닌 **체크포인트 정산**으로 바꾸고, 다음 슬라이스가 동일 세션(`--resume`) + 동일 worktree로 작업을 승계한다. 런의 원자성을 폐지하고 "작업 = 지속체, 런 = 슬라이스"로 재정의.
 - **(b) 왜 혁신인가**: 지금 엔진의 암묵 전제는 "런은 원자적 성공/실패"다. 그래서 1500~1800s 사살이 관례화됐고, 사살 = 산출물 소멸 = 호스트 수동 마감이다. 이 전제가 깨지면 **타임아웃이 실패 사유에서 중립 이벤트로 강등**되고, 대형 태스크를 "죽지 않을 크기로 미리 쪼개는" 부담 자체가 사라진다 — 쓰는 방식이 바뀐다. 정량 가설: **Ryn 73% → 88%+**(팀 평균 회복, 사살분이 실패에서 제외되므로), **호스트 수동 마감 0건/4주**(현재 대형 런마다 관례).
 - **(c) 실현 경로 (재사용 극대화)**: ① agent-runner 사살 경로(rc 124 / turn_cap)에서 kill 직전 `session_id + worktree 경로 + git diff --stat + 미완 요지`를 `.golem/checkpoints/{run_id}.json`으로 기록 — **P0-4의 partial 정산 로직이 이미 git 실측을 뜬다, 저장만 추가**. ② `forge run --continue {run_id}`: `--resume {session_id}` 재소환 — **`--resume` 인프라·즉사 폴백(P2-2)·recency 포인터 전부 기존**(agent-runner.sh:564-598, 756-764). ③ 격리는 기존 worktree 모듈, 반복 감시는 mission-loop 스턱 디텍터 재사용. **신규는 체크포인트 파일 포맷 + `--continue` verb 하나.**

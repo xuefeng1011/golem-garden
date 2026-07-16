@@ -425,10 +425,15 @@ agent_run() {
   local max_secs=""
 
   # 나머지 인자 파싱 (session_id, --dry-run 순서 무관)
+  # R-1 — --checkpoint-run-id/--checkpoint-slice: agent_run_continue 전용 내부 훅.
+  # 체크포인트 파일명/슬라이스 카운터를 이번 호출의 새 run_id 대신 이어받기 위함.
+  local _ar_ckpt_run_id_override="" _ar_ckpt_slice_override=""
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run) dry_run=1 ;;
+      --checkpoint-run-id) shift; _ar_ckpt_run_id_override="$1" ;;
+      --checkpoint-slice)  shift; _ar_ckpt_slice_override="$1" ;;
       *)         [ -z "$session_id" ] && session_id="$1" ;;
     esac
     shift
@@ -558,6 +563,11 @@ ${_ar_body}"
   # 런 식별자 + 시작 시각 (Phase A 트래젝토리 meta 용 — 세션 uuid 와 별개)
   local run_id
   run_id=$(_gen_uuid)
+  # R-1 — 체크포인트 연속체 식별자. --continue 로 이어달리는 경우 원본 run_id를
+  # 그대로 물려받아 같은 체크포인트 파일에 슬라이스를 누적한다.
+  local _ar_ckpt_run_id="${_ar_ckpt_run_id_override:-$run_id}"
+  local _ar_slice="${_ar_ckpt_slice_override:-1}"
+  printf '%s' "$_ar_slice" | grep -qE '^[0-9]+$' || _ar_slice=1
   local _ar_ts_start
   _ar_ts_start=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
 
@@ -655,7 +665,7 @@ ${_ar_body}"
     for a in "${argv[@]}"; do
       printf '  %q\n' "$a"
     done
-    echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled} effort=${_ar_effort:-none}"
+    echo "<usage> soul=${soul_name} model=${model_arg} tools=[${tools_csv}] session=${session_id} mode=${session_args[0]} max_seconds=${max_secs} cost_cap=${AGENT_MAX_COST_USD:-disabled} effort=${_ar_effort:-none} slice=${_ar_slice}"
     return 0
   fi
 
@@ -753,6 +763,18 @@ ${_ar_body}"
 
   _parse_stream < "$stream_file"
 
+  # R-1 — 런 연속체: 사살(벽시계 rc124 / 턴캡 kill rc125 / 턴캡 사후정산 rc1) 직후
+  # 체크포인트를 기록한다. session_id·작업 디렉토리·git diff --stat 실측·
+  # GOLEM_DONE 부분 마커 유무·태스크 원문을 남겨 다음 슬라이스(--continue)가 승계한다.
+  # 기록 실패는 기존 사살(fail) 동작으로 폴백 — 새 경로가 기존 경로를 깨지 않는다.
+  if [ "$_ar_timed_out" -eq 1 ] || [ "$_ar_turn_capped" -eq 1 ]; then
+    local _ar_ckpt_reason="turn_cap"
+    [ "$_ar_timed_out" -eq 1 ] && _ar_ckpt_reason="timeout"
+    if ! _agent_checkpoint_write "$_ar_ckpt_run_id" "$session_id" "$soul_name" "$task_text" "$_ar_ckpt_reason" "$_ar_slice"; then
+      echo "[agent-runner] WARNING: 체크포인트 기록 실패 — 기존 사살(fail) 동작으로 폴백" >&2
+    fi
+  fi
+
   # P2-2 폴백 — --resume 즉사 복구. 포인터 세션이 다른 작업 디렉토리에서
   # 생성됐거나 만료됐으면 claude 가 "No conversation found" 류로 아무 것도
   # 출력하지 않고 즉시 실패한다 (tokens 0). 이 경우 포인터를 폐기하고
@@ -803,7 +825,11 @@ ${_ar_body}"
   local result="success"
   [ "$_AR_IS_ERROR" -eq 1 ] && result="fail"
   [ "$rc" -ne 0 ] && result="fail"
-  [ "$_ar_turn_capped" -eq 1 ] && result="turn_cap"   # P1-1 — 구분 기록
+  # R-1 — 사살(벽시계/턴캡)은 더 이상 fail/turn_cap 이 아니라 checkpoint 로 정산한다
+  # (장부 오염 정화 — 사살이 실패가 아닌 중립 이벤트로 강등). slice 는 아래 growth_log_append 에서 기록.
+  if [ "$_ar_timed_out" -eq 1 ] || [ "$_ar_turn_capped" -eq 1 ]; then
+    result="checkpoint"
+  fi
 
   # P0-4 — GOLEM_DONE 완료 계약 정산. fail/turn_cap 이 이미 확정된 경우는 그대로 둔다
   # (마커 유무와 무관하게 크래시/턴캡이 더 강한 신호). 그 외에는 마커 부재 또는
@@ -835,6 +861,10 @@ ${_ar_body}"
     printf '%s' "$_ar_tests_passed" | grep -qE '^[0-9]+$' || _ar_tests_passed=0
   fi
 
+  # R-1 — checkpoint 결과에만 slice 번호를 장부에 남긴다 (0=해당없음)
+  local _ar_slice_for_log=0
+  [ "$result" = "checkpoint" ] && _ar_slice_for_log="$_ar_slice"
+
   local total_tokens=$(( _AR_TOKENS_IN + _AR_TOKENS_OUT ))
   local cost="0.000"
   if [ "$total_tokens" -gt 0 ] 2>/dev/null; then
@@ -847,7 +877,7 @@ ${_ar_body}"
       "${_AR_TOKENS_CACHE_READ:-0}" "${_AR_TOKENS_CACHE_CREATE:-0}")
     cost=$(printf '%s' "$cost_data" | awk '{print $3}')
     growth_log_append "$soul_name" "$task_text" "$result" "$_ar_files_changed" "$_ar_tests_passed" "" "" \
-      "$_AR_TOKENS_IN" "$_AR_TOKENS_OUT" "$_AR_TOKENS_CACHE" "$cost" "$model_arg" "$_AR_DURATION_MS" >&2
+      "$_AR_TOKENS_IN" "$_AR_TOKENS_OUT" "$_AR_TOKENS_CACHE" "$cost" "$model_arg" "$_AR_DURATION_MS" "$_ar_slice_for_log" >&2
 
     # D2 — 단일 run 비용 상한 트립와이어 (사후 경고, 사전 차단 아님).
     # AGENT_MAX_COST_USD 설정 시 단일 run 비용이 초과하면 stderr 로 경고.
@@ -866,7 +896,7 @@ ${_ar_body}"
       fi
     fi
   else
-    growth_log_append "$soul_name" "$task_text" "$result" "$_ar_files_changed" "$_ar_tests_passed" >&2
+    growth_log_append "$soul_name" "$task_text" "$result" "$_ar_files_changed" "$_ar_tests_passed" "" "" "" "" "" "" "" "" "$_ar_slice_for_log" >&2
   fi
 
   # 런 트래젝토리 영속화 (Phase A) — result/cost 확정 후 1회.
@@ -885,14 +915,145 @@ ${_ar_body}"
   # usage 요약 라인 (파싱 가능) — D1: timeout 마커, D3: max_seconds/cost_cap 가시화
   local _ar_done_marker_state="absent"
   [ "${_AR_DONE_PRESENT:-0}" -eq 1 ] && _ar_done_marker_state="present"
-  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} turn_cap=${_ar_turn_capped} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled} done_marker=${_ar_done_marker_state} effort=${_ar_effort:-none}"
+  echo "<usage> soul=${soul_name} model=${model_arg} result=${result} run=${run_id} session=${_ar_sess_mode:-fresh} tokens_in=${_AR_TOKENS_IN} tokens_out=${_AR_TOKENS_OUT} tokens_cache=${_AR_TOKENS_CACHE} cache_read=${_AR_TOKENS_CACHE_READ:-0} cache_creation=${_AR_TOKENS_CACHE_CREATE:-0} duration_ms=${_AR_DURATION_MS} timeout=${_ar_timed_out} turn_cap=${_ar_turn_capped} max_seconds=${max_secs} max_turns=${_ar_max_turns:-0} cost_cap=${AGENT_MAX_COST_USD:-disabled} done_marker=${_ar_done_marker_state} effort=${_ar_effort:-none} slice=${_ar_slice}"
 
   # P0-4 — partial 은 분류(완료 계약 미확인)이지 실패가 아니다. rc 계약 유지:
   # 실패 신호는 fail/timeout/turn_cap 만 (flow/mission 의 rc 소비 경로 무변경).
+  # R-1 — checkpoint 도 완료가 아니므로 rc=1 유지 (호출자는 forge run --continue 로 승계).
   case "$result" in
     success|partial) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# ─────────────────────────────────────────────────────────
+# R-1 — 런 연속체 (Run Continuum): 체크포인트 정산 + --continue 승계
+# ─────────────────────────────────────────────────────────
+# 사살(벽시계/턴캡)을 실패가 아닌 체크포인트로 정산하고, 다음 슬라이스가
+# 같은 claude 세션(--resume)으로 승계한다. jq 미사용 — growth-log 조립 관용구 재사용.
+
+# git diff --stat 요약 실측 (_agent_git_files_changed 와 동일 proj 결정 재사용,
+# 이쪽은 파일 수가 아니라 사람이 읽는 요약 줄을 남긴다).
+_agent_git_diff_stat() {
+  local proj="${GOLEM_PROJECT:-$(pwd)}"
+  git -C "$proj" diff --stat HEAD -- 2>/dev/null | tail -1 | tr -d '\r'
+}
+
+# _agent_checkpoint_write <run_id> <session_id> <soul> <task> <reason> <slice>
+# .golem/checkpoints/{run_id}.json 에 정산 기록. 실패해도 non-zero 리턴만 하고
+# 호출자(agent_run)가 경고 후 기존 사살(fail) 동작으로 계속 진행하게 둔다.
+# 또한 killed 된 claude 세션의 .claude 마커를 함께 남긴다 — 그래야 --continue 가
+# _agent_session_has_turns 판정에서 --resume 을 타고, 즉사 시엔 기존 P2-2 폴백이
+# 새 세션으로 안전 강하한다(성공 소환에만 마커를 쓰던 기존 동작 그대로면 체크포인트
+# 세션은 마커가 없어 매번 fresh 로 떨어져 승계가 무의미해지므로 여기서 보강한다).
+_agent_checkpoint_write() {
+  local run_id="$1" session_id="$2" soul_name="$3" task_text="$4" reason="$5" slice="$6"
+  [ -n "$run_id" ] && [ -n "$session_id" ] || return 1
+  # 경로 조작 차단 (Zen R-1 검수) — run_id 는 내부 생성(_gen_uuid)이라 정상 경로엔
+  # 위반이 없지만, 오염된 --continue 승계 run_id 가 흘러들 수 있어 쓰기도 대칭 방어
+  case "$run_id" in *[!A-Za-z0-9_-]*) return 1 ;; esac
+
+  local cp_dir="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/checkpoints"
+  mkdir -p "$cp_dir" 2>/dev/null || return 1
+
+  local proj="${GOLEM_PROJECT:-$(pwd)}"
+  local diff_stat done_partial=0
+  diff_stat=$(_agent_git_diff_stat)
+  if [ "${_AR_DONE_PRESENT:-0}" -eq 1 ] && [ "${_AR_DONE_STATUS:-}" = "partial" ]; then
+    done_partial=1
+  fi
+
+  local task_esc workdir_esc diff_esc ts
+  task_esc=$(_json_escape "$task_text")
+  workdir_esc=$(_json_escape "$proj")
+  diff_esc=$(_json_escape "$diff_stat")
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+
+  local tmp="${cp_dir}/${run_id}.json.tmp.$$"
+  printf '{"run_id":"%s","session_id":"%s","soul":"%s","task":"%s","workdir":"%s","diff_stat":"%s","done_marker_partial":%s,"reason":"%s","slice":%s,"ts":"%s"}\n' \
+    "$run_id" "$session_id" "$soul_name" "$task_esc" "$workdir_esc" "$diff_esc" "$done_partial" "$reason" "$slice" "$ts" \
+    > "$tmp" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+  mv -f "$tmp" "${cp_dir}/${run_id}.json" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+
+  # 세션이 계속 이어질 수 있도록 마커 보강 (성공 소환 전용이던 기존 마커 write 를
+  # 체크포인트 경로에도 확장 — --continue 가 --resume 을 타게 하는 필수 조건)
+  local sess_dir="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/sessions"
+  mkdir -p "$sess_dir" 2>/dev/null
+  : > "${sess_dir}/${session_id}.claude" 2>/dev/null || touch "${sess_dir}/${session_id}.claude" 2>/dev/null
+
+  return 0
+}
+
+# jq 미사용 문자열/숫자 필드 추출 — _extract_assistant_text 의 grep -o 관용구 재사용.
+_agent_checkpoint_field_str() {
+  local file="$1" key="$2"
+  grep -o "\"${key}\":\"\(\([^\"\\\\]\|\\\\.\)*\)\"" "$file" 2>/dev/null \
+    | head -1 | sed "s/^\"${key}\":\"//; s/\"\$//" \
+    | sed 's/\\n/\n/g; s/\\"/"/g; s/\\\\/\\/g'
+}
+
+_agent_checkpoint_field_num() {
+  local file="$1" key="$2"
+  grep -o "\"${key}\":[0-9]*" "$file" 2>/dev/null | head -1 | cut -d: -f2
+}
+
+# 체크포인트 읽기 — 성공 시 _ACK_* 전역 설정 후 0 리턴.
+_agent_checkpoint_read() {
+  local run_id="$1"
+  local cp="${GOLEM_DIR:-${GOLEM_ROOT}/.golem}/checkpoints/${run_id}.json"
+  [ -f "$cp" ] || return 1
+  _ACK_SESSION_ID=$(_agent_checkpoint_field_str "$cp" session_id)
+  _ACK_SOUL=$(_agent_checkpoint_field_str "$cp" soul)
+  _ACK_TASK=$(_agent_checkpoint_field_str "$cp" task)
+  _ACK_DIFF_STAT=$(_agent_checkpoint_field_str "$cp" diff_stat)
+  _ACK_SLICE=$(_agent_checkpoint_field_num "$cp" slice)
+  _ACK_SLICE=${_ACK_SLICE:-1}
+  [ -n "$_ACK_SESSION_ID" ] && [ -n "$_ACK_SOUL" ]
+}
+
+# forge run --continue <run_id> — 체크포인트 승계 재소환.
+# (a) 같은 soul 로 --resume {session_id} 재소환 (즉사 시 기존 P2-2 폴백이 새 세션으로 강하)
+# (b) 태스크 블록에 체크포인트 요지(diff 요약) 주입
+# (c) slice 카운터 누적 — 4번째 시도(slice>3)면 소환하지 않고 result=exhausted 로 장부 기록
+agent_run_continue() {
+  local run_id="$1"
+  if [ -z "$run_id" ]; then
+    echo "[agent-runner] Usage: forge run --continue <run_id>" >&2
+    return 1
+  fi
+  # 경로 조작 차단 (Zen R-1 검수 CRITICAL) — run_id 는 체크포인트 파일 경로에
+  # 그대로 들어가므로 UUID/영숫자-하이픈만 허용. ../ 나 슬래시 포함 시 즉시 거부.
+  case "$run_id" in
+    *[!A-Za-z0-9_-]*)
+      echo "[agent-runner] ERROR: run_id 형식 위반 (영숫자/하이픈/밑줄만 허용): ${run_id}" >&2
+      return 1
+      ;;
+  esac
+  if ! _agent_checkpoint_read "$run_id"; then
+    echo "[agent-runner] ERROR: 체크포인트 없음 또는 손상: ${run_id}" >&2
+    return 1
+  fi
+
+  local next_slice=$(( _ACK_SLICE + 1 ))
+
+  # (c) 슬라이스 상한 3 초과 — 무한 관용 금지, 명시 실패로 장부에 남긴다.
+  if [ "$next_slice" -gt 3 ]; then
+    echo "[agent-runner] EXHAUSTED: slice 상한(3) 초과 — soul=${_ACK_SOUL} run=${run_id}" >&2
+    growth_log_append "$_ACK_SOUL" "$_ACK_TASK" "exhausted" 0 0 "" "" "" "" "" "" "" "" "$next_slice" >&2
+    echo "<usage> soul=${_ACK_SOUL} result=exhausted run=${run_id} slice=${next_slice}"
+    return 1
+  fi
+
+  # (b) 체크포인트 요지 주입
+  local continuation_task
+  continuation_task="[체크포인트 승계 — 슬라이스 #${next_slice}] 이전 슬라이스에서 여기까지 진행됨: ${_ACK_DIFF_STAT:-변경 없음}. 이어서 완료하라.
+
+${_ACK_TASK}"
+
+  # (a) --resume 재소환 — 체크포인트가 세션 마커를 이미 보강해뒀으므로
+  # _agent_session_has_turns 가 true 를 반환해 --resume 경로를 탄다.
+  agent_run "$_ACK_SOUL" "$continuation_task" "$_ACK_SESSION_ID" \
+    --checkpoint-run-id "$run_id" --checkpoint-slice "$next_slice"
 }
 
 # ─────────────────────────────────────────────────────────

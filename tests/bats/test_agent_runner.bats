@@ -643,7 +643,8 @@ FAKE
   AGENT_MAX_SECONDS=60 agent_run capy "id캡 테스트" > "$TEST_PROJECT/idcap.out" 2>&1 || rc=$?
   [ "$rc" -ne 0 ]
   grep -q 'turn_cap=1' "$TEST_PROJECT/idcap.out"
-  grep -q 'result=turn_cap' "$TEST_PROJECT/idcap.out"
+  # R-1 신계약: 사살은 checkpoint 정산 (캡 집행 자체는 turn_cap=1 플래그로 검증)
+  grep -q 'result=checkpoint' "$TEST_PROJECT/idcap.out"
 }
 
 @test "turn-cap: maxTurns 초과 → 중도 kill + rc≠0 + turn_cap=1 + growth-log result=turn_cap" {
@@ -656,10 +657,10 @@ FAKE
   AGENT_MAX_SECONDS=120 agent_run capy "턴캡 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
   elapsed=$(( $(date +%s) - start ))
 
-  # 실패 계약: agent_run rc=1, TURN CAP 사유 텍스트, usage 마커
+  # 실패 계약: agent_run rc=1, TURN CAP 사유 텍스트, usage 마커, 체크포인트
   [ "$rc" -eq 1 ]
   grep -q "TURN CAP" "$TEST_PROJECT/run.out"
-  grep -q "result=turn_cap" "$TEST_PROJECT/run.out"
+  grep -q "result=checkpoint" "$TEST_PROJECT/run.out"
   grep -q "turn_cap=1" "$TEST_PROJECT/run.out"
   grep -q "max_turns=3" "$TEST_PROJECT/run.out"
   # 40초 방출을 기다리지 않고 반환 (캡 kill 은 ~4s + agent_run 고정 오버헤드 여유)
@@ -668,8 +669,8 @@ FAKE
   local cpid
   cpid=$(cat "$TEST_PROJECT/.claude_pid")
   ! kill -0 "$cpid" 2>/dev/null
-  # growth-log 에 result=turn_cap 기록
-  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "turn_cap"
+  # R-1 신계약: growth-log 에 result=checkpoint (사살 정산) + slice 기록
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "checkpoint"
   # 워치독 잔존 없음
   [ -z "$(jobs -rp)" ]
 }
@@ -747,13 +748,13 @@ SOUL
   AGENT_MAX_TURNS_OVERRIDE=abc agent_run capy "override 무효값 테스트1" > "$TEST_PROJECT/run1.out" 2>&1 || rc=$?
   [ "$rc" -ne 0 ]
   grep -q "max_turns=3" "$TEST_PROJECT/run1.out"
-  grep -q "result=turn_cap" "$TEST_PROJECT/run1.out"
+  grep -q "result=checkpoint" "$TEST_PROJECT/run1.out"
 
   rc=0
   AGENT_MAX_TURNS_OVERRIDE=0 agent_run capy "override 무효값 테스트2" > "$TEST_PROJECT/run2.out" 2>&1 || rc=$?
   [ "$rc" -ne 0 ]
   grep -q "max_turns=3" "$TEST_PROJECT/run2.out"
-  grep -q "result=turn_cap" "$TEST_PROJECT/run2.out"
+  grep -q "result=checkpoint" "$TEST_PROJECT/run2.out"
 }
 
 # ─────────────────────────────────────────────────────────
@@ -812,13 +813,13 @@ FAKE
   AGENT_MAX_SECONDS=120 agent_run capy "고속 버스트 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
 
   [ "$rc" -eq 1 ]
-  grep -q "result=turn_cap" "$TEST_PROJECT/run.out"
+  grep -q "result=checkpoint" "$TEST_PROJECT/run.out"
   grep -q "turn_cap=1" "$TEST_PROJECT/run.out"
   # kill 이 아닌 사후 정산 경로임을 메시지로 구분 (killed 경로 문구와 달라야 함)
   grep -q "사후 정산" "$TEST_PROJECT/run.out"
   ! grep -q "프로세스 강제 종료" "$TEST_PROJECT/run.out"
-  # growth-log 도 turn_cap 으로 기록되어야 함
-  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "turn_cap"
+  # growth-log 도 checkpoint 로 기록되어야 함 (reason 필드에 turn_cap 유지)
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "checkpoint"
 }
 
 # ─────────────────────────────────────────────────────────
@@ -947,8 +948,11 @@ FAKE
   AGENT_MAX_SECONDS=120 agent_run capy "마커+턴캡 테스트" > "$TEST_PROJECT/run.out" 2>&1 || rc=$?
 
   [ "$rc" -eq 1 ]
-  grep -q "result=turn_cap" "$TEST_PROJECT/run.out"
-  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "turn_cap"
+  # R-1 신계약: 사살은 checkpoint 로 정산 — "마커보다 사살 우선" 의도는
+  # result 가 success 로 승격되지 않음을 확인하는 것으로 유지 (사유는 usage 플래그)
+  grep -q "result=checkpoint" "$TEST_PROJECT/run.out"
+  grep -q "turn_cap=1" "$TEST_PROJECT/run.out"
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/capy.jsonl" "result" "checkpoint"
   [ -z "$(jobs -rp)" ]
 }
 
@@ -969,4 +973,224 @@ FAKE
   [ "$status" -eq 1 ]
   # fresh 모드 실패는 재시도 대상 아님 — 정확히 1회 호출
   [ "$(wc -l < "$TEST_PROJECT/.claude_calls" | tr -d ' ')" -eq 1 ]
+}
+
+# ─────────────────────────────────────────────────────────
+# R-1 런 연속체 — 체크포인트 + --continue 이어달리기
+# ─────────────────────────────────────────────────────────
+
+_make_checkpoint_soul() {
+  mkdir -p "$TEST_PROJECT/.golem/souls"
+  cat > "$TEST_PROJECT/.golem/souls/checkr.md" <<'SOUL'
+---
+name: Checkr
+role: qa-tester
+rank: junior
+specialty: [checkpoint-testing]
+model: haiku
+tools: [Read, Write, Bash]
+isolation: none
+created: 2026-07-17
+---
+
+## 체크포인트 테스트 SOUL
+SOUL
+}
+
+_setup_ckpt_hung_claude() {
+  # claude: 행 걸림, pid 기록 (사살 검증용)
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<FAKE
+#!/usr/bin/env bash
+exec 3>&-
+echo \$\$ > "$TEST_PROJECT/.claude_pid"
+sleep 60
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"HUNG"}]}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+_setup_resume_tracking_claude() {
+  # claude: --resume 받으면 기록, 정상 응답 (이어달리기 검증용)
+  mkdir -p "$TEST_PROJECT/bin"
+  # 주의: TEST_PROJECT 는 export 되지 않아 인용 heredoc 이면 런타임에 빈 값 —
+  # 비인용 heredoc 으로 작성 시점에 경로를 박아 넣는다 (기존 fake 관용구)
+  cat > "$TEST_PROJECT/bin/claude" <<FAKE
+#!/usr/bin/env bash
+exec 3>&-
+for a in "\$@"; do
+  [ "\$a" = "--resume" ] && echo "RESUME" >> "$TEST_PROJECT/.resume_called"
+done
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"[체크포인트 승계 — 슬라이스"}]}}'
+echo '{"type":"result","is_error":false,"duration_ms":100,"result":"SUCCESS","usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+}
+
+@test "R-1: [사살→체크포인트] 벽시계 사살 → checkpoint JSON 생성 + session_id/slice 필드 + result=checkpoint" {
+  _make_checkpoint_soul
+  _source_agent_runner
+  _setup_ckpt_hung_claude
+
+  local rc=0 run_id
+  AGENT_MAX_SECONDS=2 agent_run checkr "체크포인트 테스트" > "$TEST_PROJECT/run1.out" 2>&1 || rc=$?
+
+  # 사살은 rc=1
+  [ "$rc" -eq 1 ]
+
+  # 체크포인트 파일 존재
+  # grep -P 금지 (이 머신 grep 3.0 미지원 + 포터빌리티 규칙) — ERE 로
+  run_id=$(grep -oE 'run=[a-f0-9-]+' "$TEST_PROJECT/run1.out" | head -1 | cut -d= -f2)
+  [ -n "$run_id" ]
+  [ -f "${GOLEM_DIR}/checkpoints/${run_id}.json" ]
+
+  # checkpoint JSON: session_id, slice 필드 포함
+  grep -q '"session_id"' "${GOLEM_DIR}/checkpoints/${run_id}.json"
+  grep -q '"slice":1' "${GOLEM_DIR}/checkpoints/${run_id}.json"
+
+  # 출력에 result=checkpoint
+  grep -q "result=checkpoint" "$TEST_PROJECT/run1.out"
+
+  # growth-log 에 result=checkpoint 기록
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/checkr.jsonl" "result" "checkpoint"
+
+  # 워치독 정리
+  [ -z "$(jobs -rp)" ]
+}
+
+@test "R-1: [--continue 이어달리기] checkpoint로 agent_run_continue → --resume 인자 + 체크포인트 요지 포함 + result=success" {
+  _make_checkpoint_soul
+  _source_agent_runner
+  _setup_resume_tracking_claude
+
+  # 1단계: checkpoint 파일 수동 생성 (이전 슬라이스 시뮬레이션)
+  local test_run_id="test-ckpt-$(date +%s)"
+  # session_id 는 UUID 여야 한다 — 비 UUID 는 agent_run 의 P2-4 가드가 버리고
+  # fresh 로 강하해 --resume 이 영영 안 탄다 (실측 디버깅으로 확인된 함정)
+  local test_session="11111111-2222-4333-8444-555555555555"
+  mkdir -p "$TEST_PROJECT/.golem/checkpoints"
+  mkdir -p "$TEST_PROJECT/.golem/sessions"
+  cat > "$TEST_PROJECT/.golem/checkpoints/${test_run_id}.json" <<EOF
+{"run_id":"${test_run_id}","session_id":"${test_session}","soul":"checkr","task":"테스트 태스크","workdir":"$(pwd)","diff_stat":"2 files changed, 10 insertions(+)","done_marker_partial":0,"reason":"timeout","slice":1,"ts":"2026-07-17T12:00:00Z"}
+EOF
+  : > "$TEST_PROJECT/.golem/sessions/${test_session}.claude"
+
+  # 2단계: --continue 호출
+  # 주의: 여기서 agent-runner 를 다시 source 하면 체인이 GOLEM_DIR 을 덮어써
+  # 세션 마커 조회가 리포 쪽을 보게 된다 (test_helper 경고 함정) — 재소싱 금지
+  local rc=0
+  agent_run_continue "$test_run_id" > "$TEST_PROJECT/run2.out" 2>&1 || rc=$?
+
+  # rc=0 (성공)
+  [ "$rc" -eq 0 ]
+
+  # --resume 이 호출됨 (fake claude 기록)
+  [ -f "$TEST_PROJECT/.resume_called" ]
+  grep -q "RESUME" "$TEST_PROJECT/.resume_called"
+
+  # 태스크 블록에 "이어서" 또는 "체크포인트 승계" 포함
+  grep -q "이어서\|체크포인트 승계" "$TEST_PROJECT/run2.out"
+
+  # 출력에 result=success (fake claude 응답이 "SUCCESS" 포함)
+  grep -q "result=success\|SUCCESS" "$TEST_PROJECT/run2.out"
+}
+
+@test "R-1: [통합 정산] 이어달리기 성공 슬라이스의 growth-log에 git 실측 files 기록" {
+  _make_checkpoint_soul
+  _source_agent_runner
+  _setup_resume_tracking_claude
+
+  # git 리포 초기화 + 테스트 파일 수정
+  cd "$TEST_PROJECT"
+  git init -q
+  git config user.email "test@example.com"
+  git config user.name "Test"
+  echo "a" > file1.txt
+  git add file1.txt
+  git commit -q -m "init"
+
+  # 파일 2개 변경
+  echo "b" > file1.txt
+  echo "c" > file2.txt
+  git add file2.txt
+
+  # checkpoint 생성
+  local test_run_id="test-ckpt-git-$(date +%s)"
+  local test_session="sess-git-$(date +%s)"
+  mkdir -p "$GOLEM_DIR/checkpoints"
+  mkdir -p "$GOLEM_DIR/sessions"
+  cat > "$GOLEM_DIR/checkpoints/${test_run_id}.json" <<EOF
+{"run_id":"${test_run_id}","session_id":"${test_session}","soul":"checkr","task":"git 정산 테스트","workdir":"$(pwd)","diff_stat":"2 files changed, 2 insertions(+)","done_marker_partial":0,"reason":"timeout","slice":1,"ts":"2026-07-17T12:00:00Z"}
+EOF
+  : > "$GOLEM_DIR/sessions/${test_session}.claude"
+
+  # --continue 호출
+  source "${GOLEM_ROOT}/lib/agent-runner.sh" 2>/dev/null || true
+  agent_run_continue "$test_run_id" > "$TEST_PROJECT/run3.out" 2>&1 || true
+
+  # growth-log 에서 files 필드 확인 (git 실측)
+  # 파일 2개 변경되어 있으면 files=2 가 기록되어야 함
+  [ -f "$GOLEM_DIR/growth-log/checkr.jsonl" ]
+  # files 필드가 숫자(0 이상)로 기록됨
+  grep -q '"files_changed":[0-9]' "$GOLEM_DIR/growth-log/checkr.jsonl"
+}
+
+@test "R-1: [상한 초과 exhausted] slice=3 상태에서 --continue → 호출 없이 result=exhausted + rc 1" {
+  _make_checkpoint_soul
+  _source_agent_runner
+
+  # fake claude: 호출되면 기록하는 추적 (호출되지 않아야 함)
+  mkdir -p "$TEST_PROJECT/bin"
+  cat > "$TEST_PROJECT/bin/claude" <<FAKE
+#!/usr/bin/env bash
+echo "CALLED" >> "$TEST_PROJECT/.claude_called"
+echo '{"type":"result","is_error":false,"duration_ms":100,"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+FAKE
+  chmod +x "$TEST_PROJECT/bin/claude"
+  export PATH="$TEST_PROJECT/bin:$PATH"
+
+  # checkpoint slice=3 생성 (다음 호출이 4가 되어 상한 초과)
+  local test_run_id="test-exhausted-$(date +%s)"
+  mkdir -p "$TEST_PROJECT/.golem/checkpoints"
+  cat > "$TEST_PROJECT/.golem/checkpoints/${test_run_id}.json" <<EOF
+{"run_id":"${test_run_id}","session_id":"sess-exhausted","soul":"checkr","task":"상한 초과 테스트","workdir":"$(pwd)","diff_stat":"","done_marker_partial":0,"reason":"timeout","slice":3,"ts":"2026-07-17T12:00:00Z"}
+EOF
+
+  # --continue 호출
+  local rc=0
+  source "${GOLEM_ROOT}/lib/agent-runner.sh" 2>/dev/null || true
+  agent_run_continue "$test_run_id" > "$TEST_PROJECT/run4.out" 2>&1 || rc=$?
+
+  # rc=1 (실패)
+  [ "$rc" -eq 1 ]
+
+  # fake claude 호출 안 됨 (파일이 없거나 비어있음)
+  [ ! -f "$TEST_PROJECT/.claude_called" ] || [ ! -s "$TEST_PROJECT/.claude_called" ]
+
+  # 출력에 result=exhausted
+  grep -q "result=exhausted\|EXHAUSTED" "$TEST_PROJECT/run4.out"
+
+  # growth-log 에 result=exhausted 기록
+  assert_jsonl_field "$TEST_PROJECT/.golem/growth-log/checkr.jsonl" "result" "exhausted"
+}
+
+@test "R-1: [보안] --continue run_id 경로 조작 거부 (Zen 검수 CRITICAL)" {
+  _make_checkpoint_soul
+  _source_agent_runner
+
+  # 상위 경로에 미끼 파일 — 조작이 통하면 이걸 체크포인트로 읽으려 시도
+  mkdir -p "$TEST_PROJECT/.golem/checkpoints"
+  printf '{"run_id":"x","session_id":"11111111-2222-4333-8444-555555555555","soul":"checkr","task":"bait","slice":1}\n' \
+    > "$TEST_PROJECT/.golem/bait.json"
+
+  local rc=0
+  agent_run_continue "../bait" > "$TEST_PROJECT/atk.out" 2>&1 || rc=$?
+  [ "$rc" -eq 1 ]
+  grep -q "형식 위반" "$TEST_PROJECT/atk.out"
+  # 슬래시 포함 절대경로류도 거부
+  rc=0
+  agent_run_continue "a/b/c" > "$TEST_PROJECT/atk2.out" 2>&1 || rc=$?
+  [ "$rc" -eq 1 ]
 }

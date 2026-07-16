@@ -39,11 +39,13 @@ insights_soul() {
   local fails=$(echo "$all_entries" | grep -c '"result":"fail"' 2>/dev/null)
   local timeouts=$(echo "$all_entries" | grep -c '"result":"timeout"' 2>/dev/null)
   local turn_caps=$(echo "$all_entries" | grep -c '"result":"turn_cap"' 2>/dev/null)
+  local checkpoints=$(echo "$all_entries" | grep -c '"result":"checkpoint"' 2>/dev/null)
+  local exhausted=$(echo "$all_entries" | grep -c '"result":"exhausted"' 2>/dev/null)
   # "result":"값" 형태의 라인만 집계 — 구 grep '"result"' 는 값 없는 유령 라인까지
   # 세던 버그. 알려지지 않은 값(예: partial 도입 시)은 사라지지 않고 기타로 노출.
   local with_result=$(echo "$all_entries" | grep -c '"result":"' 2>/dev/null)
   local total=$with_result
-  local others=$((with_result - successes - fails - timeouts - turn_caps))
+  local others=$((with_result - successes - fails - timeouts - turn_caps - checkpoints - exhausted))
   [ "$others" -lt 0 ] && others=0
   local rate=0
   [ "$total" -gt 0 ] && rate=$(( successes * 100 / total ))
@@ -123,16 +125,20 @@ insights_soul() {
   local fail_count=$fails
   local timeout_count=$timeouts
   local turn_cap_count=$turn_caps
+  local checkpoint_count=$checkpoints
+  local exhausted_count=$exhausted
   local other_count=$others
-  local non_success=$((fail_count + timeout_count + turn_cap_count + other_count))
+  local non_success=$((fail_count + timeout_count + turn_cap_count + exhausted_count + other_count))
   if [ "$non_success" -gt 0 ]; then
     [ "$fail_count" -gt 0 ] && printf "  실패(fail): %d건 (%.1f%%)\n" "$fail_count" "$(awk "BEGIN{printf \"%.1f\", $fail_count*100/$non_success}")"
     [ "$timeout_count" -gt 0 ] && printf "  타임아웃: %d건 (%.1f%%)\n" "$timeout_count" "$(awk "BEGIN{printf \"%.1f\", $timeout_count*100/$non_success}")"
     [ "$turn_cap_count" -gt 0 ] && printf "  턴캡: %d건 (%.1f%%)\n" "$turn_cap_count" "$(awk "BEGIN{printf \"%.1f\", $turn_cap_count*100/$non_success}")"
+    [ "$exhausted_count" -gt 0 ] && printf "  소진(exhausted): %d건 (%.1f%%)\n" "$exhausted_count" "$(awk "BEGIN{printf \"%.1f\", $exhausted_count*100/$non_success}")"
     [ "$other_count" -gt 0 ] && printf "  기타: %d건 (%.1f%%)\n" "$other_count" "$(awk "BEGIN{printf \"%.1f\", $other_count*100/$non_success}")"
   else
     echo "  실패 없음 (모두 성공)"
   fi
+  [ "$checkpoint_count" -gt 0 ] && printf "  체크포인트: %d건 (승계 대기)\n" "$checkpoint_count"
   echo ""
   echo "── 비용 분석 ──"
   printf "  총비용: \$%s | 평균: \$%s/태스크\n" "$total_cost" "$avg_cost"
@@ -211,6 +217,7 @@ insights_team() {
     local fails=$(echo "$all_entries" | grep -c '"result":"fail"' 2>/dev/null)
     local timeouts=$(echo "$all_entries" | grep -c '"result":"timeout"' 2>/dev/null)
     local turn_caps=$(echo "$all_entries" | grep -c '"result":"turn_cap"' 2>/dev/null)
+    local exhausted=$(echo "$all_entries" | grep -c '"result":"exhausted"' 2>/dev/null)
     # soul 뷰와 동일 규칙: "result":"값" 라인만 총계 (미지 값도 총계에 포함)
     local total=$(echo "$all_entries" | grep -c '"result":"' 2>/dev/null)
     [ "$total" -eq 0 ] && continue
@@ -246,8 +253,8 @@ insights_team() {
     local streak=$(echo "$rev_entries" | awk '/"result":"success"/{c++; next}{exit}END{print c+0}')
 
     local failures=""
-    if [ "$fails" -gt 0 ] || [ "$timeouts" -gt 0 ] || [ "$turn_caps" -gt 0 ]; then
-      failures="${fails}f·${timeouts}t·${turn_caps}c"
+    if [ "$fails" -gt 0 ] || [ "$timeouts" -gt 0 ] || [ "$turn_caps" -gt 0 ] || [ "$exhausted" -gt 0 ]; then
+      failures="${fails}f·${timeouts}t·${turn_caps}c·${exhausted}e"
     else
       failures="—"
     fi
@@ -292,15 +299,17 @@ insights_team() {
     local fails=$(echo "$all_entries" | grep -c '"result":"fail"' 2>/dev/null)
     local timeouts=$(echo "$all_entries" | grep -c '"result":"timeout"' 2>/dev/null)
     local turn_caps=$(echo "$all_entries" | grep -c '"result":"turn_cap"' 2>/dev/null)
+    local exhausted=$(echo "$all_entries" | grep -c '"result":"exhausted"' 2>/dev/null)
     local successes=$(echo "$all_entries" | grep -c '"result":"success"' 2>/dev/null)
-    local others=$((total - successes - fails - timeouts - turn_caps))
+    local others=$((total - successes - fails - timeouts - turn_caps - exhausted))
 
-    local non_success=$((fails + timeouts + turn_caps + others))
+    local non_success=$((fails + timeouts + turn_caps + exhausted + others))
     [ "$non_success" -gt 0 ] && printf "  %-10s: " "$name" && {
       local parts=""
       [ "$fails" -gt 0 ] && parts="${parts}fail=$fails "
       [ "$timeouts" -gt 0 ] && parts="${parts}timeout=$timeouts "
       [ "$turn_caps" -gt 0 ] && parts="${parts}turn_cap=$turn_caps "
+      [ "$exhausted" -gt 0 ] && parts="${parts}exhausted=$exhausted "
       [ "$others" -gt 0 ] && parts="${parts}기타=$others"
       echo "$parts" | sed 's/[[:space:]]*$//'
     }
