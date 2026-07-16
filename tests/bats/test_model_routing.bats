@@ -170,3 +170,88 @@ SOUL
   # verifier 판단직 → opus
   [[ "$result" =~ "model=opus" ]]
 }
+
+# ─────────────────────────────────────────────────────────
+# B-3 — route_effort 단위 테스트
+# ─────────────────────────────────────────────────────────
+
+@test "effort-routing: frontmatter 명시(low) → 판단직 role 이어도 명시값 유지" {
+  _source_routing
+  result=$(route_effort "low" "director")
+  [ "$result" = "low" ]
+}
+
+@test "effort-routing: 미지정 + director → high" {
+  _source_routing
+  result=$(route_effort "" "director")
+  [ "$result" = "high" ]
+}
+
+@test "effort-routing: 미지정 + knowledge-auditor → high" {
+  _source_routing
+  result=$(route_effort "" "knowledge-auditor")
+  [ "$result" = "high" ]
+}
+
+@test "effort-routing: 미지정 + security-auditor → high" {
+  _source_routing
+  result=$(route_effort "" "security-auditor")
+  [ "$result" = "high" ]
+}
+
+@test "effort-routing: 미지정 + 그 외 role(backend-developer) → none" {
+  _source_routing
+  result=$(route_effort "" "backend-developer")
+  [ "$result" = "none" ]
+}
+
+@test "effort-routing: 미지정 + qa-tester → none" {
+  _source_routing
+  result=$(route_effort "" "qa-tester")
+  [ "$result" = "none" ]
+}
+
+# ─────────────────────────────────────────────────────────
+# B-3 — end-to-end (agent_run --dry-run 배선 검증)
+# ─────────────────────────────────────────────────────────
+
+@test "effort e2e: frontmatter effort:high 명시(zen-high.md) → argv에 --effort high 포함" {
+  load_fixture "souls/zen-high.md" "$TEST_PROJECT/.golem/souls/zen-high.md"
+  _source_agent_runner
+  result=$(agent_run "zen-high" "테스트 태스크" --dry-run 2>&1)
+  [[ "$result" =~ "--effort" ]]
+  [[ "$result" =~ "high" ]]
+  [[ "$result" =~ "effort=high" ]]
+}
+
+@test "effort e2e: qa-tester + effort 미지정(zen.md) → argv에 --effort 없음, usage effort=none" {
+  load_fixture "souls/zen.md" "$TEST_PROJECT/.golem/souls/zen.md"
+  _source_agent_runner
+  result=$(agent_run "zen" "테스트 태스크" --dry-run 2>&1)
+  [[ "$result" != *"--effort"* ]]
+  [[ "$result" =~ "effort=none" ]]
+}
+
+@test "effort e2e: director + effort 미지정 → 기본 라우팅으로 high, argv에 --effort high 포함" {
+  mkdir -p "$TEST_PROJECT/.golem/souls"
+  cat > "$TEST_PROJECT/.golem/souls/dex.md" <<'SOUL'
+---
+name: Dex
+role: director
+rank: junior
+specialty: [task-decomposition]
+model: opus
+tools: [Agent, SendMessage, TaskCreate, TaskStop, Read, Grep, Glob]
+maxTurns: 50
+isolation: none
+created: 2026-07-05
+---
+
+## 프로젝트 컨텍스트 (프롬프트에 주입됨)
+- 역할: director (effort 미지정 픽스처)
+SOUL
+  _source_agent_runner
+  result=$(agent_run "dex" "분해 태스크" --dry-run 2>&1)
+  [[ "$result" =~ "--effort" ]]
+  [[ "$result" =~ "effort=high" ]]
+}
