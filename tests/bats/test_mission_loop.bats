@@ -168,3 +168,43 @@ _mk_mission() {
   run mission_run "msn_9999999999_0" ryn zen
   [ "$status" -eq 1 ]
 }
+
+# ─────────────────────────────────────────────────────────
+# C-2 — 스텝별 턴 예산 산정이 AGENT_MAX_TURNS_OVERRIDE 로 agent_run 에 전달되는지
+# ─────────────────────────────────────────────────────────
+
+@test "mission-loop: C-2 스텝 캡 — 산정치가 AGENT_MAX_TURNS_OVERRIDE 로 agent_run 에 전달" {
+  local id; id=$(_mk_mission)
+  # triage.sh 를 먼저 소싱해 _mission_loop_deps 의 지연 소싱(lazy source)이
+  # 재실행되어 아래 mock 을 덮어쓰지 않게 한다 (command -v 선확인 계약).
+  source "${GOLEM_ROOT}/lib/triage.sh"
+  _triage_explore_files() { printf '%s\n' "lib/a.sh" "lib/b.sh"; }
+  agent_run() {
+    _bump "$TEST_PROJECT/.agent_calls"
+    echo "$AGENT_MAX_TURNS_OVERRIDE" >> "$TEST_PROJECT/.override_calls"
+    echo "mock-agent:$1 tokens_out=1000"
+    return "${MOCK_AGENT_RC:-0}"
+  }
+
+  run mission_run "$id" ryn zen
+  [ "$status" -eq 0 ]
+  # rank junior(souls/ryn.md 실물) + est_files 2 → base 12 + 2*3 + 2 = 20
+  [ "$(sed -n '1p' "$TEST_PROJECT/.override_calls")" = "20" ]
+  [ "$(sed -n '2p' "$TEST_PROJECT/.override_calls")" = "20" ]
+}
+
+@test "mission-loop: C-2 GOLEM_TURN_BUDGET=0 → 산정 비활성, override 미전달(기존 동작)" {
+  local id; id=$(_mk_mission)
+  source "${GOLEM_ROOT}/lib/triage.sh"
+  _triage_explore_files() { printf '%s\n' "lib/a.sh" "lib/b.sh"; }
+  agent_run() {
+    _bump "$TEST_PROJECT/.agent_calls"
+    echo "[${AGENT_MAX_TURNS_OVERRIDE}]" >> "$TEST_PROJECT/.override_calls"
+    echo "mock-agent:$1 tokens_out=1000"
+    return "${MOCK_AGENT_RC:-0}"
+  }
+
+  GOLEM_TURN_BUDGET=0 run mission_run "$id" ryn zen
+  [ "$status" -eq 0 ]
+  [ "$(sed -n '1p' "$TEST_PROJECT/.override_calls")" = "[]" ]
+}

@@ -64,6 +64,8 @@ Project Init:
   init trading        트레이딩 팩 바로 설치
 
 Commands:
+  triage <task>       태스크 복잡도 점수만 출력 (TRIAGE tier=T0|T1|T2 ...)
+  do <task>           트리아지 후 자동 실행 (T0 직행 / T1 권고 / T2 미션 생성)
   run <name> <task> [session_id]
                       엔진 네이티브 SOUL 소환 (OMC 비의존, claude CLI 직접 호출)
   doctor [--verbose]  엔진 헬스체크 (claude CLI·SOUL·.golem·의존성 진단)
@@ -322,6 +324,31 @@ case "${1:-}" in
     fi
     source "${GOLEM_ROOT}/lib/agent-runner.sh"
     agent_run "$2" "$3" "${4:-}"
+    exit $?
+    ;;
+
+  triage)
+    # 태스크 복잡도 결정론 점수기 (P1 C-1) — lib/triage.sh 의 triage_run
+    # 스킬 라우터가 소비하는 기계용 진입점: TRIAGE tier=... 라인만 파싱하면 됨
+    # forge triage <task>
+    if [ -z "${2:-}" ]; then
+      echo "Usage: forge triage <task>"
+      exit 1
+    fi
+    _load triage.sh
+    triage_run "$2"
+    exit $?
+    ;;
+
+  do)
+    # 자동 기어 — 트리아지 결과에 따라 T0 직행 / T1 권고 / T2 미션 생성 (P1 C-1)
+    # forge do <task>
+    if [ -z "${2:-}" ]; then
+      echo "Usage: forge do <task>"
+      exit 1
+    fi
+    _load triage.sh
+    forge_do "$2"
     exit $?
     ;;
 

@@ -213,7 +213,12 @@ flow studio
 
 ### 4. 애매한 경우
 
-위 규칙으로 판단이 안 되면 사용자에게 되물어본다:
+위 규칙으로 판단이 안 되면 `forge triage`를 실행해 tier로 라우팅한다 (UX-EXPERT-PLAN C-1):
+1. `GOLEM_PROJECT="$(pwd)" bash forge.sh triage "{task}"` 실행
+2. 출력의 `TRIAGE tier=T{0|1|2}` 파싱
+3. T0 → `forge quick: {task}`, T1 → `forge build: {task}`, T2 → `forge do "{task}"` (Nex 분해 → mission 생성, 실행은 사용자 승인 후 `forge mission run`)
+
+트리아지로도 판단이 안 되면(예: 실행 오류) 기존 되묻기로 폴백한다:
 ```
 "어떤 작업을 원하시나요?
 1) 팀 구성 (forge-init)

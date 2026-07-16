@@ -40,10 +40,28 @@ _mission_loop_save() {
 
 # 의존 lib 지연 로드 — 함수가 이미 정의돼 있으면(테스트 mock 포함) 재소싱하지 않는다
 _mission_loop_deps() {
-  command -v agent_run     >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/agent-runner.sh"
-  command -v verify_run    >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/verify.sh"
-  command -v error_retry   >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/error-recovery.sh"
-  command -v budget_record >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/budget.sh"
+  command -v agent_run             >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/agent-runner.sh"
+  command -v verify_run            >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/verify.sh"
+  command -v error_retry           >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/error-recovery.sh"
+  command -v budget_record         >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/budget.sh"
+  command -v triage_estimate_turns >/dev/null 2>&1 || source "${GOLEM_ROOT}/lib/triage.sh"
+}
+
+# C-2 스텝별 턴 예산 산정 — AGENT_MAX_TURNS_OVERRIDE 로 agent_run 에 인라인 전달할
+# 값을 stdout 에 정수로 낸다. 킬스위치 GOLEM_TURN_BUDGET=0 이면 빈 문자열
+# (agent-runner 가 override 부재로 처리해 frontmatter/rank 기본값으로 폴백).
+# _mission_step_budget <soul> <task_text>
+_mission_step_budget() {
+  local soul="$1" task="$2"
+  [ "${GOLEM_TURN_BUDGET:-1}" = "0" ] && return 0
+
+  local rank est_files turns
+  rank=$(soul_get_field "$(_resolve_soul_file "$soul")" "rank")
+  est_files=$(_triage_explore_files "$task" 2>/dev/null | grep -c '[^[:space:]]')
+  turns=$(triage_estimate_turns "$rank" "$est_files")
+
+  echo "[BUDGET] turns=${turns} est_files=${est_files} rank=${rank}" >&2
+  echo "$turns"
 }
 
 # spec.md 의 "## 성공 기준" 섹션 본문 추출 (verify target 조립용)
@@ -106,7 +124,7 @@ mission_run() {
   while [ "$cycles" -lt "$GOLEM_MISSION_MAX_CYCLES" ]; do
 
     # ── 태스크 루프: pending 소진 ─────────────────────────────
-    local next idx task soul attempts rc out prompt gate
+    local next idx task soul attempts rc out prompt gate step_turns
     while :; do
       next=$(mission_next "$id") || return 1
       [ "$next" = "none" ] && break
@@ -127,6 +145,9 @@ mission_run() {
       mission_task "$id" "$idx" in_progress "$soul" >/dev/null
       echo "[mission] ── task ${idx} (${soul}): ${task}"
 
+      # C-2 턴 예산 산정 — 스텝 규모 기반 캡 (킬스위치 GOLEM_TURN_BUDGET=0)
+      step_turns=$(_mission_step_budget "$soul" "$task")
+
       # 초기 프롬프트 — 직전 검증 실패 피드백이 있으면 주입
       prompt="$task"
       if [ -n "$last_failure" ]; then
@@ -139,7 +160,7 @@ ${last_failure}"
       attempts=0
       while :; do
         rc=0
-        if out=$(VERIFY_AUTHOR_SOUL="$soul" agent_run "$soul" "$prompt"); then rc=0; else rc=$?; fi
+        if out=$(VERIFY_AUTHOR_SOUL="$soul" AGENT_MAX_TURNS_OVERRIDE="${step_turns}" agent_run "$soul" "$prompt"); then rc=0; else rc=$?; fi
         printf '%s\n' "$out"
 
         # 예산 게이트 — 소환마다 소비·판정 (수확체감 계층과 루프 연결)
