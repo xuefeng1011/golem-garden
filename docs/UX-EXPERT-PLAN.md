@@ -163,19 +163,34 @@
 
 P0 선정 근거: 전부 어제 실측 마찰의 직접 해소이고, 서로 독립이라 병렬 배정 가능하며, C축 대공사 전에 데이터(P0-5)와 기반(P0-2/4)을 깐다.
 
-### P1 — 다음 트랙 (C축 본체 + B축 구조)
+**P0 전부 완료** — P0-1: `ee51cc4` · P0-2: `43b8d0e` · P0-3: `ab75bc6` · P0-4: `43b8d0e` · P0-5: `ab75bc6`
 
-1. **C-1 트리아지**: lib/triage.sh (결정론 점수기 + 골든 12건 bats) → 스킬 라우터 연결 → `forge do` verb
-2. **C-2 턴 예산 산정기**: AGENT_MAX_TURNS_OVERRIDE + mission 스텝별 캡 세팅 (PERF-PLAN §10 체크박스 동시 소화)
-3. **B-4 Director 계약 단일화**: prompt_build_director를 FLOW_CONTRACT v1 JSON 단일 계약으로 (P0-5 계측 결과 확인 후)
-4. **B-1 전문가 프로토콜 블록**: role family 3종 + 랭크 연동 (byte-stable 계약 준수 — 정적 블록 문구 변경이므로 캐시 재생성 1회 발생함을 인지하고 배포)
-5. **B-3 effort 배선**
+### P1 — 다음 트랙 (C축 본체 + B축 구조) → ✅ 전부 완료
 
-### P2 — 후속
+1. ~~**C-1 트리아지**: lib/triage.sh (결정론 점수기 + 골든 12건 bats) → 스킬 라우터 연결 → `forge do` verb~~ →
+   **완료** (`b7423d3`, 잔여 보정 `7d9243c`/`bab5bcd`): `lib/triage.sh` 신설 + `forge do`/`forge triage`
+   배선. T0/T1/T2 티어 판정 + 명시 경로 우선 산정 회귀 수정.
+2. ~~**C-2 턴 예산 산정기**: AGENT_MAX_TURNS_OVERRIDE + mission 스텝별 캡 세팅 (PERF-PLAN §10 체크박스 동시 소화)~~ →
+   **완료** (`b7423d3`): `AGENT_MAX_TURNS_OVERRIDE`(agent-runner.sh) + mission-loop.sh 스텝별
+   턴 예산 인라인 전달 확인.
+3. ~~**B-4 Director 계약 단일화**: prompt_build_director를 FLOW_CONTRACT v1 JSON 단일 계약으로 (P0-5 계측 결과 확인 후)~~ →
+   **완료** (`5b51598`): prompt-builder.sh 출력 계약이 "FLOW_CONTRACT v1 — 유일한 형식"으로 통일됨 확인.
+4. ~~**B-1 전문가 프로토콜 블록**: role family 3종 + 랭크 연동 (byte-stable 계약 준수 — 정적 블록 문구 변경이므로 캐시 재생성 1회 발생함을 인지하고 배포)~~ →
+   **완료** (`5b51598`, 테스트 `9252f6b`): 구현직/판단직/QA직 프로토콜 블록 + 랭크 연동(novice/junior 필수) 배선.
+5. ~~**B-3 effort 배선**~~ →
+   **완료** (`5b51598`, 테스트 `9252f6b`): agent-runner.sh에 effort CLI 플래그 배선 + 미지원 시 프롬프트 폴백
+   (`AGENT_EFFORT_CLI_UNSUPPORTED`), model-routing과 동일 파일에 정적 테이블.
 
-- **B-5 rubric 사전 계약** (FLOW_CONTRACT rubric 필드 — C-1 안착 후)
-- **eval 확장**: 골든 태스크에 프로토콜 준수/자가반박 rubric 항목 추가 — B축 효과의 회귀 측정 수단
-- 승급 임박 3인(Bolt/Kai/Zen)의 junior 전환 시 turn cap 재보정 — C-2와 함께
+### P2 — 후속 → ✅ 전부 완료 (retention 제외)
+
+- ~~**B-5 rubric 사전 계약** (FLOW_CONTRACT rubric 필드 — C-1 안착 후)~~ →
+  **완료** (`8b2e42a`, 동반 테스트 `2c6d179`): 분해 시점 DoD 합의 → 실행 주입 → verify.sh가 동일 항목으로
+  채점(`_verify_rubric_missing_guard` 등).
+- ~~**eval 확장**: 골든 태스크에 프로토콜 준수/자가반박 rubric 항목 추가 — B축 효과의 회귀 측정 수단~~ →
+  **완료** (`7d9243c`): "eval 프로토콜 rubric 2항" 반영.
+- ~~승급 임박 3인(Bolt/Kai/Zen)의 junior 전환 시 turn cap 재보정 — C-2와 함께~~ →
+  **완료** (`b9d7218`): rank-system 자동 갱신으로 Bolt/Kai/Zen novice → junior 승급(캡이 랭크 테이블에서
+  자동 재산정됨).
 
 ---
 
